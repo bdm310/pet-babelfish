@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Spike: Fetch Behavior</title>
+  <style>
+    body { font-family: monospace; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #1a1a1a; color: #e0e0e0; }
+    h1 { color: #fff; font-size: 1.2rem; }
+    p { color: #aaa; font-size: 0.9rem; }
+    .result { background: #2a2a2a; border: 1px solid #444; border-radius: 4px; padding: 1rem; margin: 0.5rem 0; }
+    .result.ok { border-color: #4caf50; }
+    .result.warn { border-color: #ff9800; }
+    .result.err { border-color: #f44336; }
+    .label { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+    .value { font-size: 0.95rem; margin-top: 0.25rem; word-break: break-all; }
+    button { background: #333; color: #e0e0e0; border: 1px solid #555; padding: 0.5rem 1.2rem; border-radius: 4px; cursor: pointer; font-family: monospace; }
+    button:hover { background: #444; }
+    input[type=text] { background: #2a2a2a; color: #e0e0e0; border: 1px solid #555; padding: 0.4rem 0.6rem; border-radius: 4px; font-family: monospace; width: 100%; box-sizing: border-box; }
+    #output { margin-top: 1rem; }
+    .section { margin-top: 1.5rem; }
+    .section h2 { font-size: 1rem; color: #ccc; border-bottom: 1px solid #333; padding-bottom: 0.4rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    td { padding: 0.3rem 0.5rem; border-bottom: 1px solid #333; vertical-align: top; }
+    td:first-child { color: #888; white-space: nowrap; width: 200px; }
+  </style>
+</head>
+<body>
+  <h1>Spike 1 — Fetch Behavior</h1>
+  <p>Tests whether a direct browser <code>fetch()</code> to PDF sources works, and characterizes any CORS/auth restrictions.</p>
+
+  <div class="section">
+    <h2>Test URL</h2>
+    <input type="text" id="urlInput" value="https://www.9xxteile.com/media/wysiwyg/pet_1/997-1_2005-2008.pdf">
+  </div>
+
+  <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
+    <button onclick="testHead()">HEAD Request</button>
+    <button onclick="testGet()">GET first 64 KB</button>
+    <button onclick="testKnownUrls()">Test all known catalog URLs (HEAD)</button>
+  </div>
+
+  <div id="output"></div>
+
+  <script>
+    const output = document.getElementById('output');
+
+    function log(html) {
+      output.insertAdjacentHTML('beforeend', html);
+    }
+
+    function resultHtml(label, value, type = '') {
+      return `<div class="result ${type}"><div class="label">${label}</div><div class="value">${value}</div></div>`;
+    }
+
+    function sectionHtml(title) {
+      return `<div class="section"><h2>${title}</h2>`;
+    }
+
+    async function testHead() {
+      output.innerHTML = '';
+      const url = document.getElementById('urlInput').value.trim();
+      log(sectionHtml(`HEAD ${url}`));
+      try {
+        const r = await fetch(url, { method: 'HEAD' });
+        log(resultHtml('Status', r.status, r.ok ? 'ok' : 'warn'));
+        log(resultHtml('Content-Type', r.headers.get('content-type') || '(not set)'));
+        log(resultHtml('Content-Length', r.headers.get('content-length') || '(not set)'));
+        log(resultHtml('Access-Control-Allow-Origin', r.headers.get('access-control-allow-origin') || '(not set — CORS will block GET)', r.headers.get('access-control-allow-origin') ? 'ok' : 'warn'));
+        log(resultHtml('Cache-Control', r.headers.get('cache-control') || '(not set)'));
+        const mb = r.headers.get('content-length') ? (parseInt(r.headers.get('content-length')) / 1024 / 1024).toFixed(1) + ' MB' : '?';
+        log(resultHtml('Estimated size', mb));
+        log('</div>');
+        if (r.ok) {
+          log(resultHtml('Conclusion', '✓ HEAD succeeded — try GET to confirm full download works', 'ok'));
+        }
+      } catch (e) {
+        log(resultHtml('Error', escapeHtml(e.toString()), 'err'));
+        log(resultHtml('Conclusion', 'CORS blocked or network error — direct fetch will not work without a proxy or manual upload fallback', 'err'));
+        log('</div>');
+      }
+    }
+
+    async function testGet() {
+      output.innerHTML = '';
+      const url = document.getElementById('urlInput').value.trim();
+      log(sectionHtml(`GET (first 64 KB) ${url}`));
+      try {
+        const r = await fetch(url);
+        const reader = r.body.getReader();
+        let chunks = [];
+        let total = 0;
+        while (total < 65536) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          total += value.length;
+        }
+        reader.cancel();
+        const buf = new Uint8Array(total);
+        let offset = 0;
+        for (const c of chunks) { buf.set(c, offset); offset += c.length; }
+
+        const magic = Array.from(buf.slice(0, 5)).map(b => String.fromCharCode(b)).join('');
+        const isPdf = magic === '%PDF-';
+        log(resultHtml('Status', r.status, r.ok ? 'ok' : 'warn'));
+        log(resultHtml('Bytes received', total.toLocaleString()));
+        log(resultHtml('PDF magic bytes (%PDF-)', magic + (isPdf ? ' ✓' : ' ✗ — not a PDF?'), isPdf ? 'ok' : 'err'));
+        if (isPdf) {
+          const version = magic + Array.from(buf.slice(5, 8)).map(b => String.fromCharCode(b)).join('');
+          log(resultHtml('PDF version', version));
+        }
+        log(resultHtml('Conclusion', isPdf ? '✓ Direct fetch works — fetch.js can use a simple fetch() loop' : 'Received data is not a PDF', isPdf ? 'ok' : 'warn'));
+        log('</div>');
+      } catch (e) {
+        log(resultHtml('Error', escapeHtml(e.toString()), 'err'));
+        log(resultHtml('Conclusion', 'Fetch failed — file picker upload will be required as baseline', 'err'));
+        log('</div>');
+      }
+    }
+
+    const CATALOG_URLS = [
+      "https://www.9xxteile.com/media/wysiwyg/pet_1/997-1_2005-2008.pdf",
+      "https://www.9xxteile.com/media/wysiwyg/pet_1/997-2_2009-2012.pdf",
+      "https://www.9xxteile.com/media/wysiwyg/pet_1/996_1998-2004.pdf",
+      "https://www.9xxteile.com/media/wysiwyg/pet_1/993_1994-1998.pdf",
+      "https://www.9xxteile.com/media/wysiwyg/pet_1/964_1989-1994.pdf",
+      "https://www.9xxteile.com/media/wysiwyg/pet_1/930_1976-1989.pdf",
+      "https://www.9xxteile.com/media/wysiwyg/pet_1/911G_1974-1977.pdf",
+    ];
+
+    async function testKnownUrls() {
+      output.innerHTML = '';
+      log(sectionHtml('HEAD requests for known catalog URLs'));
+      log('<table><tr><th style="text-align:left">URL</th><th>Status</th><th>Size</th><th>CORS</th></tr>');
+      for (const url of CATALOG_URLS) {
+        try {
+          const r = await fetch(url, { method: 'HEAD' });
+          const mb = r.headers.get('content-length') ? (parseInt(r.headers.get('content-length')) / 1024 / 1024).toFixed(1) + ' MB' : '?';
+          const cors = r.headers.get('access-control-allow-origin') || '—';
+          const statusColor = r.ok ? '#4caf50' : '#f44336';
+          log(`<tr><td>${escapeHtml(url.split('/').pop())}</td><td style="color:${statusColor}">${r.status}</td><td>${mb}</td><td>${escapeHtml(cors)}</td></tr>`);
+        } catch (e) {
+          log(`<tr><td>${escapeHtml(url.split('/').pop())}</td><td style="color:#f44336">CORS/ERR</td><td>—</td><td>blocked</td></tr>`);
+        }
+      }
+      log('</table></div>');
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Spike: Diagram Callouts</title>
+  <style>
+    body { font-family: monospace; max-width: 1200px; margin: 2rem auto; padding: 0 1rem; background: #1a1a1a; color: #e0e0e0; }
+    h1 { color: #fff; font-size: 1.2rem; }
+    p { color: #aaa; font-size: 0.9rem; }
+    #dropzone { border: 2px dashed #555; border-radius: 8px; padding: 2rem; text-align: center; color: #888; cursor: pointer; }
+    #dropzone.over { border-color: #4caf50; color: #4caf50; }
+    #controls { display: none; margin-top: 1rem; }
+    .row { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; }
+    button { background: #333; color: #e0e0e0; border: 1px solid #555; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; font-family: monospace; font-size: 0.85rem; }
+    button:hover { background: #444; }
+    input[type=number] { background: #2a2a2a; color: #e0e0e0; border: 1px solid #555; padding: 0.4rem 0.5rem; border-radius: 4px; font-family: monospace; width: 70px; }
+    #output { margin-top: 1rem; }
+    .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .panel { background: #222; border: 1px solid #333; border-radius: 4px; padding: 0.75rem; }
+    .panel h2 { font-size: 0.9rem; color: #ccc; margin: 0 0 0.5rem; }
+    #canvas-wrap { position: relative; display: inline-block; }
+    #renderCanvas { max-width: 100%; display: block; }
+    .overlay-dot { position: absolute; width: 18px; height: 18px; border-radius: 50%; background: rgba(255,80,80,0.8); border: 2px solid #ff5050; transform: translate(-50%, -50%); pointer-events: none; display: flex; align-items: center; justify-content: center; font-size: 9px; color: white; }
+    table.items { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    table.items th { background: #2a2a2a; color: #888; padding: 0.25rem 0.4rem; text-align: left; border-bottom: 1px solid #333; }
+    table.items td { padding: 0.25rem 0.4rem; border-bottom: 1px solid #2a2a2a; vertical-align: top; }
+    table.items tr.callout { background: rgba(76,175,80,0.1); }
+    table.items tr.callout td { color: #4caf50; }
+    .stat { display: inline-block; background: #2a2a2a; border: 1px solid #444; border-radius: 3px; padding: 0.15rem 0.4rem; margin: 0.15rem; font-size: 0.8rem; }
+    .ok { color: #4caf50; border-color: #4caf50 !important; }
+    .warn { color: #ff9800; border-color: #ff9800 !important; }
+    progress { width: 100%; height: 6px; margin: 0.5rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Spike 3 — Diagram Callout Extraction</h1>
+  <p>Drop a catalog PDF and enter a diagram page number. Renders the page and overlays any text items found by PDF.js — showing whether callout numbers are embedded PDF text (with coordinates) or burned into the image.</p>
+
+  <div id="dropzone">
+    Drop PDF here, or click to select
+    <input type="file" id="fileInput" accept=".pdf" style="display:none">
+  </div>
+
+  <div id="controls">
+    <div class="row">
+      <label>Page number:</label>
+      <input type="number" id="pageNum" value="2" min="1">
+      <button onclick="analyzePage()">Analyze &amp; Render</button>
+      <button onclick="scanForDiagrams()">Auto-scan: find sparse/diagram pages</button>
+    </div>
+    <div class="row" id="navRow" style="display:none">
+      <button onclick="prevPage()">◀ Prev</button>
+      <span id="navInfo"></span>
+      <button onclick="nextPage()">Next ▶</button>
+    </div>
+  </div>
+
+  <div id="output"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    const PDFJS_OPTS = {
+      cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+      cMapPacked: true,
+      standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/',
+    };
+
+    let pdfDoc = null;
+    let diagramPageList = [];
+    let diagramPageIdx = 0;
+
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+    const output = document.getElementById('output');
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('over'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
+    dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('over'); loadFile(e.dataTransfer.files[0]); });
+    fileInput.addEventListener('change', e => loadFile(e.target.files[0]));
+
+    async function loadFile(file) {
+      if (!file) return;
+      dropzone.textContent = `Loading ${file.name}…`;
+      const buf = await file.arrayBuffer();
+      pdfDoc = await pdfjsLib.getDocument({ data: buf, ...PDFJS_OPTS }).promise;
+      dropzone.textContent = `✓ ${file.name} — ${pdfDoc.numPages} pages`;
+      document.getElementById('controls').style.display = 'block';
+      document.getElementById('pageNum').max = pdfDoc.numPages;
+      output.innerHTML = '';
+    }
+
+    // Callout-like: short string, likely a number or number+letter
+    function isCallout(str) {
+      return /^\d{1,3}[A-Za-z]?$/.test(str.trim());
+    }
+
+    async function analyzePage() {
+      const pageNum = parseInt(document.getElementById('pageNum').value);
+      if (!pdfDoc || pageNum < 1 || pageNum > pdfDoc.numPages) return;
+      await renderAndAnalyze(pageNum);
+    }
+
+    async function renderAndAnalyze(pageNum) {
+      output.innerHTML = 'Rendering…';
+      const page = await pdfDoc.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 2 });
+      const content = await page.getTextContent();
+
+      // Render to canvas
+      const canvas = document.createElement('canvas');
+      canvas.id = 'renderCanvas';
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+
+      const items = content.items.filter(it => it.str && it.str.trim());
+      const callouts = items.filter(it => isCallout(it.str));
+      const nonCallouts = items.filter(it => !isCallout(it.str));
+
+      let html = `<div class="layout">`;
+
+      // Left: canvas with overlay
+      html += `<div class="panel">
+        <h2>Page ${pageNum} render <span style="color:#888;font-size:0.8rem">(scale 2×)</span></h2>
+        <div id="canvas-wrap"></div>
+      </div>`;
+
+      // Right: text items table
+      html += `<div class="panel">
+        <h2>Text items from PDF.js</h2>
+        <div>
+          <span class="stat">${items.length} total text items</span>
+          <span class="stat ${callouts.length > 0 ? 'ok' : 'warn'}">${callouts.length} callout-like items</span>
+          <span class="stat">${nonCallouts.length} other text items</span>
+        </div>`;
+
+      if (callouts.length > 0) {
+        html += `<p class="ok" style="font-size:0.85rem">✓ Callout numbers appear as embedded PDF text — coordinates available</p>`;
+      } else {
+        html += `<p class="warn" style="font-size:0.85rem">⚠ No callout-like items found — numbers may be burned into the image (OCR needed)</p>`;
+      }
+
+      html += `<table class="items"><thead><tr>
+        <th>Text</th><th>x</th><th>y</th><th>w</th><th>h</th><th>type</th>
+      </tr></thead><tbody>`;
+
+      for (const it of items) {
+        const x = it.transform[4].toFixed(1);
+        const y = it.transform[5].toFixed(1);
+        const w = it.width ? it.width.toFixed(1) : '—';
+        const h = it.height ? it.height.toFixed(1) : '—';
+        const isCo = isCallout(it.str);
+        html += `<tr class="${isCo ? 'callout' : ''}">
+          <td>${escapeHtml(it.str)}</td>
+          <td>${x}</td><td>${y}</td><td>${w}</td><td>${h}</td>
+          <td>${isCo ? 'callout' : ''}</td>
+        </tr>`;
+      }
+      html += '</tbody></table></div></div>';
+      output.innerHTML = html;
+
+      // Insert canvas
+      document.getElementById('canvas-wrap').appendChild(canvas);
+
+      // Overlay callout dots
+      const wrap = document.getElementById('canvas-wrap');
+      wrap.style.position = 'relative';
+      const scaleX = canvas.offsetWidth / viewport.width;
+      const scaleY = canvas.offsetHeight / viewport.height;
+      for (const it of callouts) {
+        const dot = document.createElement('div');
+        dot.className = 'overlay-dot';
+        dot.textContent = it.str.trim();
+        // PDF coordinates: origin bottom-left; canvas: top-left
+        const cx = it.transform[4] * 2 * scaleX;
+        const cy = (viewport.height - it.transform[5]) * 2 * scaleY;
+        dot.style.left = cx + 'px';
+        dot.style.top = cy + 'px';
+        wrap.appendChild(dot);
+      }
+    }
+
+    async function scanForDiagrams() {
+      output.innerHTML = '<progress id="scanProgress"></progress><p>Scanning pages…</p>';
+      const prog = document.getElementById('scanProgress');
+      diagramPageList = [];
+
+      for (let i = 1; i <= pdfDoc.numPages; i++) {
+        const page = await pdfDoc.getPage(i);
+        const content = await page.getTextContent();
+        const items = content.items.filter(it => it.str && it.str.trim());
+        const text = items.map(it => it.str).join(' ');
+        const hasPartNumbers = (text.match(/\d{3}[\s.]\d{3}[\s.]\d{3}[\s.]\d{2}/g) || []).length;
+        // Sparse text + no part numbers = likely diagram
+        if (items.length < 25 && hasPartNumbers === 0) {
+          diagramPageList.push(i);
+        }
+        prog.value = i / pdfDoc.numPages;
+      }
+
+      output.innerHTML = `<p>Found <b>${diagramPageList.length}</b> likely diagram pages: ${diagramPageList.slice(0, 20).join(', ')}${diagramPageList.length > 20 ? '…' : ''}</p>`;
+
+      if (diagramPageList.length > 0) {
+        diagramPageIdx = 0;
+        document.getElementById('navRow').style.display = 'flex';
+        document.getElementById('pageNum').value = diagramPageList[0];
+        await renderAndAnalyze(diagramPageList[0]);
+        updateNav();
+      }
+    }
+
+    async function prevPage() {
+      if (diagramPageIdx > 0) { diagramPageIdx--; await goToIdx(); }
+    }
+    async function nextPage() {
+      if (diagramPageIdx < diagramPageList.length - 1) { diagramPageIdx++; await goToIdx(); }
+    }
+    async function goToIdx() {
+      const p = diagramPageList[diagramPageIdx];
+      document.getElementById('pageNum').value = p;
+      await renderAndAnalyze(p);
+      updateNav();
+    }
+    function updateNav() {
+      document.getElementById('navInfo').textContent = `Diagram page ${diagramPageIdx + 1} / ${diagramPageList.length} (PDF page ${diagramPageList[diagramPageIdx]})`;
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+  </script>
+</body>
+</html>

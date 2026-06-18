@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Spike: PDF Structure</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: monospace; margin: 0; background: #1a1a1a; color: #e0e0e0; display: grid; grid-template-rows: auto 1fr; height: 100vh; }
+    header { padding: 0.75rem 1rem; border-bottom: 1px solid #333; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+    h1 { color: #fff; font-size: 1rem; margin: 0; }
+    #dropzone { border: 2px dashed #555; border-radius: 6px; padding: 0.5rem 1rem; color: #888; cursor: pointer; font-size: 0.85rem; white-space: nowrap; }
+    #dropzone.over, #dropzone.loaded { border-color: #4caf50; color: #4caf50; }
+    .main { display: grid; grid-template-columns: 280px 1fr; height: 100%; overflow: hidden; }
+    #sidebar { border-right: 1px solid #333; overflow-y: auto; padding: 0.5rem; }
+    #sidebar h2 { font-size: 0.8rem; color: #888; text-transform: uppercase; letter-spacing: 1px; margin: 0.5rem 0 0.3rem; }
+    .toc-item { padding: 0.2rem 0.3rem; font-size: 0.78rem; cursor: pointer; border-radius: 3px; display: flex; justify-content: space-between; gap: 0.5rem; }
+    .toc-item:hover { background: #2a2a2a; }
+    .toc-item.active { background: #1a3a1a; color: #4caf50; }
+    .toc-item .num { color: #888; flex-shrink: 0; }
+    .toc-item .pg { color: #555; font-size: 0.72rem; flex-shrink: 0; }
+    .indent-1 { padding-left: 0.8rem; }
+    .indent-2 { padding-left: 1.6rem; }
+    #content { overflow-y: auto; padding: 1rem; }
+    #toolbar { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; flex-wrap: wrap; align-items: center; }
+    button { background: #333; color: #e0e0e0; border: 1px solid #555; padding: 0.35rem 0.75rem; border-radius: 4px; cursor: pointer; font-family: monospace; font-size: 0.8rem; }
+    button:hover { background: #444; }
+    button.active { border-color: #4caf50; color: #4caf50; }
+    button.xfa { border-color: #2196f3; color: #2196f3; }
+    input[type=number] { background: #2a2a2a; color: #e0e0e0; border: 1px solid #555; padding: 0.3rem 0.4rem; border-radius: 4px; font-family: monospace; width: 65px; font-size: 0.8rem; }
+    .view { display: none; }
+    .view.active { display: block; }
+    .row-group { margin: 2px 0; padding: 2px 4px; border-left: 3px solid #333; }
+    .row-group:nth-child(odd) { background: #1e1e1e; }
+    .row-group .y-label { font-size: 0.7rem; color: #555; margin-bottom: 2px; }
+    .item-chip { display: inline-block; background: #2a2a2a; border: 1px solid #444; border-radius: 3px; padding: 1px 5px; margin: 1px 2px; font-size: 0.78rem; cursor: default; }
+    .item-chip:hover { background: #333; }
+    #xhist { display: flex; align-items: flex-end; height: 80px; gap: 0; background: #1e1e1e; padding: 4px; }
+    #xhist div { flex: 1; background: #4caf50; opacity: 0.7; min-height: 1px; }
+    .xlabels { display: flex; font-size: 0.65rem; color: #555; margin-top: 2px; }
+    .xlabels span { flex: 1; }
+    table.parts { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    table.parts th { background: #252525; color: #888; padding: 0.3rem 0.4rem; text-align: left; border-bottom: 1px solid #333; position: sticky; top: 0; }
+    table.parts td { padding: 0.25rem 0.4rem; border-bottom: 1px solid #1e1e1e; vertical-align: top; }
+    table.parts tr:hover td { background: #222; }
+    .stat { display: inline-block; background: #2a2a2a; border: 1px solid #444; border-radius: 3px; padding: 0.15rem 0.4rem; margin: 0.15rem; font-size: 0.78rem; }
+    .stat.ok { border-color: #4caf50; color: #4caf50; }
+    .stat.warn { border-color: #ff9800; color: #ff9800; }
+    .stat.info { border-color: #2196f3; color: #2196f3; }
+    progress { width: 100%; height: 4px; }
+    #pageLabel { font-size: 0.8rem; color: #888; padding: 0.3rem 0; }
+    pre.xml { background: #0d1117; border: 1px solid #333; border-radius: 4px; padding: 0.75rem; font-size: 0.75rem; overflow: auto; max-height: 500px; color: #adbac7; white-space: pre-wrap; word-break: break-all; }
+    pre.xml .tag { color: #7ee787; }
+    pre.xml .attr { color: #79c0ff; }
+    pre.xml .val { color: #a5d6ff; }
+    .xfa-field { background: #0d2137; border: 1px solid #2196f3; border-radius: 3px; padding: 0.1rem 0.4rem; margin: 0.1rem; font-size: 0.78rem; display: inline-block; }
+    .xfa-row { padding: 0.3rem 0; border-bottom: 1px solid #1e2d1e; font-size: 0.8rem; }
+    .xfa-row:hover { background: #1a2a1a; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Spike 2 — PDF Structure</h1>
+    <div id="dropzone">
+      Drop PDF or click to open
+      <input type="file" id="fileInput" accept=".pdf" style="display:none">
+    </div>
+    <span id="fileInfo" style="color:#888;font-size:0.8rem"></span>
+    <span id="xfaBadge" style="display:none"></span>
+  </header>
+  <div class="main">
+    <div id="sidebar">
+      <h2>Table of Contents</h2>
+      <div id="toc">(load a PDF first)</div>
+    </div>
+    <div id="content">
+      <div id="toolbar" style="display:none">
+        <button id="btnXfa" class="xfa" onclick="switchView('xfa')">XFA Data</button>
+        <button id="btnRender" onclick="switchView('render')">Render ★</button>
+        <button id="btnAnnot" onclick="switchView('annot')">Annotations</button>
+        <button id="btnRaw" onclick="switchView('raw')">Raw Items</button>
+        <button id="btnOps" onclick="switchView('ops')">Op Dump</button>
+        <button id="btnRows" onclick="switchView('rows')">Rows</button>
+        <button id="btnXhist" onclick="switchView('xhist')">X Histogram</button>
+        Scale: <input type="number" id="renderScale" value="1.5" min="0.5" max="4" step="0.5" style="width:50px">
+        <span style="color:#444">|</span>
+        <label style="font-size:0.8rem;color:#888">Page:</label>
+        <input type="number" id="manualPage" min="1" value="1">
+        <button onclick="goToPage(parseInt(document.getElementById('manualPage').value))">Go</button>
+        <button onclick="prevPage()">◀</button>
+        <div id="pageLabel">—</div>
+        <button onclick="nextPage()">▶</button>
+      </div>
+      <div id="viewXfa" class="view active"></div>
+      <div id="viewRender" class="view"></div>
+      <div id="viewAnnot" class="view"></div>
+      <div id="viewRaw" class="view"></div>
+      <div id="viewOps" class="view"></div>
+      <div id="viewRows" class="view"></div>
+      <div id="viewXhist" class="view"></div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    // CID fonts (used by professional PDF generators) require CMap files for glyph→Unicode mapping.
+    // Without these URLs, PDF.js returns empty strings for CID-encoded text and fails to render.
+    const PDFJS_OPTS = {
+      cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+      cMapPacked: true,
+      standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/',
+    };
+
+    let pdfDoc = null;
+    let pdfBuffer = null;
+    let currentPage = 1;
+    let currentView = 'xfa';
+    let pageDestCache = {};
+    let xfaResult = null;  // cached XFA probe result
+    let currentRenderTask = null;
+
+    const dropzone = document.getElementById('dropzone');
+    const fileInput = document.getElementById('fileInput');
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('over'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
+    dropzone.addEventListener('drop', e => { e.preventDefault(); dropzone.classList.remove('over'); loadFile(e.dataTransfer.files[0]); });
+    fileInput.addEventListener('change', e => loadFile(e.target.files[0]));
+
+    async function loadFile(file) {
+      if (!file) return;
+      dropzone.textContent = `Loading…`;
+      pdfBuffer = await file.arrayBuffer();
+      pdfDoc = await pdfjsLib.getDocument({ data: pdfBuffer.slice(0), ...PDFJS_OPTS }).promise;
+      dropzone.textContent = `✓ ${file.name}`;
+      dropzone.classList.add('loaded');
+      document.getElementById('fileInfo').textContent = `${pdfDoc.numPages} pages · ${(file.size/1024/1024).toFixed(1)} MB`;
+      document.getElementById('manualPage').max = pdfDoc.numPages;
+      document.getElementById('toolbar').style.display = 'flex';
+
+      xfaResult = probeXfa();
+      renderXfaBadge(xfaResult);
+
+      await buildToc();
+      switchView('xfa');
+      renderXfaView(xfaResult);
+    }
+
+    // ── XFA Probe ──────────────────────────────────────────────────────────────
+
+    function probeXfa() {
+      const result = {
+        isPureXfa: false,
+        hasXfaMarker: false,
+        hasDatasetsMarker: false,
+        hasTemplateMarker: false,
+        xfaOffset: -1,
+        datasetsOffset: -1,
+        datasetsXml: null,      // extracted datasets XML text
+        datasetsDoc: null,      // parsed DOM
+        templateXml: null,
+        sampleFields: [],
+        error: null,
+      };
+
+      try {
+        // 1. PDF.js property (may not exist in all builds)
+        result.isPureXfa = !!(pdfDoc.isPureXfa);
+      } catch(e) {}
+
+      // 2. Scan raw bytes for XFA markers
+      // Use latin1 so byte values map 1:1 — OK for ASCII markers in binary PDF
+      const raw = new TextDecoder('latin1').decode(new Uint8Array(pdfBuffer));
+
+      result.hasXfaMarker = raw.includes('/XFA');
+      result.xfaOffset = raw.indexOf('/XFA');
+
+      // 3. Find datasets XML stream
+      // XFA datasets are stored as a stream starting with <xfa:datasets or <datasets
+      const dsMarkers = ['<xfa:datasets', '<xfa:data'];
+      for (const m of dsMarkers) {
+        const idx = raw.indexOf(m);
+        if (idx !== -1) {
+          result.hasDatasetsMarker = true;
+          result.datasetsOffset = idx;
+          // Extract until closing tag
+          const closeTag = m.startsWith('<xfa:datasets') ? '</xfa:datasets>' : '</xfa:data>';
+          const end = raw.indexOf(closeTag, idx);
+          if (end !== -1) {
+            result.datasetsXml = raw.slice(idx, end + closeTag.length);
+          } else {
+            // Grab first 50KB as sample
+            result.datasetsXml = raw.slice(idx, idx + 50000) + '\n…(truncated)';
+          }
+          break;
+        }
+      }
+
+      // 4. Find template XML
+      const tmplIdx = raw.indexOf('<xfa:template');
+      if (tmplIdx !== -1) {
+        result.hasTemplateMarker = true;
+        const end = raw.indexOf('</xfa:template>', tmplIdx);
+        result.templateXml = end !== -1
+          ? raw.slice(tmplIdx, end + 15)
+          : raw.slice(tmplIdx, tmplIdx + 20000) + '\n…(truncated)';
+      }
+
+      // 5. Parse datasets XML to extract sample data fields
+      if (result.datasetsXml) {
+        try {
+          const parser = new DOMParser();
+          // Clean common binary artifacts before parsing
+          const cleaned = result.datasetsXml.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+          result.datasetsDoc = parser.parseFromString(cleaned, 'text/xml');
+          if (!result.datasetsDoc.querySelector('parsererror')) {
+            // Walk first 200 leaf nodes to sample field names and values
+            const walker = document.createTreeWalker(result.datasetsDoc.documentElement, NodeFilter.SHOW_ELEMENT);
+            let node;
+            while ((node = walker.nextNode()) && result.sampleFields.length < 200) {
+              if (node.children.length === 0 && node.textContent.trim()) {
+                result.sampleFields.push({
+                  path: getXmlPath(node),
+                  name: node.localName,
+                  value: node.textContent.trim().slice(0, 200),
+                });
+              }
+            }
+          }
+        } catch(e) {
+          result.error = e.message;
+        }
+      }
+
+      return result;
+    }
+
+    function getXmlPath(node) {
+      const parts = [];
+      let n = node;
+      while (n && n.nodeType === 1 && n.localName !== 'datasets' && n.localName !== 'data') {
+        parts.unshift(n.localName);
+        n = n.parentNode;
+      }
+      return parts.slice(-4).join(' › ');  // last 4 levels
+    }
+
+    function renderXfaBadge(r) {
+      const badge = document.getElementById('xfaBadge');
+      badge.style.display = 'inline-block';
+      if (r.hasXfaMarker || r.isPureXfa) {
+        badge.innerHTML = '<span class="stat info">XFA detected</span>';
+        if (r.hasDatasetsMarker) badge.innerHTML += '<span class="stat ok">datasets XML found</span>';
+      } else {
+        badge.innerHTML = '<span class="stat warn">No XFA markers found</span>';
+      }
+    }
+
+    function renderXfaView(r) {
+      const container = document.getElementById('viewXfa');
+      let html = '<div style="max-width:900px">';
+
+      // Summary
+      html += '<h2 style="font-size:0.95rem;color:#ccc;margin-bottom:0.5rem">XFA Detection Results</h2>';
+      html += `<div style="margin-bottom:0.75rem">`;
+      html += `<span class="stat ${r.isPureXfa?'ok':''}">isPureXfa: ${r.isPureXfa}</span>`;
+      html += `<span class="stat ${r.hasXfaMarker?'ok':'warn'}">/XFA marker: ${r.hasXfaMarker} ${r.xfaOffset>=0?'@ offset '+r.xfaOffset:''}</span>`;
+      html += `<span class="stat ${r.hasDatasetsMarker?'ok':'warn'}">datasets XML: ${r.hasDatasetsMarker}</span>`;
+      html += `<span class="stat ${r.hasTemplateMarker?'ok':''}">template XML: ${r.hasTemplateMarker}</span>`;
+      html += '</div>';
+
+      if (!r.hasXfaMarker && !r.isPureXfa) {
+        html += `<div class="stat warn" style="display:block;padding:0.75rem;font-size:0.85rem">
+          ⚠ No XFA markers found in raw PDF bytes.<br>
+          The missing table data may use a different encoding — check the Raw Items view for unfiltered items,
+          and try page.getAnnotations() (not yet implemented here).
+        </div>`;
+        container.innerHTML = html + '</div>';
+        return;
+      }
+
+      // Datasets fields
+      if (r.sampleFields.length > 0) {
+        html += `<h2 style="font-size:0.95rem;color:#ccc;margin:1rem 0 0.5rem">XFA Datasets Fields (${r.sampleFields.length} leaf nodes sampled)</h2>`;
+        html += `<p style="color:#aaa;font-size:0.82rem">These are the actual data values stored in the XFA datasets XML. If this contains parts table data, we can parse it directly instead of extracting text from pages.</p>`;
+
+        // Group by top-level element name to see structure
+        const groups = {};
+        for (const f of r.sampleFields) {
+          const top = f.path.split(' › ')[0] || f.name;
+          if (!groups[top]) groups[top] = [];
+          groups[top].push(f);
+        }
+
+        for (const [groupName, fields] of Object.entries(groups).slice(0, 20)) {
+          html += `<div style="margin:0.5rem 0;border:1px solid #2a3a2a;border-radius:4px;padding:0.5rem">`;
+          html += `<div style="font-size:0.8rem;color:#4caf50;margin-bottom:0.3rem">${escapeHtml(groupName)}</div>`;
+          for (const f of fields.slice(0, 15)) {
+            html += `<div class="xfa-row"><span style="color:#888;font-size:0.72rem">${escapeHtml(f.path)}</span> = <span style="color:#e0e0e0">${escapeHtml(f.value)}</span></div>`;
+          }
+          if (fields.length > 15) html += `<div style="color:#555;font-size:0.75rem">… ${fields.length - 15} more fields</div>`;
+          html += '</div>';
+        }
+        if (Object.keys(groups).length > 20) {
+          html += `<div style="color:#555;font-size:0.8rem">… ${Object.keys(groups).length - 20} more groups</div>`;
+        }
+      } else if (r.hasDatasetsMarker) {
+        html += `<p class="stat warn">Datasets XML found but could not parse as DOM (may contain binary data inline). Showing raw XML below.</p>`;
+      }
+
+      if (r.error) {
+        html += `<div class="stat warn">Parse error: ${escapeHtml(r.error)}</div>`;
+      }
+
+      // Raw XML samples
+      if (r.datasetsXml) {
+        const displayXml = r.datasetsXml.slice(0, 8000);
+        html += `<h2 style="font-size:0.95rem;color:#ccc;margin:1rem 0 0.3rem">Raw XFA Datasets XML (first 8KB)</h2>`;
+        html += `<pre class="xml">${syntaxHighlightXml(escapeHtml(displayXml))}</pre>`;
+      }
+
+      if (r.templateXml) {
+        const displayTpl = r.templateXml.slice(0, 4000);
+        html += `<h2 style="font-size:0.95rem;color:#ccc;margin:1rem 0 0.3rem">XFA Template XML (first 4KB — layout, not data)</h2>`;
+        html += `<pre class="xml">${syntaxHighlightXml(escapeHtml(displayTpl))}</pre>`;
+      }
+
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    function syntaxHighlightXml(escaped) {
+      return escaped
+        .replace(/(&lt;\/?)([\w:.-]+)/g, '<span class="tag">$1$2</span>')
+        .replace(/([\w:.-]+=)(&quot;[^&]*&quot;)/g, '<span class="attr">$1</span><span class="val">$2</span>');
+    }
+
+    // ── TOC ───────────────────────────────────────────────────────────────────
+
+    async function resolveDestToPage(dest) {
+      if (!dest) return null;
+      try {
+        let ref;
+        if (typeof dest === 'string') {
+          const resolved = await pdfDoc.getDestination(dest);
+          ref = resolved && resolved[0];
+        } else if (Array.isArray(dest)) {
+          ref = dest[0];
+        }
+        if (!ref) return null;
+        const key = ref.num + 'R' + ref.gen;
+        if (pageDestCache[key] !== undefined) return pageDestCache[key];
+        const pageIndex = await pdfDoc.getPageIndex(ref);
+        pageDestCache[key] = pageIndex + 1;
+        return pageIndex + 1;
+      } catch { return null; }
+    }
+
+    async function buildToc() {
+      const outline = await pdfDoc.getOutline();
+      const container = document.getElementById('toc');
+      if (!outline || outline.length === 0) {
+        container.innerHTML = '<div style="color:#ff9800;font-size:0.8rem">No outline found</div>';
+        return;
+      }
+      container.innerHTML = '';
+      await renderTocLevel(outline, container, 0);
+    }
+
+    async function renderTocLevel(items, container, depth) {
+      for (const item of items) {
+        const pageNum = await resolveDestToPage(item.dest);
+        const div = document.createElement('div');
+        div.className = `toc-item indent-${Math.min(depth, 2)}`;
+        const titleMatch = item.title.match(/^(\d{3}-\d{3})/);
+        const numSpan = titleMatch ? `<span class="num">${titleMatch[1]}</span>` : '';
+        const titleText = titleMatch ? item.title.slice(titleMatch[0].length).replace(/^:\s*/, '') : item.title;
+        const pgSpan = pageNum ? `<span class="pg">p${pageNum}</span>` : '';
+        div.innerHTML = `${numSpan}<span class="title">${escapeHtml(titleText || item.title)}</span>${pgSpan}`;
+        if (pageNum) {
+          div.addEventListener('click', () => goToPage(pageNum, div));
+        } else {
+          div.style.opacity = '0.5';
+        }
+        container.appendChild(div);
+        if (item.items && item.items.length) await renderTocLevel(item.items, container, depth + 1);
+      }
+    }
+
+    // ── Page navigation ───────────────────────────────────────────────────────
+
+    async function goToPage(n, tocEl) {
+      currentPage = Math.max(1, Math.min(n, pdfDoc.numPages));
+      document.getElementById('manualPage').value = currentPage;
+      document.querySelectorAll('.toc-item.active').forEach(el => el.classList.remove('active'));
+      if (tocEl) tocEl.classList.add('active');
+      if (currentView !== 'xfa') await loadCurrentPage();
+    }
+
+    function prevPage() { if (currentPage > 1) goToPage(currentPage - 1); }
+    function nextPage() { if (currentPage < pdfDoc.numPages) goToPage(currentPage + 1); }
+
+    async function loadCurrentPage() {
+      if (!pdfDoc) return;
+      document.getElementById('pageLabel').textContent = `Page ${currentPage} / ${pdfDoc.numPages}`;
+      const page = await pdfDoc.getPage(currentPage);
+      const viewport = page.getViewport({ scale: 1 });
+      const content = await page.getTextContent();
+      // Include ALL items — don't filter empty strings, so we can see what's actually there
+      const allItems = content.items;
+      const nonEmptyItems = allItems.filter(it => it.str && it.str.trim());
+      const rows = groupIntoRows(nonEmptyItems, viewport.height);
+      renderPageViews(allItems, nonEmptyItems, rows, viewport);
+    }
+
+    function switchView(name) {
+      currentView = name;
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.getElementById('view' + name.charAt(0).toUpperCase() + name.slice(1)).classList.add('active');
+      document.querySelectorAll('#toolbar button[id^=btn]').forEach(b => b.classList.remove('active'));
+      const btn = document.getElementById('btn' + name.charAt(0).toUpperCase() + name.slice(1));
+      if (btn) btn.classList.add('active');
+      if (name === 'render') {
+        if (pdfDoc) renderPage();
+      } else if (name === 'annot') {
+        if (pdfDoc) loadAnnotations();
+      } else if (name === 'ops') {
+        if (pdfDoc) loadCurrentPageOps();
+      } else if (name !== 'xfa') {
+        if (pdfDoc) loadCurrentPage();
+      }
+    }
+
+    // ── Row grouping ──────────────────────────────────────────────────────────
+
+    function groupIntoRows(items, pageHeight, tolerance = 3) {
+      const rowMap = new Map();
+      for (const item of items) {
+        const y = Math.round(pageHeight - item.transform[5]);
+        let found = false;
+        for (const [ry] of rowMap) {
+          if (Math.abs(ry - y) <= tolerance) { rowMap.get(ry).push(item); found = true; break; }
+        }
+        if (!found) rowMap.set(y, [item]);
+      }
+      return Array.from(rowMap.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([y, its]) => ({ y, items: its.sort((a, b) => a.transform[4] - b.transform[4]) }));
+    }
+
+    // ── Page views ────────────────────────────────────────────────────────────
+
+    async function loadAnnotations() {
+      if (!pdfDoc) return;
+      const page = await pdfDoc.getPage(currentPage);
+      const viewport = page.getViewport({ scale: 1 });
+      const annotations = await page.getAnnotations({ intent: 'display' });
+      renderAnnotView(annotations, viewport);
+    }
+
+    function renderAnnotView(annotations, viewport) {
+      const container = document.getElementById('viewAnnot');
+      const widgets = annotations.filter(a => a.subtype === 'Widget');
+      const others = annotations.filter(a => a.subtype !== 'Widget');
+
+      let html = `<div style="font-size:0.78rem;color:#888;margin-bottom:0.75rem">
+        <span class="stat">${annotations.length} total annotations</span>
+        <span class="stat ${widgets.length > 0 ? 'ok' : 'warn'}">${widgets.length} Widget (form field)</span>
+        <span class="stat">${others.length} other</span>
+      </div>`;
+
+      if (widgets.length === 0 && annotations.length === 0) {
+        html += `<div class="stat warn" style="display:block;padding:0.75rem;font-size:0.85rem">
+          No annotations found on this page. The table content may be in a Form XObject or content stream
+          that PDF.js is not exposing via the standard APIs. See Op Dump for operator-level detail.
+        </div>`;
+        container.innerHTML = html;
+        return;
+      }
+
+      if (widgets.length > 0) {
+        // Check if field values are populated
+        const withValue = widgets.filter(w => w.fieldValue != null && String(w.fieldValue).trim() !== '');
+        const noValue = widgets.filter(w => !w.fieldValue || String(w.fieldValue).trim() === '');
+
+        html += `<div style="margin-bottom:0.75rem">
+          <span class="stat ${withValue.length > 0 ? 'ok' : 'warn'}">${withValue.length} with fieldValue</span>
+          <span class="stat ${noValue.length > 0 ? 'warn' : ''}">${noValue.length} empty fieldValue</span>
+        </div>`;
+
+        if (withValue.length > 0) {
+          html += `<p style="color:#4caf50;font-size:0.85rem">✓ Widget annotations have values — AcroForm is the data source. fieldValue contains parts data.</p>`;
+        } else {
+          html += `<p style="color:#ff9800;font-size:0.85rem">⚠ Widget annotations exist but all fieldValues are empty.
+            The visible text is likely in the annotation appearance stream (/AP /N), not in fieldValue.
+            The data may need to be extracted from those appearance streams or from the raw PDF AcroForm dictionary.</p>`;
+        }
+
+        // Group widgets by approximate y-position (row)
+        const rows = {};
+        for (const w of widgets) {
+          // rect is [x1, y1, x2, y2] in PDF coordinates (y from bottom)
+          const y = Math.round(viewport.height - w.rect[3]);  // flip y
+          const rowKey = Math.round(y / 5) * 5;  // bucket into 5pt rows
+          if (!rows[rowKey]) rows[rowKey] = [];
+          rows[rowKey].push(w);
+        }
+
+        html += `<h2 style="font-size:0.9rem;color:#ccc;margin:1rem 0 0.4rem">Widget Annotations by Row (sorted by y position)</h2>`;
+        html += `<table class="parts"><thead><tr>
+          <th>y</th><th>x</th><th>w×h</th><th>fieldName</th><th>fieldType</th><th>fieldValue</th><th>alternativeText</th>
+        </tr></thead><tbody>`;
+
+        const sortedRows = Object.entries(rows).sort((a, b) => +a[0] - +b[0]);
+        for (const [rowY, rowWidgets] of sortedRows) {
+          const sorted = rowWidgets.sort((a, b) => a.rect[0] - b.rect[0]);
+          for (const w of sorted) {
+            const x = w.rect[0].toFixed(0);
+            const y = (viewport.height - w.rect[3]).toFixed(0);
+            const ww = (w.rect[2] - w.rect[0]).toFixed(0);
+            const wh = (w.rect[3] - w.rect[1]).toFixed(0);
+            const val = w.fieldValue != null ? String(w.fieldValue) : '';
+            const hasVal = val.trim() !== '';
+            html += `<tr>
+              <td>${y}</td>
+              <td>${x}</td>
+              <td>${ww}×${wh}</td>
+              <td style="color:#aaa;font-size:0.72rem">${escapeHtml(w.fieldName || '')}</td>
+              <td style="color:#888">${escapeHtml(w.fieldType || '')}</td>
+              <td style="color:${hasVal ? '#4caf50' : '#555'}">${escapeHtml(val.slice(0, 60)) || '(empty)'}</td>
+              <td style="color:#666;font-size:0.72rem">${escapeHtml((w.alternativeText || '').slice(0, 40))}</td>
+            </tr>`;
+          }
+        }
+        html += '</tbody></table>';
+      }
+
+      if (others.length > 0) {
+        html += `<h2 style="font-size:0.9rem;color:#ccc;margin:1rem 0 0.4rem">Other Annotations (${others.length})</h2>`;
+        html += `<table class="parts"><thead><tr><th>subtype</th><th>rect</th><th>contents</th></tr></thead><tbody>`;
+        for (const a of others.slice(0, 30)) {
+          html += `<tr>
+            <td>${escapeHtml(a.subtype || '')}</td>
+            <td style="font-size:0.72rem">${a.rect?.map(v => v.toFixed(0)).join(',') || ''}</td>
+            <td>${escapeHtml((a.contents || a.fieldValue || '').toString().slice(0, 80))}</td>
+          </tr>`;
+        }
+        html += '</tbody></table>';
+      }
+
+      container.innerHTML = html;
+    }
+
+    async function loadCurrentPageOps() {
+      if (!pdfDoc) return;
+      const page = await pdfDoc.getPage(currentPage);
+      const opList = await page.getOperatorList();
+
+      // Dump operator frequency — don't depend on pdfjsLib.OPS which may not be exported
+      const freq = {};
+      for (const fn of opList.fnArray) {
+        freq[fn] = (freq[fn] || 0) + 1;
+      }
+
+      // Try to build a name map from pdfjsLib.OPS if available
+      const opsNames = {};
+      try {
+        if (pdfjsLib.OPS) {
+          for (const [name, val] of Object.entries(pdfjsLib.OPS)) {
+            opsNames[val] = name;
+          }
+        }
+      } catch(e) {}
+
+      const container = document.getElementById('viewOps');
+      const total = opList.fnArray.length;
+      let html = `<div style="font-size:0.78rem;color:#888;margin-bottom:0.75rem">
+        <span class="stat">${total} total operators in page content stream</span>
+        <span class="stat">${Object.keys(freq).length} distinct operator types</span>
+        ${Object.keys(opsNames).length === 0 ? '<span class="stat warn">pdfjsLib.OPS not available — op names shown as numbers</span>' : ''}
+      </div>
+      <p style="color:#aaa;font-size:0.82rem">
+        If no text operators (showText / showSpacedText) appear here, the page content stream has no text —
+        all visible text is in annotation appearance streams. Use the <b>Annotations</b> view instead.
+      </p>`;
+
+      html += `<table style="width:100%;border-collapse:collapse;font-size:0.78rem">
+        <thead><tr style="background:#252525"><th>op#</th><th>name</th><th>count</th><th>text op?</th></tr></thead><tbody>`;
+
+      // Known text op numbers (PDF.js 3.x defaults)
+      const TEXT_OP_NUMS = new Set([43, 44, 45, 46]); // showText, showSpacedText, nextLine variants
+
+      for (const [fn, count] of Object.entries(freq).sort((a, b) => b[1] - a[1])) {
+        const name = opsNames[fn] || '—';
+        const isText = TEXT_OP_NUMS.has(+fn) || name.toLowerCase().includes('text') || name.toLowerCase().includes('show');
+        html += `<tr style="border-bottom:1px solid #1a1a1a${isText ? ';background:#0a1a0a' : ''}">
+          <td style="color:#555">${fn}</td>
+          <td style="color:${isText ? '#4caf50' : '#aaa'}">${escapeHtml(name)}</td>
+          <td>${count}</td>
+          <td>${isText ? '✓' : ''}</td>
+        </tr>`;
+      }
+      if (total === 0) {
+        html += `<tr><td colspan="4" style="color:#ff9800;padding:0.5rem">No operators found — page content stream may be empty</td></tr>`;
+      }
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    async function renderPage() {
+      // Cancel any in-progress render before starting a new one
+      if (currentRenderTask) {
+        currentRenderTask.cancel();
+        currentRenderTask = null;
+      }
+
+      const container = document.getElementById('viewRender');
+      container.innerHTML = '<span style="color:#888">Rendering…</span>';
+      const requestedScale = parseFloat(document.getElementById('renderScale').value) || 1.5;
+      const page = await pdfDoc.getPage(currentPage);
+      const baseViewport = page.getViewport({ scale: 1 });
+
+      // Auto-reduce scale if it would exceed safe canvas dimensions (~16k px per side)
+      const MAX_CANVAS_PX = 16384;
+      const safeScale = Math.min(
+        requestedScale,
+        MAX_CANVAS_PX / baseViewport.width,
+        MAX_CANVAS_PX / baseViewport.height
+      );
+      const scale = safeScale;
+      const viewport = page.getViewport({ scale });
+
+      const w = Math.round(viewport.width);
+      const h = Math.round(viewport.height);
+
+      if (!w || !h || !isFinite(w) || !isFinite(h) || w <= 0 || h <= 0) {
+        container.innerHTML = `<div class="stat warn">Invalid page dimensions: ${w}×${h}px (page size ${baseViewport.width.toFixed(0)}×${baseViewport.height.toFixed(0)} pts at scale ${scale}×)</div>`;
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      canvas.style.maxWidth = '100%';
+      canvas.style.display = 'block';
+      canvas.style.border = '1px solid #333';
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        container.innerHTML = `<div class="stat warn">Could not get 2D canvas context for ${w}×${h}px canvas — browser may have hit its canvas memory limit.</div>`;
+        return;
+      }
+
+      try {
+        currentRenderTask = page.render({ canvasContext: ctx, viewport });
+        await currentRenderTask.promise;
+        currentRenderTask = null;
+      } catch (err) {
+        currentRenderTask = null;
+        if (err?.name === 'RenderingCancelledException') return;
+        const dimInfo = `Canvas: ${w}×${h}px at ${scale.toFixed(2)}×`;
+        const scaleNote = scale < requestedScale ? ` (auto-reduced from ${requestedScale}×)` : '';
+        const xfaNote = xfaResult?.isPureXfa ? ' This is a pure XFA PDF — PDF.js page rendering may not be supported.' : '';
+        container.innerHTML = `<div class="stat warn">Render error: ${escapeHtml(String(err))}</div>
+          <p style="color:#aaa;font-size:0.85rem">${dimInfo}${scaleNote}.${xfaNote}</p>`;
+        return;
+      }
+
+      // Also get text items to show overlay of what PDF.js extracted as text
+      const content = await page.getTextContent();
+      const textItems = content.items.filter(it => it.str && it.str.trim());
+
+      container.innerHTML = `<div style="font-size:0.78rem;color:#888;margin-bottom:0.5rem">
+        Page ${currentPage} at ${scale}× scale (${viewport.width.toFixed(0)}×${viewport.height.toFixed(0)}px rendered)
+        — <span style="color:#4caf50">${textItems.length} text items extractable by PDF.js</span>
+        — items with green outline are the text PDF.js can read; everything else is image pixels
+      </div>`;
+
+      // Wrap canvas in a positioned container and overlay text item rectangles
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position:relative;display:inline-block';
+      wrap.appendChild(canvas);
+
+      for (const it of textItems) {
+        const x = it.transform[4] * scale;
+        const y = (viewport.height / scale - it.transform[5]) * scale;
+        const w = (it.width || 40) * scale;
+        const h = (it.height || 10) * scale;
+        const div = document.createElement('div');
+        div.title = it.str;
+        div.style.cssText = `position:absolute;left:${x}px;top:${y - h}px;width:${w}px;height:${h}px;
+          outline:1px solid rgba(76,175,80,0.8);pointer-events:none;`;
+        wrap.appendChild(div);
+      }
+
+      container.appendChild(wrap);
+    }
+
+    function renderPageViews(allItems, items, rows, viewport) {
+      renderRaw(allItems, items, viewport);
+      renderRows(rows, viewport);
+      renderXhist(items, viewport);
+    }
+
+    function renderRaw(allItems, items, viewport) {
+      const container = document.getElementById('viewRaw');
+      const emptyCount = allItems.length - items.length;
+      let html = `<div style="font-size:0.78rem;color:#888;margin-bottom:0.5rem">
+        <span class="stat">${allItems.length} total items</span>
+        <span class="stat">${items.length} non-empty</span>
+        <span class="stat ${emptyCount>0?'info':''}">${emptyCount} empty-string items</span>
+        <span class="stat">page ${viewport.width.toFixed(0)}×${viewport.height.toFixed(0)} pts</span>
+      </div>`;
+      if (emptyCount > 0) {
+        html += `<div class="stat info" style="display:block;padding:0.4rem;margin-bottom:0.5rem;font-size:0.8rem">
+          ℹ ${emptyCount} empty-string text items found. These may be invisible data glyphs that encode table content —
+          check their x/y positions and font info below.
+        </div>`;
+      }
+      html += '<table style="width:100%;border-collapse:collapse;font-size:0.75rem">';
+      html += '<thead><tr style="background:#252525"><th>text</th><th>x</th><th>y(flip)</th><th>w</th><th>font-sz</th><th>empty?</th></tr></thead><tbody>';
+      for (const it of allItems.slice(0, 500)) {
+        const x = it.transform[4].toFixed(1);
+        const y = (viewport.height - it.transform[5]).toFixed(1);
+        const w = (it.width || 0).toFixed(1);
+        const fs = (it.transform[0] || 0).toFixed(1);
+        const isEmpty = !it.str || !it.str.trim();
+        const displayStr = isEmpty ? '(empty)' : it.str;
+        const rowStyle = isEmpty ? 'color:#444' : '';
+        html += `<tr style="border-bottom:1px solid #1e1e1e;${rowStyle}">
+          <td><span class="item-chip">${escapeHtml(displayStr)}</span></td>
+          <td>${x}</td><td>${y}</td><td>${w}</td><td>${fs}</td>
+          <td>${isEmpty ? '●' : ''}</td>
+        </tr>`;
+      }
+      if (allItems.length > 500) html += `<tr><td colspan="6" style="color:#555;padding:0.3rem">… ${allItems.length - 500} more items</td></tr>`;
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    function renderRows(rows, viewport) {
+      const container = document.getElementById('viewRows');
+      let html = `<div style="font-size:0.78rem;color:#888;margin-bottom:0.5rem">
+        <span class="stat">${rows.length} rows</span>
+      </div>`;
+      for (const row of rows) {
+        html += `<div class="row-group"><div class="y-label">y≈${row.y} — ${row.items.length} items</div>`;
+        for (const it of row.items) {
+          html += `<span class="item-chip" title="x=${it.transform[4].toFixed(1)}">${escapeHtml(it.str || '(empty)')}</span>`;
+        }
+        html += '</div>';
+      }
+      container.innerHTML = html;
+    }
+
+    function renderXhist(items, viewport) {
+      const container = document.getElementById('viewXhist');
+      const buckets = new Array(100).fill(0);
+      for (const it of items) {
+        const pct = Math.floor((it.transform[4] / viewport.width) * 100);
+        if (pct >= 0 && pct < 100) buckets[pct]++;
+      }
+      const max = Math.max(...buckets, 1);
+      const threshold = max * 0.15;
+      const peaks = [];
+      for (let i = 1; i < 99; i++) {
+        if (buckets[i] >= threshold && buckets[i] >= buckets[i-1] && buckets[i] >= buckets[i+1]) {
+          peaks.push({ pct: i, pt: (i / 100 * viewport.width).toFixed(0), count: buckets[i] });
+        }
+      }
+      let html = `<div style="font-size:0.78rem;color:#888;margin-bottom:0.5rem">X distribution (${items.length} items, page width ${viewport.width.toFixed(0)} pts)</div>`;
+      html += '<div id="xhist">';
+      for (let i = 0; i < 100; i++) {
+        const h = Math.round((buckets[i] / max) * 76);
+        html += `<div title="x=${i}% (${(i/100*viewport.width).toFixed(0)}pt) n=${buckets[i]}" style="height:${h}px"></div>`;
+      }
+      html += '</div><div class="xlabels">';
+      for (let i = 0; i <= 100; i += 10) html += `<span>${i}%<br>${(i/100*viewport.width).toFixed(0)}pt</span>`;
+      html += '</div><div style="margin-top:0.5rem">';
+      for (const p of peaks) html += `<span class="stat ok">${p.pct}% = ${p.pt}pt (${p.count} items)</span>`;
+      if (!peaks.length) html += `<span class="stat warn">No clear peaks</span>`;
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+  </script>
+</body>
+</html>

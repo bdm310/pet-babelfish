@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Viewer — pet-babelfish</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: monospace; background: #1a1a1a; color: #e0e0e0;
+           display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    header { display: flex; gap: 0.75rem; align-items: center; padding: 0.6rem 1rem;
+             border-bottom: 1px solid #333; flex-shrink: 0; flex-wrap: wrap; }
+    header h1 { font-size: 0.95rem; color: #fff; white-space: nowrap; }
+    header a  { color: #4caf50; font-size: 0.8rem; text-decoration: none; white-space: nowrap; }
+    select, input[type=search] {
+      background: #2a2a2a; color: #e0e0e0; border: 1px solid #555;
+      padding: 0.3rem 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.82rem;
+    }
+    select { cursor: pointer; }
+    input[type=search] { flex: 1; min-width: 180px; max-width: 380px; }
+    input[type=search]:focus { outline: none; border-color: #4caf50; }
+    #statusBar { font-size: 0.75rem; color: #666; margin-left: auto; white-space: nowrap; }
+
+    /* ── 3-panel layout ──────────────────────────────────────────── */
+    .layout { display: grid; grid-template-columns: 220px 1fr 42%; flex: 1; overflow: hidden; min-height: 0; }
+
+    /* ── Sidebar ─────────────────────────────────────────────────── */
+    .sidebar { border-right: 1px solid #333; overflow-y: auto; font-size: 0.78rem; }
+    .mg-header { padding: 0.4rem 0.75rem; background: #222; color: #888;
+                 cursor: pointer; user-select: none; display: flex; justify-content: space-between;
+                 align-items: center; position: sticky; top: 0; z-index: 1; }
+    .mg-header:hover { background: #2a2a2a; color: #aaa; }
+    .mg-header .arrow { font-size: 0.65rem; transition: transform 0.15s; }
+    .mg-header.open .arrow { transform: rotate(90deg); }
+    .sec-item { padding: 0.25rem 0.75rem 0.25rem 1.2rem; cursor: pointer;
+                color: #aaa; display: flex; justify-content: space-between; gap: 0.4rem; }
+    .sec-item:hover { background: #252525; color: #e0e0e0; }
+    .sec-item.active { background: #1a3a1a; color: #4caf50; }
+    .sec-item .sec-num { flex-shrink: 0; }
+    .sec-item .sec-title { color: #666; font-size: 0.72rem; overflow: hidden;
+                           text-overflow: ellipsis; white-space: nowrap; }
+    .sidebar-placeholder { padding: 1rem; color: #555; font-size: 0.8rem; }
+
+    /* ── Parts panel ─────────────────────────────────────────────── */
+    .parts-panel { display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid #333; }
+    .parts-header { padding: 0.5rem 0.75rem; border-bottom: 1px solid #333; font-size: 0.82rem;
+                    color: #888; flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem; }
+    .parts-header .section-id { color: #4caf50; font-weight: bold; }
+    .parts-header .count { color: #555; font-size: 0.72rem; }
+    .parts-scroll { flex: 1; overflow-y: auto; }
+    table.parts { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    table.parts th { background: #222; color: #777; padding: 0.3rem 0.5rem; text-align: left;
+                     border-bottom: 1px solid #333; position: sticky; top: 0; z-index: 1;
+                     font-weight: normal; white-space: nowrap; }
+    table.parts td { padding: 0.25rem 0.5rem; border-bottom: 1px solid #1e1e1e;
+                     vertical-align: top; }
+    table.parts tr:hover td { background: #202020; }
+    .col-pos   { width: 2.5rem; color: #4caf50; text-align: center; }
+    .col-pn    { white-space: nowrap; color: #79c0ff; }
+    .col-desc  { }
+    .col-qty   { width: 2.5rem; text-align: center; color: #aaa; }
+    .col-rem   { color: #888; font-size: 0.72rem; }
+    .appl-toggle { font-size: 0.68rem; color: #555; cursor: pointer; border: none;
+                   background: none; padding: 0; font-family: monospace; }
+    .appl-toggle:hover { color: #888; }
+.parts-placeholder { padding: 2rem; color: #555; font-size: 0.85rem; text-align: center; }
+
+    /* Search results */
+    .search-result-row td { border-bottom: 1px solid #1e1e1e; padding: 0.25rem 0.5rem; vertical-align: top; }
+    .search-result-row:hover td { background: #202020; }
+    .sec-badge { display: inline-block; background: #1a2a1a; border: 1px solid #2a3a2a;
+                 border-radius: 3px; padding: 0 0.3rem; font-size: 0.68rem; color: #4caf50; }
+
+    /* ── Diagram panel ───────────────────────────────────────────── */
+    .diagram-panel { display: flex; flex-direction: column; overflow: hidden; }
+    .diagram-header { padding: 0.5rem 0.75rem; border-bottom: 1px solid #333; font-size: 0.82rem;
+                      color: #888; flex-shrink: 0; }
+    .diagram-scroll { flex: 1; overflow: auto; display: flex; align-items: flex-start;
+                      justify-content: center; background: #111; padding: 0.5rem; }
+    .diagram-scroll img { max-width: 100%; display: block; }
+    .diagram-placeholder { color: #444; font-size: 0.85rem; margin: auto; }
+
+    /* Loading spinner */
+    .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid #333;
+               border-top-color: #4caf50; border-radius: 50%; animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body x-data="viewerApp()" x-init="init()">
+
+  <header>
+    <h1>pet-babelfish</h1>
+    <a href="index.html">← home</a>
+    <select x-model="catalogId" @change="loadCatalog()">
+      <option value="">— select catalog —</option>
+      <template x-for="c in catalogs" :key="c.id">
+        <option :value="c.id" x-text="c.label"></option>
+      </template>
+    </select>
+    <input type="search" placeholder="Search part number or description…"
+           x-model="query"
+           @input.debounce.300ms="search()"
+           @keydown.escape="clearSearch()"
+           :disabled="!db">
+    <span id="statusBar" x-text="status"></span>
+  </header>
+
+  <div class="layout">
+
+    <!-- ── Sidebar ─────────────────────────────────────────────── -->
+    <div class="sidebar">
+      <template x-if="!db && !loading">
+        <div class="sidebar-placeholder">Load a catalog to browse sections.</div>
+      </template>
+      <template x-if="loading">
+        <div class="sidebar-placeholder"><span class="spinner"></span> Loading…</div>
+      </template>
+      <template x-for="mg in mainGroups" :key="mg.id">
+        <div>
+          <div class="mg-header" :class="{open: mg.open}" @click="mg.open = !mg.open">
+            <span x-text="mg.title || ('Group ' + mg.number)"></span>
+            <span class="arrow">▶</span>
+          </div>
+          <template x-if="mg.open">
+            <div>
+              <template x-for="sec in mg.sections" :key="sec.id">
+                <div class="sec-item" :class="{active: currentSection && sec.id === currentSection.id}"
+                     @click="selectSection(sec, mg)">
+                  <span class="sec-num" x-text="sec.number"></span>
+                  <span class="sec-title" x-text="sec.title"></span>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+
+    <!-- ── Parts panel ─────────────────────────────────────────── -->
+    <div class="parts-panel">
+      <div class="parts-header">
+        <template x-if="searchMode">
+          <span>
+            Search: <strong x-text="query"></strong>
+            <span class="count" x-text="searchResults.length + ' results'"></span>
+            <button style="background:none;border:none;color:#666;cursor:pointer;font-family:monospace;margin-left:0.5rem"
+                    @click="clearSearch()">✕ clear</button>
+          </span>
+        </template>
+        <template x-if="!searchMode && currentSection">
+          <span>
+            <span class="section-id" x-text="currentSection.number"></span>
+            <span x-text="currentSection.title ? ' — ' + currentSection.title : ''"></span>
+            <span class="count" x-text="parts.length + ' parts'"></span>
+          </span>
+        </template>
+        <template x-if="!searchMode && !currentSection">
+          <span style="color:#555">Select a section</span>
+        </template>
+      </div>
+
+      <div class="parts-scroll">
+        <!-- Search results table -->
+        <template x-if="searchMode">
+          <table class="parts">
+            <thead>
+              <tr>
+                <th class="col-pos">Pos</th>
+                <th>Section</th>
+                <th class="col-pn">Part Number</th>
+                <th class="col-desc">Description</th>
+                <th class="col-qty">Qty</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-if="searchResults.length === 0">
+                <tr><td colspan="5" class="parts-placeholder">No results.</td></tr>
+              </template>
+              <template x-for="(p, i) in searchResults" :key="i">
+                <tr class="search-result-row" @click="jumpToSection(p)" style="cursor:pointer">
+                  <td class="col-pos" x-text="p.position"></td>
+                  <td><span class="sec-badge" x-text="p.section_number"></span></td>
+                  <td class="col-pn" x-text="p.part_number"></td>
+                  <td class="col-desc" x-text="p.description"></td>
+                  <td class="col-qty" x-text="p.quantity"></td>
+                </tr>
+              </template>
+              <template x-if="searchResults.length === 200">
+                <tr><td colspan="5" style="padding:0.4rem 0.5rem;color:#555;font-size:0.72rem">
+                  Showing first 200 results — refine your search.
+                </td></tr>
+              </template>
+            </tbody>
+          </table>
+        </template>
+
+        <!-- Section parts table -->
+        <template x-if="!searchMode">
+          <template x-if="parts.length > 0">
+            <table class="parts">
+              <thead>
+                <tr>
+                  <th class="col-pos">Pos</th>
+                  <th class="col-pn">Part Number</th>
+                  <th class="col-desc">Description</th>
+                  <th class="col-qty">Qty</th>
+                  <th class="col-rem">Remark</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="p in parts" :key="p._rowid">
+                  <tr>
+                    <td class="col-pos" x-text="p.position"></td>
+                    <td class="col-pn"  x-text="p.part_number"></td>
+                    <td class="col-desc">
+                      <div x-text="p.description"></div>
+                      <div x-show="p.showAppl"
+                           x-text="p.applicability"
+                           style="margin-top:0.3rem;color:#666;font-size:0.72rem;white-space:pre-wrap;line-height:1.5"></div>
+                    </td>
+                    <td class="col-qty" x-text="p.quantity"></td>
+                    <td class="col-rem">
+                      <span x-text="p.remarks"></span>
+                      <template x-if="p.applicability">
+                        <button class="appl-toggle"
+                                @click="p.showAppl = !p.showAppl"
+                                x-text="p.showAppl ? '▲ appl.' : '▼ appl.'">
+                        </button>
+                      </template>
+                    </td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </template>
+          <template x-if="parts.length === 0 && currentSection">
+            <div class="parts-placeholder">No parts extracted for this section.</div>
+          </template>
+          <template x-if="!currentSection">
+            <div class="parts-placeholder">Select a section from the sidebar.</div>
+          </template>
+        </template>
+      </div>
+    </div>
+
+    <!-- ── Diagram panel ────────────────────────────────────────── -->
+    <div class="diagram-panel">
+      <div class="diagram-header"
+           x-text="currentSection ? ('Diagram — ' + currentSection.number) : 'Diagram'">
+      </div>
+      <div class="diagram-scroll">
+        <template x-if="diagramUrl">
+          <img :src="diagramUrl" alt="Parts diagram">
+        </template>
+        <template x-if="!diagramUrl">
+          <span class="diagram-placeholder">No diagram</span>
+        </template>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+  <script>
+    const SQLJS_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
+
+    function viewerApp() {
+      return {
+        catalogs:       [],
+        catalogId:      '',
+        db:             null,
+        SQL:            null,
+        mainGroups:     [],
+        currentSection: null,
+        currentMg:      null,
+        parts:          [],
+        diagramUrl:     null,
+        query:          '',
+        searchMode:     false,
+        searchResults:  [],
+        loading:        false,
+        status:         '',
+
+        // ── Init ────────────────────────────────────────────────────
+
+        async init() {
+          this.status = 'Loading sql.js…';
+          this.SQL = await initSqlJs({ locateFile: () => SQLJS_WASM });
+          this.status = '';
+          await this.listCatalogs();
+
+          const params = new URLSearchParams(location.search);
+          const cid = params.get('catalog');
+          if (cid) {
+            this.catalogId = cid;
+            await this.loadCatalog();
+          }
+        },
+
+        // ── Catalog list ─────────────────────────────────────────────
+
+        async listCatalogs() {
+          const root = await navigator.storage.getDirectory();
+          const found = [];
+          for await (const [name, handle] of root.entries()) {
+            if (handle.kind !== 'directory') continue;
+            try {
+              await handle.getFileHandle('catalog.sqlite');
+              found.push({ id: name, label: name });
+            } catch { /* not a catalog dir */ }
+          }
+          this.catalogs = found;
+        },
+
+        // ── Load catalog ─────────────────────────────────────────────
+
+        async loadCatalog() {
+          if (!this.catalogId) return;
+          this.loading = true;
+          this.status  = 'Opening database…';
+          this.mainGroups     = [];
+          this.currentSection = null;
+          this.parts          = [];
+          this._setDiagram(null);
+
+          try {
+            const root = await navigator.storage.getDirectory();
+            const dir  = await root.getDirectoryHandle(this.catalogId);
+            const fh   = await dir.getFileHandle('catalog.sqlite');
+            const buf  = await (await fh.getFile()).arrayBuffer();
+            this.db    = new this.SQL.Database(new Uint8Array(buf));
+
+            // Update catalog label with model name from DB
+            const cat = this._one('SELECT model FROM catalog WHERE id=?', [this.catalogId]);
+            if (cat) {
+              const label = cat[0] || this.catalogId;
+              this.catalogs = this.catalogs.map(c =>
+                c.id === this.catalogId ? { ...c, label } : c
+              );
+            }
+
+            this._buildToc();
+            this.status = `${this.mainGroups.length} groups, ${this._scalar('SELECT COUNT(*) FROM section')} sections`;
+          } catch (e) {
+            this.status = 'Error: ' + e.message;
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        // ── TOC ──────────────────────────────────────────────────────
+
+        _buildToc() {
+          const mgs = this._query(
+            'SELECT id, number, title FROM main_group WHERE catalog_id=? ORDER BY CAST(number AS INTEGER)',
+            [this.catalogId]
+          );
+          this.mainGroups = mgs.map(([id, number, title]) => {
+            const sections = this._query(
+              'SELECT id, number, title, diagram_image FROM section WHERE main_group_id=? ORDER BY number',
+              [id]
+            ).map(([sid, snum, stitle, dimg]) => ({
+              id: sid, number: snum, title: stitle, diagram_image: dimg,
+            }));
+            return { id, number, title, open: false, sections };
+          });
+        },
+
+        // ── Section selection ────────────────────────────────────────
+
+        async selectSection(sec, mg) {
+          this.currentSection = sec;
+          this.currentMg      = mg;
+          this.searchMode     = false;
+
+          // Load parts
+          const rows = this._query(
+            `SELECT rowid, position, part_number, description, quantity, remarks, applicability
+             FROM part WHERE section_id=? ORDER BY rowid`,
+            [sec.id]
+          );
+          this.parts = rows.map(([rowid, position, part_number, description, quantity, remarks, applicability]) => ({
+            _rowid: rowid, position, part_number, description, quantity, remarks,
+            applicability: applicability || '',
+            showAppl: false,
+          }));
+
+          // Load diagram
+          this._setDiagram(null);
+          if (sec.diagram_image) {
+            try {
+              const url = await this._opfsUrl(sec.diagram_image);
+              this._setDiagram(url);
+            } catch (e) {
+              console.warn('Diagram unavailable:', sec.diagram_image);
+            }
+          }
+        },
+
+        // ── Search ───────────────────────────────────────────────────
+
+        search() {
+          const q = this.query.trim();
+          if (!q || !this.db) { this.searchMode = false; return; }
+          this.searchMode = true;
+
+          // Try FTS4 first, fall back to LIKE
+          try {
+            this.searchResults = this._query(
+              `SELECT p.position, p.part_number, p.description, p.quantity, p.remarks,
+                      s.number, p.section_id
+               FROM part p
+               JOIN part_fts ON part_fts.docid = p.id
+               JOIN section s ON p.section_id = s.id
+               WHERE part_fts MATCH ? AND p.catalog_id = ?
+               LIMIT 200`,
+              [q, this.catalogId]
+            ).map(([position, part_number, description, quantity, remarks, section_number, section_id]) => ({
+              position, part_number, description, quantity, remarks, section_number, section_id,
+            }));
+          } catch {
+            // FTS unavailable — fall back to LIKE
+            this.searchResults = this._query(
+              `SELECT p.position, p.part_number, p.description, p.quantity, p.remarks,
+                      s.number, p.section_id
+               FROM part p
+               JOIN section s ON p.section_id = s.id
+               WHERE p.catalog_id=? AND (p.part_number LIKE ? OR p.description LIKE ?)
+               LIMIT 200`,
+              [this.catalogId, `%${q}%`, `%${q}%`]
+            ).map(([position, part_number, description, quantity, remarks, section_number, section_id]) => ({
+              position, part_number, description, quantity, remarks, section_number, section_id,
+            }));
+          }
+        },
+
+        clearSearch() {
+          this.query        = '';
+          this.searchMode   = false;
+          this.searchResults = [];
+        },
+
+        async jumpToSection(result) {
+          // Find and open the section in the sidebar
+          for (const mg of this.mainGroups) {
+            const sec = mg.sections.find(s => s.id === result.section_id);
+            if (sec) {
+              mg.open = true;
+              await this.selectSection(sec, mg);
+              this.clearSearch();
+              return;
+            }
+          }
+        },
+
+        // ── OPFS helpers ─────────────────────────────────────────────
+
+        async _opfsUrl(path) {
+          const parts = path.split('/');
+          let handle  = await navigator.storage.getDirectory();
+          for (const seg of parts.slice(0, -1)) handle = await handle.getDirectoryHandle(seg);
+          const file = await (await handle.getFileHandle(parts.at(-1))).getFile();
+          return URL.createObjectURL(file);
+        },
+
+        _setDiagram(url) {
+          if (this.diagramUrl) URL.revokeObjectURL(this.diagramUrl);
+          this.diagramUrl = url;
+        },
+
+        // ── SQL helpers ───────────────────────────────────────────────
+
+        _query(sql, params = []) {
+          const result = this.db.exec(sql, params);
+          return result[0]?.values ?? [];
+        },
+        _one(sql, params = []) {
+          return this._query(sql, params)[0] ?? null;
+        },
+        _scalar(sql, params = []) {
+          return this._one(sql, params)?.[0] ?? null;
+        },
+      };
+    }
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.13.3/cdn.min.js" defer></script>
+</body>
+</html>
