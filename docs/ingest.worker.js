@@ -133,18 +133,28 @@ async function ingest(buffer, catalogId) {
     );
 
     // Collect parts across all continuation pages for this section.
-    // extractParts returns [] for non-parts-list pages (diagram pages have no column header),
-    // so the loop naturally stops at the next diagram page without special detection.
+    // extractParts returns { parts:[], titleRow:null } for non-parts-list pages
+    // (diagram pages have no column header), so the loop naturally stops at the
+    // next diagram page without special detection.
     for (let p = firstPartsPage; p < nextDiagramPage; p++) {
-      let pageParts = [];
+      let result = { parts: [], titleRow: null };
       try {
-        pageParts = await extractParts(pdf, p);
+        result = await extractParts(pdf, p);
       } catch (e) {
         post('status', { message: `Parts extraction skipped p${p} (${sec.sectionNum}): ${e.message}` });
       }
-      if (!pageParts.length) break;
+      if (!result.parts.length) break;
 
-      for (const part of pageParts) {
+      // On the first parts page, persist the diagram title block to the section row.
+      if (p === firstPartsPage && result.titleRow) {
+        const tr = result.titleRow;
+        db.run(
+          'UPDATE section SET title=?, title_remark=?, title_model=? WHERE id=?',
+          [tr.description || sec.sectionTitle, tr.remark || null, tr.model || null, secId]
+        );
+      }
+
+      for (const part of result.parts) {
         partStmt.run([
           secId, catalogId, part.pos, part.partNumber, part.description,
           part.qty, part.remark, part.applicability, JSON.stringify(part.rawColumns),
@@ -220,7 +230,7 @@ async function resolveDestPage(dest, pdf) {
 // ── Parts extraction ──────────────────────────────────────────────────────────
 
 async function extractParts(pdf, pageNum) {
-  if (pageNum < 1 || pageNum > pdf.numPages) return [];
+  if (pageNum < 1 || pageNum > pdf.numPages) return { parts: [], titleRow: null };
 
   const page    = await pdf.getPage(pageNum);
   const vp      = page.getViewport({ scale: 1 });
@@ -230,9 +240,16 @@ async function extractParts(pdf, pageNum) {
   const items = content.items.filter(it => it.str?.trim());
   const rows  = groupIntoRows(items, vp.height);
 
-  let colOrigins = null;
-  const parts    = [];
-  let current    = null;
+  let colOrigins  = null;
+  const parts     = [];
+  let current     = null;
+  let seenPart    = false;
+  // Rows before the first part row that have no Pos/Part Number — the diagram title block.
+  // Multiple description, remark, and model lines are each collected separately so they can
+  // be joined independently.
+  const titleDescLines   = [];
+  const titleRemarkLines = [];
+  const titleModelLines  = [];
 
   function flush() {
     if (current?.partNumber) parts.push(current);
@@ -260,6 +277,7 @@ async function extractParts(pdf, pageNum) {
     // Part row — checked FIRST because part rows often contain "PR:" codes in
     // the Model column, which would otherwise trigger the applicability heuristic.
     if (/^\d{1,3}$/.test(texts[0]) && row.items.length >= 5) {
+      seenPart = true;
       flush();
       const cols = assignColumns(row.items, colOrigins);
       current = {
@@ -292,11 +310,37 @@ async function extractParts(pdf, pageNum) {
       continue;
     }
 
+    // Diagram title block: rows before the first part that have no Pos/Part Number.
+    // Multiple description, remark, and model lines each get accumulated separately.
+    if (!seenPart) {
+      const cols = assignColumns(row.items, colOrigins);
+      const pos  = joinCol(cols['Pos']);
+      const pn   = joinCol(cols['Part Number']);
+      const desc = joinCol(cols['Description']);
+      const rem  = joinCol(cols['Remark']);
+      const mod  = joinCol(cols['Model']);
+      if (!pos && !pn && (desc || rem || mod)) {
+        if (desc) titleDescLines.push(desc);
+        if (rem)  titleRemarkLines.push(rem);
+        if (mod)  titleModelLines.push(mod);
+        continue;
+      }
+    }
+
     // Group headers, notes, attention blocks — skip
   }
 
   flush();
-  return parts;
+
+  const titleRow = (titleDescLines.length || titleRemarkLines.length || titleModelLines.length)
+    ? {
+        description: titleDescLines.join(' '),
+        remark:      titleRemarkLines.join(' '),
+        model:       [...new Set(titleModelLines)].join(' '),
+      }
+    : null;
+
+  return { parts, titleRow };
 }
 
 function isApplicabilityRow(texts) {
@@ -384,7 +428,8 @@ function createSchema(db) {
     );
     CREATE TABLE IF NOT EXISTS section (
       id INTEGER PRIMARY KEY, main_group_id INTEGER, catalog_id TEXT,
-      number TEXT, title TEXT, parts_page INTEGER, diagram_page INTEGER, diagram_image TEXT
+      number TEXT, title TEXT, parts_page INTEGER, diagram_page INTEGER, diagram_image TEXT,
+      title_remark TEXT, title_model TEXT
     );
     CREATE TABLE IF NOT EXISTS part (
       id INTEGER PRIMARY KEY, section_id INTEGER, catalog_id TEXT,

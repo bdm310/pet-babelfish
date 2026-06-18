@@ -152,6 +152,10 @@
           <span>
             <span class="section-id" x-text="currentSection.number"></span>
             <span x-text="currentSection.title ? ' — ' + currentSection.title : ''"></span>
+            <span x-text="currentSection.title_remark ? ' · ' + currentSection.title_remark : ''"
+                  style="color:#666"></span>
+            <span x-text="currentSection.title_model ? ' [' + currentSection.title_model + ']' : ''"
+                  style="color:#555;font-size:0.72rem"></span>
             <span class="count" x-text="parts.length + ' parts'"></span>
           </span>
         </template>
@@ -247,7 +251,9 @@
     <!-- ── Diagram panel ────────────────────────────────────────── -->
     <div class="diagram-panel">
       <div class="diagram-header"
-           x-text="currentSection ? ('Diagram — ' + currentSection.number) : 'Diagram'">
+           x-text="currentSection
+             ? 'Diagram — ' + currentSection.number + (currentSection.title ? ' ' + currentSection.title : '')
+             : 'Diagram'">
       </div>
       <div class="diagram-scroll">
         <template x-if="diagramUrl">
@@ -358,10 +364,11 @@
           );
           this.mainGroups = mgs.map(([id, number, title]) => {
             const sections = this._query(
-              'SELECT id, number, title, diagram_image FROM section WHERE main_group_id=? ORDER BY number',
+              'SELECT id, number, title, diagram_image, title_remark, title_model FROM section WHERE main_group_id=? ORDER BY number',
               [id]
-            ).map(([sid, snum, stitle, dimg]) => ({
+            ).map(([sid, snum, stitle, dimg, tremark, tmodel]) => ({
               id: sid, number: snum, title: stitle, diagram_image: dimg,
+              title_remark: tremark || '', title_model: tmodel || '',
             }));
             return { id, number, title, open: false, sections };
           });
