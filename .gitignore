@@ -1,0 +1,10 @@
+# Tesseract training artifacts (reproducible via training scripts)
+training/ground-truth/
+training/lstmf/
+training/model/
+training/eng.traineddata
+training/eng.lstm
+training/train.list
+training/eval.list
+training/porsche.traineddata
+docs/spikes/tessdata

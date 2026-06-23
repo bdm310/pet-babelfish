@@ -49,6 +49,10 @@
     Tracks the PDF current transform matrix (CTM) through the operator list to find the exact
     position of the diagram image on the page, renders + crops to that region, then runs
     Tesseract.js (PSM 11, digits whitelist) to find callout numbers.
+    Uses the fine-tuned <code>porsche</code> model via <code>docs/spikes/tessdata/</code> (junction to
+    <code>training/</code>). Serve from any directory containing this file:
+    <code>python -m http.server 8080</code>, then open
+    <code>http://localhost:8080/spike-ocr-callouts.html</code>.
   </p>
 
   <div id="dropzone">
@@ -118,8 +122,9 @@
       document.getElementById('pageNum').max = pdfDoc.numPages;
       output.innerHTML = '';
       log('Initialising Tesseract…');
-      tWorker = await Tesseract.createWorker('eng', 1, {
-        langPath: 'https://tessdata.projectnaptha.com/4.0.0_best',
+      tWorker = await Tesseract.createWorker('porsche', 1, {
+        langPath: 'tessdata',
+        corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core-lstm.wasm.js',
         logger: m => {
           if (m.status === 'recognizing text') log(`OCR: ${Math.round(m.progress * 100)}%`);
           else if (m.status) log(m.status + (m.progress ? ` ${Math.round(m.progress*100)}%` : ''));
