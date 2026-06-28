@@ -1,0 +1,137 @@
+/* ── Theme variables ──────────────────────────────────────── */
+
+/* Dark defaults */
+:root {
+  color-scheme: dark;
+  --bg:           #1a1a1a;
+  --bg2:          #2a2a2a;
+  --bg3:          #222222;
+  --bg4:          #111111;
+  --border:       #333333;
+  --border2:      #444444;
+  --border3:      #555555;
+  --text:         #e0e0e0;
+  --text-hi:      #ffffff;
+  --text2:        #aaaaaa;
+  --text3:        #888888;
+  --text4:        #666666;
+  --text5:        #555555;
+  --text6:        #444444;
+  --accent:       #4caf50;
+  --accent-bg:    #1a3a1a;
+  --accent-bg2:   #1a2a1a;
+  --accent-bd:    #2a3a2a;
+  --accent-btn:   #2a4a2a;
+  --accent-btn-h: #3a5a3a;
+  --pn:           #79c0ff;
+  --err:          #f44336;
+  --row-hover:    #202020;
+  --row-border:   #1e1e1e;
+}
+
+/* Light — applied when system is light and user hasn't overridden */
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg:           #f8f8f8;
+    --bg2:          #ffffff;
+    --bg3:          #f2f2f2;
+    --bg4:          #e8e8e8;
+    --border:       #e0e0e0;
+    --border2:      #d0d0d0;
+    --border3:      #b8b8b8;
+    --text:         #1a1a1a;
+    --text-hi:      #000000;
+    --text2:        #505050;
+    --text3:        #6e6e6e;
+    --text4:        #8a8a8a;
+    --text5:        #a0a0a0;
+    --text6:        #bbbbbb;
+    --accent:       #2e7d32;
+    --accent-bg:    #e8f5e9;
+    --accent-bg2:   #f1f8f2;
+    --accent-bd:    #a5d6a7;
+    --accent-btn:   #e8f5e9;
+    --accent-btn-h: #c8e6c9;
+    --pn:           #0969da;
+    --err:          #d32f2f;
+    --row-hover:    #f4f4f4;
+    --row-border:   #ebebeb;
+  }
+}
+
+/* Explicit overrides — cascade order beats the media query above */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:           #1a1a1a;
+  --bg2:          #2a2a2a;
+  --bg3:          #222222;
+  --bg4:          #111111;
+  --border:       #333333;
+  --border2:      #444444;
+  --border3:      #555555;
+  --text:         #e0e0e0;
+  --text-hi:      #ffffff;
+  --text2:        #aaaaaa;
+  --text3:        #888888;
+  --text4:        #666666;
+  --text5:        #555555;
+  --text6:        #444444;
+  --accent:       #4caf50;
+  --accent-bg:    #1a3a1a;
+  --accent-bg2:   #1a2a1a;
+  --accent-bd:    #2a3a2a;
+  --accent-btn:   #2a4a2a;
+  --accent-btn-h: #3a5a3a;
+  --pn:           #79c0ff;
+  --err:          #f44336;
+  --row-hover:    #202020;
+  --row-border:   #1e1e1e;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg:           #f8f8f8;
+  --bg2:          #ffffff;
+  --bg3:          #f2f2f2;
+  --bg4:          #e8e8e8;
+  --border:       #e0e0e0;
+  --border2:      #d0d0d0;
+  --border3:      #b8b8b8;
+  --text:         #1a1a1a;
+  --text-hi:      #000000;
+  --text2:        #505050;
+  --text3:        #6e6e6e;
+  --text4:        #8a8a8a;
+  --text5:        #a0a0a0;
+  --text6:        #bbbbbb;
+  --accent:       #2e7d32;
+  --accent-bg:    #e8f5e9;
+  --accent-bg2:   #f1f8f2;
+  --accent-bd:    #a5d6a7;
+  --accent-btn:   #e8f5e9;
+  --accent-btn-h: #c8e6c9;
+  --pn:           #0969da;
+  --err:          #d32f2f;
+  --row-hover:    #f4f4f4;
+  --row-border:   #ebebeb;
+}
+
+/* ── Theme toggle button ─────────────────────────────────── */
+
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--border3);
+  color: var(--text3);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: monospace;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.theme-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}

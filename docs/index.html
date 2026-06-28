@@ -3,29 +3,41 @@
 <head>
   <meta charset="UTF-8">
   <title>pet-babelfish</title>
+  <script>(function(){var t=localStorage.getItem('pb-theme');if(t)document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="theme.css">
   <style>
-    body { font-family: monospace; max-width: 700px; margin: 4rem auto; padding: 0 1rem; background: #1a1a1a; color: #e0e0e0; }
-    h1 { color: #fff; font-size: 1.4rem; letter-spacing: 0.05em; }
-    p { color: #aaa; line-height: 1.6; }
+    body { font-family: monospace; max-width: 700px; margin: 4rem auto; padding: 0 1rem;
+           background: var(--bg); color: var(--text); }
+    .top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem; }
+    h1 { color: var(--text-hi); font-size: 1.4rem; letter-spacing: 0.05em; }
+    p { color: var(--text2); line-height: 1.6; }
     .links { margin-top: 2rem; }
-    .links h2 { font-size: 1rem; color: #888; border-bottom: 1px solid #333; padding-bottom: 0.4rem; }
-    a { color: #4caf50; text-decoration: none; }
+    .links h2 { font-size: 1rem; color: var(--text3); border-bottom: 1px solid var(--border);
+                padding-bottom: 0.4rem; }
+    a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
     ul { padding-left: 1.2rem; }
     li { margin: 0.4rem 0; }
-    .badge { display: inline-block; background: #2a2a2a; border: 1px solid #444; border-radius: 3px; padding: 0.1rem 0.4rem; font-size: 0.75rem; color: #888; margin-left: 0.5rem; }
+    .badge { display: inline-block; background: var(--bg2); border: 1px solid var(--border2);
+             border-radius: 3px; padding: 0.1rem 0.4rem; font-size: 0.75rem; color: var(--text3);
+             margin-left: 0.5rem; }
+    .hint { color: var(--text4); font-size: 0.85rem; }
+    pre { background: var(--bg3); padding: 0.75rem; border-radius: 4px; font-size: 0.85rem; }
   </style>
 </head>
 <body>
-  <h1>pet-babelfish</h1>
+  <div class="top">
+    <h1>pet-babelfish</h1>
+    <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
+  </div>
   <p>A browser-based tool for ingesting, searching, and browsing Porsche Electronic Toolbox (PET) parts catalogs. Everything runs locally in your browser — no server required.</p>
   <div class="links">
     <h2>Tools</h2>
     <ul>
       <li><a href="ingest.html">Ingest a catalog</a><br>
-        <span style="color:#666;font-size:0.85rem">Load a PET PDF → extracts parts + diagrams → stores in browser (OPFS)</span></li>
+        <span class="hint">Load a PET PDF → extracts parts + diagrams → stores in browser (OPFS)</span></li>
       <li><a href="viewer.html">Browse parts</a><br>
-        <span style="color:#666;font-size:0.85rem">Search and browse ingested catalog — section tree, parts table, diagram view</span></li>
+        <span class="hint">Search and browse ingested catalog — section tree, parts table, diagram view</span></li>
     </ul>
   </div>
 
@@ -33,24 +45,26 @@
     <h2>Investigation Spikes</h2>
     <ul>
       <li><a href="spikes/spike-fetch.html">Spike 1 — Fetch behavior</a> <span class="badge">run first</span><br>
-        <span style="color:#666;font-size:0.85rem">Tests whether catalog PDFs can be fetched directly from the browser (CORS check)</span></li>
+        <span class="hint">Tests whether catalog PDFs can be fetched directly from the browser (CORS check)</span></li>
       <li><a href="spikes/spike-pdf-structure.html">Spike 2 — PDF text structure</a><br>
-        <span style="color:#666;font-size:0.85rem">Explores TOC/outline, page types, column layout, and part number formats</span></li>
+        <span class="hint">Explores TOC/outline, page types, column layout, and part number formats</span></li>
       <li><a href="spikes/spike-diagram-callouts.html">Spike 3 — Diagram callout extraction</a><br>
-        <span style="color:#666;font-size:0.85rem">Checks whether diagram callout numbers are embedded PDF text (with coordinates) or image-only</span></li>
+        <span class="hint">Checks whether diagram callout numbers are embedded PDF text (with coordinates) or image-only</span></li>
       <li><a href="spikes/spike-applicability.html">Spike 4 — Applicability format</a><br>
-        <span style="color:#666;font-size:0.85rem">Analyzes the vocabulary used in parts applicability data to determine if structured parsing is feasible</span></li>
+        <span class="hint">Analyzes the vocabulary used in parts applicability data to determine if structured parsing is feasible</span></li>
       <li><a href="spikes/spike-ocr-callouts.html">Spike 5 — OCR callout extraction</a> <span class="badge">in progress</span><br>
-        <span style="color:#666;font-size:0.85rem">Extracts the embedded diagram image XObject directly from the PDF and runs Tesseract.js to locate callout numbers</span></li>
+        <span class="hint">Extracts the embedded diagram image XObject directly from the PDF and runs Tesseract.js to locate callout numbers</span></li>
     </ul>
   </div>
 
   <div class="links">
     <h2>Local development</h2>
     <p style="font-size:0.85rem">WASM and OPFS require HTTP — open via a local server, not <code>file://</code>:</p>
-    <pre style="background:#222;padding:0.75rem;border-radius:4px;font-size:0.85rem">npx serve docs
+    <pre>npx serve docs
 # or
 python -m http.server --directory docs 8080</pre>
   </div>
+
+  <script src="theme.js"></script>
 </body>
 </html>

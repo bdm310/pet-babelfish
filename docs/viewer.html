@@ -3,87 +3,89 @@
 <head>
   <meta charset="UTF-8">
   <title>Viewer — pet-babelfish</title>
+  <script>(function(){var t=localStorage.getItem('pb-theme');if(t)document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="theme.css">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: monospace; background: #1a1a1a; color: #e0e0e0;
+    body { font-family: monospace; background: var(--bg); color: var(--text);
            display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
     /* ── Header ─────────────────────────────────────────────────── */
     header { display: flex; gap: 0.75rem; align-items: center; padding: 0.6rem 1rem;
-             border-bottom: 1px solid #333; flex-shrink: 0; flex-wrap: wrap; }
-    header h1 { font-size: 0.95rem; color: #fff; white-space: nowrap; }
-    header a  { color: #4caf50; font-size: 0.8rem; text-decoration: none; white-space: nowrap; }
+             border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
+    header h1 { font-size: 0.95rem; color: var(--text-hi); white-space: nowrap; }
+    header a  { color: var(--accent); font-size: 0.8rem; text-decoration: none; white-space: nowrap; }
     select, input[type=search] {
-      background: #2a2a2a; color: #e0e0e0; border: 1px solid #555;
+      background: var(--bg2); color: var(--text); border: 1px solid var(--border3);
       padding: 0.3rem 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.82rem;
     }
     select { cursor: pointer; }
     input[type=search] { flex: 1; min-width: 180px; max-width: 380px; }
-    input[type=search]:focus { outline: none; border-color: #4caf50; }
-    #statusBar { font-size: 0.75rem; color: #666; margin-left: auto; white-space: nowrap; }
+    input[type=search]:focus { outline: none; border-color: var(--accent); }
+    #statusBar { font-size: 0.75rem; color: var(--text4); margin-left: auto; white-space: nowrap; }
 
     /* ── 3-panel layout ──────────────────────────────────────────── */
     .layout { display: grid; grid-template-columns: 220px 1fr 42%; flex: 1; overflow: hidden; min-height: 0; }
 
     /* ── Sidebar ─────────────────────────────────────────────────── */
-    .sidebar { border-right: 1px solid #333; overflow-y: auto; font-size: 0.78rem; }
-    .mg-header { padding: 0.4rem 0.75rem; background: #222; color: #888;
+    .sidebar { border-right: 1px solid var(--border); overflow-y: auto; font-size: 0.78rem; }
+    .mg-header { padding: 0.4rem 0.75rem; background: var(--bg3); color: var(--text3);
                  cursor: pointer; user-select: none; display: flex; justify-content: space-between;
                  align-items: center; position: sticky; top: 0; z-index: 1; }
-    .mg-header:hover { background: #2a2a2a; color: #aaa; }
+    .mg-header:hover { background: var(--bg2); color: var(--text2); }
     .mg-header .arrow { font-size: 0.65rem; transition: transform 0.15s; }
     .mg-header.open .arrow { transform: rotate(90deg); }
     .sec-item { padding: 0.25rem 0.75rem 0.25rem 1.2rem; cursor: pointer;
-                color: #aaa; display: flex; justify-content: space-between; gap: 0.4rem; }
-    .sec-item:hover { background: #252525; color: #e0e0e0; }
-    .sec-item.active { background: #1a3a1a; color: #4caf50; }
+                color: var(--text2); display: flex; justify-content: space-between; gap: 0.4rem; }
+    .sec-item:hover { background: var(--bg2); color: var(--text); }
+    .sec-item.active { background: var(--accent-bg); color: var(--accent); }
     .sec-item .sec-num { flex-shrink: 0; }
-    .sec-item .sec-title { color: #666; font-size: 0.72rem; overflow: hidden;
+    .sec-item .sec-title { color: var(--text4); font-size: 0.72rem; overflow: hidden;
                            text-overflow: ellipsis; white-space: nowrap; }
-    .sidebar-placeholder { padding: 1rem; color: #555; font-size: 0.8rem; }
+    .sidebar-placeholder { padding: 1rem; color: var(--text5); font-size: 0.8rem; }
 
     /* ── Parts panel ─────────────────────────────────────────────── */
-    .parts-panel { display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid #333; }
-    .parts-header { padding: 0.5rem 0.75rem; border-bottom: 1px solid #333; font-size: 0.82rem;
-                    color: #888; flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem; }
-    .parts-header .section-id { color: #4caf50; font-weight: bold; }
-    .parts-header .count { color: #555; font-size: 0.72rem; }
+    .parts-panel { display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid var(--border); }
+    .parts-header { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.82rem;
+                    color: var(--text3); flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem; }
+    .parts-header .section-id { color: var(--accent); font-weight: bold; }
+    .parts-header .count { color: var(--text5); font-size: 0.72rem; }
     .parts-scroll { flex: 1; overflow-y: auto; }
     table.parts { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
-    table.parts th { background: #222; color: #777; padding: 0.3rem 0.5rem; text-align: left;
-                     border-bottom: 1px solid #333; position: sticky; top: 0; z-index: 1;
+    table.parts th { background: var(--bg3); color: var(--text3); padding: 0.3rem 0.5rem; text-align: left;
+                     border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1;
                      font-weight: normal; white-space: nowrap; }
-    table.parts td { padding: 0.25rem 0.5rem; border-bottom: 1px solid #1e1e1e;
+    table.parts td { padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--row-border);
                      vertical-align: top; }
-    table.parts tr:hover td { background: #202020; }
-    .col-pos   { width: 2.5rem; color: #4caf50; text-align: center; }
-    .col-pn    { white-space: nowrap; color: #79c0ff; }
+    table.parts tr:hover td { background: var(--row-hover); }
+    .col-pos   { width: 2.5rem; color: var(--accent); text-align: center; }
+    .col-pn    { white-space: nowrap; color: var(--pn); }
     .col-desc  { }
-    .col-qty   { width: 2.5rem; text-align: center; color: #aaa; }
-    .col-rem   { color: #888; font-size: 0.72rem; }
-    .appl-toggle { font-size: 0.68rem; color: #555; cursor: pointer; border: none;
+    .col-qty   { width: 2.5rem; text-align: center; color: var(--text2); }
+    .col-rem   { color: var(--text3); font-size: 0.72rem; }
+    .appl-toggle { font-size: 0.68rem; color: var(--text5); cursor: pointer; border: none;
                    background: none; padding: 0; font-family: monospace; }
-    .appl-toggle:hover { color: #888; }
-.parts-placeholder { padding: 2rem; color: #555; font-size: 0.85rem; text-align: center; }
+    .appl-toggle:hover { color: var(--text3); }
+    .parts-placeholder { padding: 2rem; color: var(--text5); font-size: 0.85rem; text-align: center; }
 
     /* Search results */
-    .search-result-row td { border-bottom: 1px solid #1e1e1e; padding: 0.25rem 0.5rem; vertical-align: top; }
-    .search-result-row:hover td { background: #202020; }
-    .sec-badge { display: inline-block; background: #1a2a1a; border: 1px solid #2a3a2a;
-                 border-radius: 3px; padding: 0 0.3rem; font-size: 0.68rem; color: #4caf50; }
+    .search-result-row td { border-bottom: 1px solid var(--row-border); padding: 0.25rem 0.5rem; vertical-align: top; }
+    .search-result-row:hover td { background: var(--row-hover); }
+    .sec-badge { display: inline-block; background: var(--accent-bg2); border: 1px solid var(--accent-bd);
+                 border-radius: 3px; padding: 0 0.3rem; font-size: 0.68rem; color: var(--accent); }
 
     /* ── Diagram panel ───────────────────────────────────────────── */
     .diagram-panel { display: flex; flex-direction: column; overflow: hidden; }
-    .diagram-header { padding: 0.5rem 0.75rem; border-bottom: 1px solid #333; font-size: 0.82rem;
-                      color: #888; flex-shrink: 0; }
+    .diagram-header { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.82rem;
+                      color: var(--text3); flex-shrink: 0; }
     .diagram-scroll { flex: 1; overflow: auto; display: flex; align-items: flex-start;
-                      justify-content: center; background: #111; padding: 0.5rem; }
+                      justify-content: center; background: var(--bg4); padding: 0.5rem; }
     .diagram-scroll img { max-width: 100%; display: block; }
-    .diagram-placeholder { color: #444; font-size: 0.85rem; margin: auto; }
+    .diagram-placeholder { color: var(--text6); font-size: 0.85rem; margin: auto; }
 
     /* Loading spinner */
-    .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid #333;
-               border-top-color: #4caf50; border-radius: 50%; animation: spin 0.6s linear infinite; }
+    .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--border);
+               border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
@@ -104,6 +106,7 @@
            @keydown.escape="clearSearch()"
            :disabled="!db">
     <span id="statusBar" x-text="status"></span>
+    <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
   </header>
 
   <div class="layout">
@@ -144,7 +147,7 @@
           <span>
             Search: <strong x-text="query"></strong>
             <span class="count" x-text="searchResults.length + ' results'"></span>
-            <button style="background:none;border:none;color:#666;cursor:pointer;font-family:monospace;margin-left:0.5rem"
+            <button style="background:none;border:none;color:var(--text4);cursor:pointer;font-family:monospace;margin-left:0.5rem"
                     @click="clearSearch()">✕ clear</button>
           </span>
         </template>
@@ -153,14 +156,14 @@
             <span class="section-id" x-text="currentSection.number"></span>
             <span x-text="currentSection.title ? ' — ' + currentSection.title : ''"></span>
             <span x-text="currentSection.title_remark ? ' · ' + currentSection.title_remark : ''"
-                  style="color:#666"></span>
+                  style="color:var(--text4)"></span>
             <span x-text="currentSection.title_model ? ' [' + currentSection.title_model + ']' : ''"
-                  style="color:#555;font-size:0.72rem"></span>
+                  style="color:var(--text5);font-size:0.72rem"></span>
             <span class="count" x-text="parts.length + ' parts'"></span>
           </span>
         </template>
         <template x-if="!searchMode && !currentSection">
-          <span style="color:#555">Select a section</span>
+          <span style="color:var(--text5)">Select a section</span>
         </template>
       </div>
 
@@ -191,7 +194,7 @@
                 </tr>
               </template>
               <template x-if="searchResults.length === 200">
-                <tr><td colspan="5" style="padding:0.4rem 0.5rem;color:#555;font-size:0.72rem">
+                <tr><td colspan="5" style="padding:0.4rem 0.5rem;color:var(--text5);font-size:0.72rem">
                   Showing first 200 results — refine your search.
                 </td></tr>
               </template>
@@ -221,7 +224,7 @@
                       <div x-text="p.description"></div>
                       <div x-show="p.showAppl"
                            x-text="p.applicability"
-                           style="margin-top:0.3rem;color:#666;font-size:0.72rem;white-space:pre-wrap;line-height:1.5"></div>
+                           style="margin-top:0.3rem;color:var(--text4);font-size:0.72rem;white-space:pre-wrap;line-height:1.5"></div>
                     </td>
                     <td class="col-qty" x-text="p.quantity"></td>
                     <td class="col-rem">
@@ -268,6 +271,7 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+  <script src="theme.js"></script>
   <script>
     const SQLJS_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
 

@@ -3,45 +3,47 @@
 <head>
   <meta charset="UTF-8">
   <title>Ingest — pet-babelfish</title>
+  <script>(function(){var t=localStorage.getItem('pb-theme');if(t)document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="theme.css">
   <style>
     * { box-sizing: border-box; }
-    body { font-family: monospace; margin: 0; background: #1a1a1a; color: #e0e0e0;
+    body { font-family: monospace; margin: 0; background: var(--bg); color: var(--text);
            display: grid; grid-template-rows: auto 1fr; height: 100vh; }
-    header { padding: 0.75rem 1rem; border-bottom: 1px solid #333; display: flex;
+    header { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); display: flex;
              gap: 1rem; align-items: center; flex-wrap: wrap; }
-    h1 { color: #fff; font-size: 1rem; margin: 0; }
-    a { color: #4caf50; text-decoration: none; font-size: 0.8rem; }
+    h1 { color: var(--text-hi); font-size: 1rem; margin: 0; }
+    a { color: var(--accent); text-decoration: none; font-size: 0.8rem; }
     .main { display: grid; grid-template-columns: 340px 1fr; height: 100%; overflow: hidden; }
-    #sidebar { border-right: 1px solid #333; padding: 1rem; overflow-y: auto; display: flex;
+    #sidebar { border-right: 1px solid var(--border); padding: 1rem; overflow-y: auto; display: flex;
                flex-direction: column; gap: 0.75rem; }
-    label { font-size: 0.8rem; color: #888; display: block; margin-bottom: 0.2rem; }
+    label { font-size: 0.8rem; color: var(--text3); display: block; margin-bottom: 0.2rem; }
     input[type=text], input[type=file] {
-      width: 100%; background: #2a2a2a; color: #e0e0e0; border: 1px solid #555;
+      width: 100%; background: var(--bg2); color: var(--text); border: 1px solid var(--border3);
       padding: 0.4rem 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.85rem;
     }
     input[type=file] { padding: 0.3rem; cursor: pointer; }
-    #dropzone { border: 2px dashed #555; border-radius: 6px; padding: 1rem;
-                text-align: center; color: #888; cursor: pointer; font-size: 0.85rem;
+    #dropzone { border: 2px dashed var(--border3); border-radius: 6px; padding: 1rem;
+                text-align: center; color: var(--text3); cursor: pointer; font-size: 0.85rem;
                 transition: border-color 0.15s; }
-    #dropzone.over, #dropzone.loaded { border-color: #4caf50; color: #4caf50; }
-    button { width: 100%; background: #2a4a2a; color: #4caf50; border: 1px solid #4caf50;
+    #dropzone.over, #dropzone.loaded { border-color: var(--accent); color: var(--accent); }
+    button.ingest { width: 100%; background: var(--accent-btn); color: var(--accent); border: 1px solid var(--accent);
              padding: 0.5rem; border-radius: 4px; cursor: pointer; font-family: monospace;
              font-size: 0.9rem; font-weight: bold; }
-    button:hover:not(:disabled) { background: #3a5a3a; }
-    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    button.ingest:hover:not(:disabled) { background: var(--accent-btn-h); }
+    button.ingest:disabled { opacity: 0.4; cursor: not-allowed; }
     #progressWrap { display: none; }
-    progress { width: 100%; height: 6px; accent-color: #4caf50; }
-    #progressLabel { font-size: 0.78rem; color: #888; margin-top: 0.2rem; }
+    progress { width: 100%; height: 6px; accent-color: var(--accent); }
+    #progressLabel { font-size: 0.78rem; color: var(--text3); margin-top: 0.2rem; }
     #log { flex: 1; overflow-y: auto; padding: 1rem; font-size: 0.78rem; line-height: 1.6; }
-    .log-line { padding: 0.1rem 0; border-bottom: 1px solid #1e1e1e; }
-    .log-line.ok   { color: #4caf50; }
-    .log-line.err  { color: #f44336; }
-    .log-line.info { color: #aaa; }
-    .stat { display: inline-block; background: #2a2a2a; border: 1px solid #444;
+    .log-line { padding: 0.1rem 0; border-bottom: 1px solid var(--row-border); }
+    .log-line.ok   { color: var(--accent); }
+    .log-line.err  { color: var(--err); }
+    .log-line.info { color: var(--text2); }
+    .stat { display: inline-block; background: var(--bg2); border: 1px solid var(--border2);
             border-radius: 3px; padding: 0.15rem 0.4rem; margin: 0.1rem; font-size: 0.78rem; }
-    .stat.ok { border-color: #4caf50; color: #4caf50; }
+    .stat.ok { border-color: var(--accent); color: var(--accent); }
     #result { display: none; margin-top: 0.5rem; }
-    hr { border: none; border-top: 1px solid #333; margin: 0.25rem 0; }
+    hr { border: none; border-top: 1px solid var(--border); margin: 0.25rem 0; }
   </style>
 </head>
 <body>
@@ -49,6 +51,7 @@
     <h1>Ingest PET Catalog</h1>
     <a href="index.html">← home</a>
     <a href="viewer.html" id="viewerLink" style="display:none">Open viewer →</a>
+    <button class="theme-toggle" style="margin-left:auto" onclick="themeToggle.cycle()">auto</button>
   </header>
 
   <div class="main">
@@ -62,7 +65,7 @@
       </div>
 
       <div>
-        <label for="catalogId">Catalog ID <span style="color:#555">(used as storage key)</span></label>
+        <label for="catalogId">Catalog ID <span style="color:var(--text5)">(used as storage key)</span></label>
         <input type="text" id="catalogId" placeholder="e.g. 997TT-2005">
       </div>
 
@@ -72,7 +75,7 @@
         <progress id="progressBar" value="0" max="100"></progress>
       </div>
 
-      <button id="ingestBtn" disabled>Ingest</button>
+      <button class="ingest" id="ingestBtn" disabled>Ingest</button>
 
       <div id="result"></div>
     </div>
@@ -82,6 +85,7 @@
     </div>
   </div>
 
+  <script src="theme.js"></script>
   <script>
     let selectedFile = null;
     let worker = null;
