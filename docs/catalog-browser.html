@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Table Browser — pet-babelfish</title>
+  <script>(function(){var t=localStorage.getItem('pb-theme');if(t)document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: monospace; background: var(--bg); color: var(--text);
+           display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+    header { display: flex; gap: 0.75rem; align-items: center; padding: 0.6rem 1rem;
+             border-bottom: 1px solid var(--border); flex-shrink: 0; flex-wrap: wrap; }
+    header h1 { font-size: 0.95rem; color: var(--text-hi); white-space: nowrap; }
+    header a  { color: var(--accent); font-size: 0.8rem; text-decoration: none; white-space: nowrap; }
+
+    select { background: var(--bg2); color: var(--text); border: 1px solid var(--border3);
+             padding: 0.3rem 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.82rem; cursor: pointer; }
+    input[type=search] {
+      background: var(--bg2); color: var(--text); border: 1px solid var(--border3);
+      padding: 0.3rem 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.82rem;
+      flex: 1; min-width: 160px; max-width: 320px;
+    }
+    input[type=search]:focus { outline: none; border-color: var(--accent); }
+    #statusBar { font-size: 0.75rem; color: var(--text4); margin-left: auto; white-space: nowrap; }
+
+    .table-wrap { flex: 1; overflow: auto; }
+
+    table.raw { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    table.raw th { background: var(--bg3); color: var(--text3); padding: 0.3rem 0.6rem;
+                   border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1;
+                   font-weight: normal; white-space: nowrap; text-align: left; }
+    table.raw td { padding: 0.22rem 0.6rem; border-bottom: 1px solid var(--row-border);
+                   vertical-align: top; max-width: 40ch; overflow: hidden;
+                   text-overflow: ellipsis; white-space: nowrap; }
+    table.raw tr:hover td { background: var(--row-hover); }
+    table.raw td.num { color: var(--text3); text-align: right; }
+    table.raw td.pn  { color: var(--pn); }
+
+    .empty { padding: 2rem; color: var(--text5); font-size: 0.85rem; text-align: center; }
+
+    .pager { display: flex; gap: 0.5rem; align-items: center; padding: 0.4rem 0.75rem;
+             border-top: 1px solid var(--border); flex-shrink: 0; font-size: 0.78rem;
+             color: var(--text3); }
+    .pager button { background: var(--bg2); color: var(--text2); border: 1px solid var(--border3);
+                    border-radius: 3px; padding: 0.2rem 0.5rem; font-family: monospace;
+                    font-size: 0.78rem; cursor: pointer; }
+    .pager button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .pager button:disabled { opacity: 0.35; cursor: default; }
+    .pager .info { color: var(--text4); }
+
+    .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--border);
+               border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body x-data="browserApp()" x-init="init()">
+
+  <header>
+    <h1>pet-babelfish</h1>
+    <a href="index.html">← home</a>
+
+    <select x-model="catalogId" @change="onCatalogChange()">
+      <option value="">— select catalog —</option>
+      <template x-for="c in catalogs" :key="c.id">
+        <option :value="c.id" x-text="c.label"></option>
+      </template>
+    </select>
+
+    <select x-model="tableName" @change="onTableChange()" :disabled="!db">
+      <option value="">— select table —</option>
+      <template x-for="t in tables" :key="t">
+        <option :value="t" x-text="t"></option>
+      </template>
+    </select>
+
+    <input type="search" placeholder="Filter visible rows…"
+           x-model="filter"
+           @input.debounce.200ms="applyFilter()"
+           @keydown.escape="filter = ''; applyFilter()"
+           :disabled="!rows.length">
+
+    <span id="statusBar">
+      <span x-show="loading"><span class="spinner"></span></span>
+      <span x-text="status"></span>
+    </span>
+    <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
+  </header>
+
+  <div class="table-wrap">
+    <template x-if="columns.length">
+      <table class="raw">
+        <thead>
+          <tr>
+            <template x-for="col in columns" :key="col">
+              <th x-text="col"></th>
+            </template>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-if="pageRows.length === 0">
+            <tr><td :colspan="columns.length" class="empty">No rows match.</td></tr>
+          </template>
+          <template x-for="(row, ri) in pageRows" :key="ri">
+            <tr>
+              <template x-for="(col, ci) in columns" :key="ci">
+                <td :class="cellClass(col, row[ci])" :title="row[ci] != null ? String(row[ci]) : ''"
+                    x-text="row[ci] != null ? String(row[ci]) : ''"></td>
+              </template>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </template>
+    <template x-if="!columns.length && !loading">
+      <div class="empty" x-text="db ? (tableName ? 'No data.' : 'Select a table.') : 'Select a catalog.'"></div>
+    </template>
+  </div>
+
+  <div class="pager" x-show="filteredRows.length > pageSize">
+    <button @click="setPage(page - 1)" :disabled="page === 0">‹ prev</button>
+    <span class="info" x-text="`${page * pageSize + 1}–${Math.min((page+1)*pageSize, filteredRows.length)} of ${filteredRows.length}`"></span>
+    <button @click="setPage(page + 1)" :disabled="(page+1)*pageSize >= filteredRows.length">next ›</button>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+  <script src="theme.js"></script>
+  <script>
+    const SQLJS_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
+    const PAGE_SIZE  = 200;
+
+    const TABLES = ['catalog', 'main_group', 'section', 'part', 'callout'];
+
+    // Columns that should get numeric styling
+    const NUM_COLS = new Set(['id','page_count','parts_page','diagram_page',
+                               'x0','y0','x1','y1','confidence','quantity']);
+    const PN_COLS  = new Set(['part_number']);
+
+    function browserApp() {
+      return {
+        catalogs:     [],
+        catalogId:    '',
+        db:           null,
+        SQL:          null,
+        tables:       TABLES,
+        tableName:    '',
+        columns:      [],
+        rows:         [],        // all rows for current table (from DB)
+        filteredRows: [],        // after filter applied
+        pageRows:     [],        // current page slice
+        filter:       '',
+        page:         0,
+        pageSize:     PAGE_SIZE,
+        loading:      false,
+        status:       '',
+
+        async init() {
+          this.status = 'Loading sql.js…';
+          this.SQL    = await initSqlJs({ locateFile: () => SQLJS_WASM });
+          this.status = '';
+          await this.listCatalogs();
+
+          const p = new URLSearchParams(location.search);
+          if (p.get('catalog')) { this.catalogId = p.get('catalog'); await this.onCatalogChange(); }
+          if (p.get('table'))   { this.tableName = p.get('table');   this.onTableChange(); }
+        },
+
+        async listCatalogs() {
+          const root  = await navigator.storage.getDirectory();
+          const found = [];
+          for await (const [name, handle] of root.entries()) {
+            if (handle.kind !== 'directory') continue;
+            try { await handle.getFileHandle('catalog.sqlite'); found.push({ id: name, label: name }); }
+            catch { /* not a catalog */ }
+          }
+          this.catalogs = found;
+        },
+
+        async onCatalogChange() {
+          this.tableName = '';
+          this.columns   = [];
+          this.rows      = [];
+          this.filteredRows = [];
+          this.pageRows  = [];
+          this.db        = null;
+          if (!this.catalogId) return;
+
+          this.loading = true;
+          this.status  = 'Opening database…';
+          try {
+            const root = await navigator.storage.getDirectory();
+            const dir  = await root.getDirectoryHandle(this.catalogId);
+            const fh   = await dir.getFileHandle('catalog.sqlite');
+            const buf  = await (await fh.getFile()).arrayBuffer();
+            this.db    = new this.SQL.Database(new Uint8Array(buf));
+            this.status = 'Ready';
+          } catch (e) {
+            this.status = 'Error: ' + e.message;
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        onTableChange() {
+          this.filter = '';
+          this.page   = 0;
+          this.columns = [];
+          this.rows    = [];
+          this.filteredRows = [];
+          this.pageRows = [];
+          if (!this.db || !this.tableName) return;
+
+          this.loading = true;
+          this.status  = 'Querying…';
+          try {
+            const res = this.db.exec(`SELECT * FROM ${this.tableName} LIMIT 10000`);
+            if (!res.length) { this.status = '0 rows'; this.loading = false; return; }
+            this.columns      = res[0].columns;
+            this.rows         = res[0].values;
+            this.filteredRows = this.rows;
+            this.setPage(0);
+            this.status = `${this.rows.length} rows`;
+          } catch (e) {
+            this.status = 'Error: ' + e.message;
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        applyFilter() {
+          this.page = 0;
+          const q = this.filter.trim().toLowerCase();
+          if (!q) {
+            this.filteredRows = this.rows;
+          } else {
+            this.filteredRows = this.rows.filter(row =>
+              row.some(v => v != null && String(v).toLowerCase().includes(q))
+            );
+          }
+          this.setPage(0);
+        },
+
+        setPage(n) {
+          this.page     = n;
+          const start   = n * this.pageSize;
+          this.pageRows = this.filteredRows.slice(start, start + this.pageSize);
+        },
+
+        cellClass(col, val) {
+          if (NUM_COLS.has(col) || (typeof val === 'number')) return 'num';
+          if (PN_COLS.has(col)) return 'pn';
+          return '';
+        },
+      };
+    }
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.13.3/cdn.min.js" defer></script>
+</body>
+</html>

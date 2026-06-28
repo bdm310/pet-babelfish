@@ -336,6 +336,7 @@ async function extractParts(pdf, pageNum) {
   const parts     = [];
   let current     = null;
   let seenPart    = false;
+  let lastPos     = '';
   // Rows before the first part row that have no Pos/Part Number — the diagram title block.
   // Multiple description, remark, and model lines are each collected separately so they can
   // be joined independently.
@@ -372,8 +373,10 @@ async function extractParts(pdf, pageNum) {
       seenPart = true;
       flush();
       const cols = assignColumns(row.items, colOrigins);
+      const pos = joinCol(cols['Pos']);
+      if (pos) lastPos = pos;
       current = {
-        pos:          joinCol(cols['Pos']),
+        pos:          pos || lastPos,
         partNumber:   joinCol(cols['Part Number']),
         description:  joinCol(cols['Description']),
         qty:          joinCol(cols['Qty']),
