@@ -139,3 +139,17 @@ html { background: var(--bg); }
   border-color: var(--accent);
   color: var(--accent);
 }
+
+/* ── Diagram inversion ───────────────────────────────────── */
+
+/* Dark default: invert black-on-white line drawings */
+.diagram-wrap img { filter: invert(1); }
+
+/* Light (system): no inversion */
+@media (prefers-color-scheme: light) {
+  .diagram-wrap img { filter: invert(0); }
+}
+
+/* Explicit overrides beat the media query via higher specificity */
+:root[data-theme="dark"]  .diagram-wrap img { filter: invert(1); }
+:root[data-theme="light"] .diagram-wrap img { filter: invert(0); }
