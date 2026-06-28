@@ -86,7 +86,6 @@
   <div id="output"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@7/dist/tesseract.min.js"></script>
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -96,9 +95,22 @@
       standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/',
     };
 
-    const OCR_FONT_PT_CANDIDATES = [7, 9, 12];  // pt sizes to try in cascade order
+    let pdfDoc = null, rawBuffer = null, diagramPages = [], diagramIdx = 0, currentPage = 1;
 
-    let pdfDoc = null, tWorker = null, diagramPages = [], diagramIdx = 0;
+    const worker = new Worker('../ingest.worker.js');
+    worker.onmessage = ({ data }) => {
+      if (data.type === 'status') {
+        log(data.message);
+      } else if (data.type === 'error') {
+        output.innerHTML = `<p style="color:#ff9800">Error: ${escHtml(data.message)}</p>`;
+        log('');
+      } else if (data.type === 'ocr-result') {
+        handleOcrResult(data).catch(e => {
+          output.innerHTML = `<p style="color:#ff9800">Display error: ${escHtml(e.message)}</p>`;
+        });
+      }
+    };
+
     const dropzone = document.getElementById('dropzone');
     const fileInput = document.getElementById('fileInput');
     const output    = document.getElementById('output');
@@ -115,472 +127,57 @@
     async function loadFile(file) {
       if (!file) return;
       dropzone.textContent = `Loading ${file.name}…`;
-      const buf = await file.arrayBuffer();
-      pdfDoc = await pdfjsLib.getDocument({ data: buf, ...PDFJS_OPTS }).promise;
+      rawBuffer = await file.arrayBuffer();
+      pdfDoc = await pdfjsLib.getDocument({ data: rawBuffer.slice(0), ...PDFJS_OPTS }).promise;
       dropzone.textContent = `✓ ${file.name} — ${pdfDoc.numPages} pages`;
       document.getElementById('controls').style.display = 'block';
       document.getElementById('pageNum').max = pdfDoc.numPages;
       output.innerHTML = '';
-      log('Initialising Tesseract…');
-      tWorker = await Tesseract.createWorker('porsche', 1, {
-        langPath: 'tessdata',
-        corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core-lstm.wasm.js',
-        logger: m => {
-          if (m.status === 'recognizing text') log(`OCR: ${Math.round(m.progress * 100)}%`);
-          else if (m.status) log(m.status + (m.progress ? ` ${Math.round(m.progress*100)}%` : ''));
-        },
-      });
-      log('Tesseract ready.');
+      log('Ready. (Tesseract initialises on first OCR request.)');
     }
 
-    // ── CTM tracking: find where each image XObject is painted on the page ──────
-    //
-    // Walk the operator list maintaining a matrix stack. When paintImageXObject
-    // fires, the CTM maps the unit square [0,0]–[1,1] to PDF page user space.
-    // Compute the axis-aligned bounding box of the four corners.
-
-    function matMul(m, n) {
-      // Both are [a,b,c,d,e,f] (column-major 3×3 with implicit third row [0,0,1])
-      return [
-        m[0]*n[0] + m[2]*n[1],
-        m[1]*n[0] + m[3]*n[1],
-        m[0]*n[2] + m[2]*n[3],
-        m[1]*n[2] + m[3]*n[3],
-        m[0]*n[4] + m[2]*n[5] + m[4],
-        m[1]*n[4] + m[3]*n[5] + m[5],
-      ];
-    }
-
-    function imageRectsFromOpList(opList) {
-      const stack   = [[1,0,0,1,0,0]];  // identity
-      const results = [];
-
-      for (let i = 0; i < opList.fnArray.length; i++) {
-        const fn   = opList.fnArray[i];
-        const args = opList.argsArray[i];
-
-        if      (fn === pdfjsLib.OPS.save)      { stack.push([...stack[stack.length-1]]); }
-        else if (fn === pdfjsLib.OPS.restore)   { if (stack.length > 1) stack.pop(); }
-        else if (fn === pdfjsLib.OPS.transform) { stack[stack.length-1] = matMul(stack[stack.length-1], args); }
-        else if (fn === pdfjsLib.OPS.paintImageXObject ||
-                 fn === pdfjsLib.OPS.paintInlineImageXObject) {
-          const [a,b,c,d,e,f] = stack[stack.length-1];
-          // Four corners of the unit square transformed by CTM
-          const xs = [e, e+a, e+c, e+a+c];
-          const ys = [f, f+b, f+d, f+b+d];
-          const x0 = Math.min(...xs), x1 = Math.max(...xs);
-          const y0 = Math.min(...ys), y1 = Math.max(...ys);
-          results.push({ id: args?.[0], x0, y0, x1, y1, area: (x1-x0)*(y1-y0) });
-        }
-      }
-      return results;
-    }
-
-    // ── Native image extraction from PDF.js object store ─────────────────────────
-
-    function getObjAsync(store, name, timeoutMs = 3000) {
-      return new Promise(resolve => {
-        const t = setTimeout(() => resolve(null), timeoutMs);
-        try {
-          store.get(name, data => { clearTimeout(t); resolve(data ?? null); });
-        } catch { clearTimeout(t); resolve(null); }
-      });
-    }
-
-    async function getNativeImageObj(page, name) {
-      if (!name) return null;
-      const obj = await getObjAsync(page.objs, name);
-      if (obj?.width) return obj;
-      return await getObjAsync(page.commonObjs, name);
-    }
-
-    // Convert PDF.js image object to canvas.
-    // Returns null if the format is unrecognised (caller should fall back to page render).
-    function imgObjToCanvas(obj) {
-      // PDF.js ImageBitmap path: { width, height, bitmap: ImageBitmap, ... }
-      if (obj.bitmap instanceof ImageBitmap) {
-        const c = document.createElement('canvas');
-        c.width = obj.width; c.height = obj.height;
-        c.getContext('2d').drawImage(obj.bitmap, 0, 0);
-        return c;
-      }
-      // PDF.js may also return the ImageBitmap directly
-      if (typeof ImageBitmap !== 'undefined' && obj instanceof ImageBitmap) {
-        const c = document.createElement('canvas');
-        c.width = obj.width; c.height = obj.height;
-        c.getContext('2d').drawImage(obj, 0, 0);
-        return c;
-      }
-      if (obj instanceof HTMLCanvasElement) return obj;
-
-      const { width: w, height: h, data, kind } = obj;
-      console.log('imgObjToCanvas:', { kind, w, h, dataLen: data?.length, dataType: data?.constructor?.name, first8: data ? Array.from(data.slice(0, 8)) : null, keys: Object.keys(obj) });
-
-      if (!data?.length) { console.warn('imgObjToCanvas: no data'); return null; }
-
-      const c = document.createElement('canvas');
-      c.width = w; c.height = h;
-      const ctx = c.getContext('2d');
-      const id = ctx.createImageData(w, h);
-      const d  = id.data;
-
-      if (kind === 2) { // RGB_24BPP
-        for (let i = 0; i < w * h; i++) { d[i*4]=data[i*3]; d[i*4+1]=data[i*3+1]; d[i*4+2]=data[i*3+2]; d[i*4+3]=255; }
-      } else if (kind === 3) { // RGBA_32BPP
-        d.set(data);
-      } else if (kind === 1) { // GRAYSCALE_1BPP, bit-packed, MSB first, rows padded to byte boundary
-        const rowBytes = Math.ceil(w / 8);
-        for (let y = 0; y < h; y++) {
-          for (let x = 0; x < w; x++) {
-            const v = (data[y * rowBytes + (x >> 3)] >> (7 - (x & 7))) & 1 ? 255 : 0;
-            const i = (y * w + x) * 4;
-            d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
-          }
-        }
-      } else {
-        console.warn('imgObjToCanvas: unknown kind', kind);
-        return null;
-      }
-
-      ctx.putImageData(id, 0, 0);
-      return c;
-    }
-
-    // ── Render page and crop to the largest image rect ─────────────────────────
-    // Preferred: extract image pixels directly from PDF.js object store (native res).
-    // Fallback: render full page at RENDER_SCALE and crop to image rect.
-
-    const RENDER_SCALE = 2;
-
-    async function renderAndCrop(page) {
-      const opList = await page.getOperatorList();
-      const rects  = imageRectsFromOpList(opList);
-      if (!rects.length) return null;
-
-      const rect = rects.reduce((a, b) => a.area >= b.area ? a : b);
-
-      // Render first — this populates page.objs with decoded image data.
-      // We keep the rendered canvas as a fallback crop in case native extraction fails.
-      const vp   = page.getViewport({ scale: RENDER_SCALE });
-      const full = document.createElement('canvas');
-      full.width  = Math.round(vp.width);
-      full.height = Math.round(vp.height);
-      await page.render({ canvasContext: full.getContext('2d'), viewport: vp }).promise;
-
-      // After render, page.objs should have the decoded image at native resolution.
-      const nativeObj = await getNativeImageObj(page, rect.id);
-      if (nativeObj) {
-        const crop = imgObjToCanvas(nativeObj);
-        if (crop) {
-          log(`Native: kind=${nativeObj.kind ?? 'bitmap'} ${crop.width}×${crop.height}`);
-          return { crop, rect, cw: crop.width, ch: crop.height, native: true, nativeKind: nativeObj.kind ?? 'bitmap' };
-        }
-        log(`Native obj found (kind=${nativeObj.kind}) but decode failed — using render crop`);
-      } else {
-        log('Native obj not in page.objs after render — using render crop');
-      }
-
-      const cx = Math.round(rect.x0 * RENDER_SCALE);
-      const cy = Math.round(vp.height - rect.y1 * RENDER_SCALE);
-      const cw = Math.round((rect.x1 - rect.x0) * RENDER_SCALE);
-      const ch = Math.round((rect.y1 - rect.y0) * RENDER_SCALE);
-
-      const crop = document.createElement('canvas');
-      crop.width  = cw;
-      crop.height = ch;
-      crop.getContext('2d').drawImage(full, cx, cy, cw, ch, 0, 0, cw, ch);
-
-      return { crop, rect, cw, ch, native: false };
-    }
-
-    // ── Image preprocessing ───────────────────────────────────────────────────────
-
-    // Upscale canvas by factor using a second canvas + drawImage
-    function upscale(src, factor) {
-      if (factor <= 1) return src;
-      const dst = document.createElement('canvas');
-      dst.width  = Math.round(src.width  * factor);
-      dst.height = Math.round(src.height * factor);
-      const ctx  = dst.getContext('2d');
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(src, 0, 0, dst.width, dst.height);
-      return dst;
-    }
-
-    // Convert to grayscale then hard-threshold: pixels below threshold → black, else white
-    function binarize(src, threshold) {
-      const dst = document.createElement('canvas');
-      dst.width  = src.width;
-      dst.height = src.height;
-      const ctx  = dst.getContext('2d');
-      ctx.drawImage(src, 0, 0);
-      const id   = ctx.getImageData(0, 0, dst.width, dst.height);
-      const d    = id.data;
-      for (let i = 0; i < d.length; i += 4) {
-        const gray = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
-        const v    = gray < threshold ? 0 : 255;
-        d[i] = d[i+1] = d[i+2] = v;
-        d[i+3] = 255;
-      }
-      ctx.putImageData(id, 0, 0);
-      return dst;
-    }
-
-    // Find all dark-pixel connected components. Returns { blobs, ink, W, H }.
-    // Each blob includes a seed pixel index so renderGroupCanvas can re-flood it.
-    function findBlobs(canvas) {
-      const W = canvas.width, H = canvas.height;
-      const px  = canvas.getContext('2d').getImageData(0, 0, W, H).data;
-      const ink = new Uint8Array(W * H);
-      for (let i = 0; i < W * H; i++)
-        ink[i] = (px[i*4] + px[i*4+1] + px[i*4+2]) < 384 ? 1 : 0;
-
-      const seen  = new Uint8Array(W * H);
-      const blobs = [];
-      for (let start = 0; start < W * H; start++) {
-        if (!ink[start] || seen[start]) continue;
-        const stk = [start]; seen[start] = 1;
-        let x0 = start % W, y0 = (start / W)|0, x1 = x0, y1 = y0;
-        while (stk.length) {
-          const p = stk.pop();
-          const py = (p / W)|0, px_ = p % W;
-          if (px_ < x0) x0 = px_; if (px_ > x1) x1 = px_;
-          if (py  < y0) y0 = py;  if (py  > y1) y1 = py;
-          if (px_ > 0   && ink[p-1] && !seen[p-1]) { seen[p-1] = 1; stk.push(p-1); }
-          if (px_ < W-1 && ink[p+1] && !seen[p+1]) { seen[p+1] = 1; stk.push(p+1); }
-          if (py  > 0   && ink[p-W] && !seen[p-W]) { seen[p-W] = 1; stk.push(p-W); }
-          if (py  < H-1 && ink[p+W] && !seen[p+W]) { seen[p+W] = 1; stk.push(p+W); }
-        }
-        blobs.push({ x0, y0, x1: x1+1, y1: y1+1, w: x1-x0+1, h: y1-y0+1, seed: start });
-      }
-      return { blobs, ink, W, H };
-    }
-
-    // Re-flood from each blob's seed to paint only the exact connected ink pixels
-    // onto a white canvas. No surrounding lines or noise — pure blob pixels.
-    function renderGroupCanvas(ink, W, H, group, pad) {
-      const gx0 = Math.max(0, group.x0 - pad), gy0 = Math.max(0, group.y0 - pad);
-      const gx1 = Math.min(W, group.x1 + pad), gy1 = Math.min(H, group.y1 + pad);
-      const cw = gx1 - gx0, ch = gy1 - gy0;
-      const dst = document.createElement('canvas');
-      dst.width = cw; dst.height = ch;
-      const ctx = dst.getContext('2d');
-      ctx.fillStyle = 'white'; ctx.fillRect(0, 0, cw, ch);
-      const id = ctx.getImageData(0, 0, cw, ch);
-      const d  = id.data;
-      const vis = new Uint8Array(W * H);
-      for (const blob of group.parts) {
-        if (vis[blob.seed]) continue;
-        const stk = [blob.seed]; vis[blob.seed] = 1;
-        while (stk.length) {
-          const p = stk.pop();
-          const py = (p / W)|0, px_ = p % W;
-          const dx = px_ - gx0, dy = py - gy0;
-          if (dx >= 0 && dx < cw && dy >= 0 && dy < ch) {
-            const i = (dy * cw + dx) * 4;
-            d[i] = d[i+1] = d[i+2] = 0; d[i+3] = 255;
-          }
-          if (px_ > 0   && ink[p-1] && !vis[p-1]) { vis[p-1] = 1; stk.push(p-1); }
-          if (px_ < W-1 && ink[p+1] && !vis[p+1]) { vis[p+1] = 1; stk.push(p+1); }
-          if (py  > 0   && ink[p-W] && !vis[p-W]) { vis[p-W] = 1; stk.push(p-W); }
-          if (py  < H-1 && ink[p+W] && !vis[p+W]) { vis[p+W] = 1; stk.push(p+W); }
-        }
-      }
-      ctx.putImageData(id, 0, 0);
-      return dst;
-    }
-
-    // Given the image rect in PDF points and pixel crop dimensions,
-    // return effective DPI and the pixel height of one point.
-    function calcDpi(rect, cropPx) {
-      const widthPts = rect.x1 - rect.x0;
-      const dpi      = cropPx * 72 / widthPts;  // pixels per inch
-      return dpi;
-    }
-
-    // ── Main ─────────────────────────────────────────────────────────────────────
+    // ── OCR ───────────────────────────────────────────────────────────────────────
 
     async function runPage() {
-      if (!pdfDoc || !tWorker) return;
+      if (!pdfDoc || !rawBuffer) return;
       const pageNum = parseInt(document.getElementById('pageNum').value);
       if (pageNum < 1 || pageNum > pdfDoc.numPages) return;
-
-      output.innerHTML = '<p style="color:#666">Rendering…</p>';
+      currentPage = pageNum;
+      output.innerHTML = '<p style="color:#666">Processing…</p>';
       log('');
+      worker.postMessage({
+        type:      'ocr-page',
+        buffer:    rawBuffer,
+        pageNum,
+        binThresh: parseFloat(document.getElementById('binThresh').value) || 128,
+        targetPx:  parseFloat(document.getElementById('targetPx').value)  || 40,
+        minConf:   parseInt(document.getElementById('minConf').value)     || 90,
+      });
+    }
 
-      const page = await pdfDoc.getPage(pageNum);
-      let result;
-      try {
-        result = await renderAndCrop(page);
-      } catch (e) {
-        output.innerHTML = `<p style="color:#ff9800">Failed: ${e.message}</p>`;
-        page.cleanup(); return;
-      }
-      page.cleanup();
-
-      if (!result) {
+    async function handleOcrResult({ callouts, pngBuffer, stripBuffer, stripWidth, stripHeight,
+                                     width, height, native, srcLabel, stats }) {
+      if (!pngBuffer) {
         output.innerHTML = '<p style="color:#ff9800">No image XObject found on this page.</p>';
+        log('');
         return;
       }
 
-      const { crop, rect, cw, native, nativeKind } = result;
-
-      // ── Preprocessing ────────────────────────────────────────────────────────
-      const targetPx  = parseFloat(document.getElementById('targetPx').value) || 40;
-      const binThresh = parseFloat(document.getElementById('binThresh').value) || 128;
-      const minConf   = parseInt(document.getElementById('minConf').value)     || 90;
-      const pxPerPt   = cw / (rect.x1 - rect.x0);
-      const srcDpi    = calcDpi(rect, cw);
-      const kindLabel = native ? ['?','1bpp','RGB','RGBA'][nativeKind] ?? '?' : null;
-      const srcLabel  = native
-        ? `native ${crop.width}×${crop.height} (${kindLabel}, ${Math.round(srcDpi)} DPI)`
-        : `render×${RENDER_SCALE} ${cw}×${result.ch} (${Math.round(srcDpi)} DPI — fallback)`;
-
-      log(`Source: ${srcLabel}`);
-
-      const binned = binarize(crop, binThresh);
-      const minH = targetPx * 0.9, maxH = targetPx * 1.1;
-
-      // Build blob canvases and run both OCR passes; return confirmed digits or null
-      async function tryAtScale(candidates, ink, W, H) {
-        const PAD    = Math.round(targetPx * 0.3);
-        const SEP    = Math.round(targetPx * 1.2);
-        const stripH = Math.round(targetPx * 1.8);
-        let cursor = SEP;
-        const items = candidates.map(b => {
-          const bc = renderGroupCanvas(ink, W, H, { parts: [b], x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 }, PAD);
-          const item = { blob: b, blobCanvas: bc, stripX: cursor };
-          cursor += bc.width + SEP;
-          return item;
-        });
-        const strip = document.createElement('canvas');
-        strip.width = cursor; strip.height = stripH;
-        const sctx = strip.getContext('2d');
-        sctx.fillStyle = 'white'; sctx.fillRect(0, 0, strip.width, strip.height);
-        for (const it of items) {
-          const dy = Math.round((stripH - it.blobCanvas.height) / 2);
-          sctx.drawImage(it.blobCanvas, it.stripX, dy);
-        }
-
-        // PSM 10 and PSM 8 have complementary blind spots; merge both passes
-        async function runPass(psm) {
-          await tWorker.setParameters({
-            tessedit_char_whitelist: '0123456789',
-            tessedit_pageseg_mode:   psm,
-            user_defined_dpi:        '300',
-          });
-          const out = [];
-          for (let i = 0; i < items.length; i++) {
-            if (i % 10 === 0) log(`PSM${psm} ${i+1}/${items.length}…`);
-            const { data } = await tWorker.recognize(items[i].blobCanvas);
-            out.push({ text: (data.text || '').replace(/\s/g, ''), conf: Math.round(data.confidence || 0) });
-          }
-          return out;
-        }
-
-        const pass10 = await runPass('10');
-        const pass8  = await runPass('8');
-
-        const digitResults = [];
-        for (let i = 0; i < items.length; i++) {
-          const r10 = pass10[i], r8 = pass8[i];
-          const ok10 = /^\d$/.test(r10.text) && r10.conf >= minConf;
-          const ok8  = /^\d$/.test(r8.text)  && r8.conf  >= minConf;
-          if (!ok10 && !ok8) continue;
-          const pick = !ok10 ? r8 : !ok8 ? r10 : r10.conf >= r8.conf ? r10 : r8;
-          digitResults.push({ text: pick.text, confidence: pick.conf, blob: items[i].blob });
-        }
-
-        if (!digitResults.length) return null;
-        return { digitResults, blobItems: items, strip };
-      }
-
-      // ── Multi-scale cascade ───────────────────────────────────────────────────
-      let scaleFactor, fontPtUsed, blobItems, strip, digitResults, totalBlobs, candidateCount;
-      const t0 = performance.now();
-
-      for (const fontPt of OCR_FONT_PT_CANDIDATES) {
-        const scale = Math.max(1, targetPx / (fontPt * pxPerPt));
-        const processed = upscale(binned, scale);
-        const { blobs, ink, W, H } = findBlobs(processed);
-        const candidates = blobs.filter(b => b.h >= minH && b.h <= maxH && b.w / b.h <= 2);
-        log(`${fontPt}pt (×${scale.toFixed(2)}): ${blobs.length} blobs → ${candidates.length} candidates`);
-        if (!candidates.length) continue;
-        const out = await tryAtScale(candidates, ink, W, H);
-        if (out) {
-          scaleFactor    = scale;
-          fontPtUsed     = fontPt;
-          blobItems      = out.blobItems;
-          strip          = out.strip;
-          digitResults   = out.digitResults;
-          totalBlobs     = blobs.length;
-          candidateCount = candidates.length;
-          break;
-        }
-        log(`${fontPt}pt: no confirmed digits — trying next…`);
-      }
-
-      const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
-
-      if (!digitResults) {
-        output.innerHTML = `<p style="color:#ff9800">No callouts found at any scale (${OCR_FONT_PT_CANDIDATES.join(', ')}pt tried, ${elapsed}s).</p>`;
-        log('No confirmed digits at any candidate scale.');
-        return;
-      }
-
-      // ── Phase 4: group adjacent digit results into multi-digit numbers ────────
-      digitResults.sort((a, b) => a.blob.x0 - b.blob.x0);
-      const X_GAP = targetPx * 0.9, Y_TOL = targetPx * 0.1;
-      const numGroups = [];
-      for (const dr of digitResults) {
-        const b = dr.blob;
-        const yc = (b.y0 + b.y1) / 2;
-        let placed = false;
-        for (const g of numGroups) {
-          const last = g.digits[g.digits.length - 1];
-          const lb   = last.blob;
-          const xGap = (b.x0 + b.x1)/2 - (lb.x0 + lb.x1)/2;
-          if (Math.abs(yc - (lb.y0 + lb.y1) / 2) < Y_TOL && xGap >= 0 && xGap < X_GAP) {
-            g.digits.push(dr);
-            g.x1 = Math.max(g.x1, b.x1);
-            g.y0 = Math.min(g.y0, b.y0);
-            g.y1 = Math.max(g.y1, b.y1);
-            placed = true; break;
-          }
-        }
-        if (!placed) numGroups.push({ digits: [dr], x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 });
-      }
-
-      const callouts = numGroups
-        .map(g => ({
-          text:       g.digits.map(d => d.text).join(''),
-          confidence: Math.round(g.digits.reduce((s, d) => s + d.confidence, 0) / g.digits.length),
-          bbox:       { x0: g.x0, y0: g.y0, x1: g.x1, y1: g.y1 },
-        }))
-        .filter(c => !/^0+$/.test(c.text));
-
-      callouts.sort((a, b) => parseInt(a.text) - parseInt(b.text));
-
-      log(`${candidateCount} blobs → ${digitResults.length} digits → ${callouts.length} callouts (${elapsed}s OCR, ${fontPtUsed}pt won)`);
-
-      const pw = crop.width, ph = crop.height;
-
-      // ── Build output ──────────────────────────────────────────────────────────
+      const { fontPtUsed, totalBlobs, candidateCount, digitCount, elapsed } = stats ?? {};
 
       let html = `<div class="layout">
         <div class="panel">
-          <h2>Page ${pageNum} — original image (${pw}×${ph})</h2>
+          <h2>Page ${currentPage} — original image (${width}×${height})</h2>
           <div id="img-wrap"><canvas id="cropCanvas"></canvas></div>
         </div>
         <div class="panel">
           <h2>OCR results</h2>
           <div>
-            <span class="stat ${native ? 'ok' : 'warn'}">${srcLabel}</span>
-            <span class="stat">${candidateCount}/${totalBlobs} blobs · ${fontPtUsed}pt</span>
-            <span class="stat">${digitResults.length} digits</span>
+            <span class="stat ${native ? 'ok' : 'warn'}">${escHtml(srcLabel)}</span>
+            ${stats ? `<span class="stat">${candidateCount}/${totalBlobs} blobs · ${fontPtUsed}pt</span>
+            <span class="stat">${digitCount} digits</span>` : ''}
             <span class="stat ok">${callouts.length} callouts</span>
-            <span class="stat">${elapsed}s · ${scaleFactor.toFixed(1)}×</span>
+            ${stats ? `<span class="stat">${elapsed}s</span>` : ''}
           </div>
           <table class="results">
             <thead><tr><th>Callout</th><th>Conf</th><th>W×H</th></tr></thead>
@@ -589,54 +186,55 @@
       for (const c of callouts) {
         const conf = c.confidence;
         const barC = conf >= 80 ? '#4caf50' : conf >= 60 ? '#ff9800' : '#f44336';
-        const bb   = c.bbox;
-        html += `<tr class="match" data-text="${escHtml(c.text)}" onclick="selectCallout('${escHtml(c.text)}')">
-          <td>${escHtml(c.text)}</td>
+        const bw = Math.round((c.x1 - c.x0) / 10000 * width);
+        const bh = Math.round((c.y1 - c.y0) / 10000 * height);
+        html += `<tr class="match" data-text="${escHtml(c.number)}" onclick="selectCallout('${escHtml(c.number)}')">
+          <td>${escHtml(c.number)}</td>
           <td><span class="conf-bar" style="width:${Math.round(conf*0.6)}px;background:${barC}"></span> ${conf}%</td>
-          <td>${bb.x1-bb.x0}×${bb.y1-bb.y0}</td>
+          <td>${bw}×${bh}</td>
         </tr>`;
       }
 
-      html += `</tbody></table></div></div>
-        <div class="panel" style="margin-top:0.75rem">
-          <h2>Strip fed to Tesseract (${candidateCount} blobs @ ${fontPtUsed}pt, ${strip.width}×${strip.height}px)</h2>
+      html += `</tbody></table></div></div>`;
+      if (stripBuffer) {
+        html += `<div class="panel" style="margin-top:0.75rem">
+          <h2>Strip fed to Tesseract (${candidateCount} blobs @ ${fontPtUsed}pt, ${stripWidth}×${stripHeight}px)</h2>
           <div style="overflow-x:auto"><canvas id="stripCanvas" style="max-height:80px;height:80px;width:auto"></canvas></div>
         </div>`;
+      }
       output.innerHTML = html;
+      log('');
 
-      // Draw the preprocessed image onto the canvas
+      const bm = await createImageBitmap(new Blob([pngBuffer], { type: 'image/png' }));
       const cc = document.getElementById('cropCanvas');
-      cc.width  = pw;
-      cc.height = ph;
-      const cctx = cc.getContext('2d');
-      cctx.drawImage(crop, 0, 0);
-      cctx.strokeStyle = 'red';
-      cctx.lineWidth = 3;
-      //for (const b of allBlobs) cctx.strokeRect(b.x0, b.y0, b.w, b.h);
+      cc.width = width; cc.height = height;
+      cc.getContext('2d').drawImage(bm, 0, 0);
 
-      // Draw the strip (what Tesseract actually received)
-      const sc = document.getElementById('stripCanvas');
-      sc.width  = strip.width;
-      sc.height = strip.height;
-      sc.getContext('2d').drawImage(strip, 0, 0);
+      if (stripBuffer) {
+        const sbm = await createImageBitmap(new Blob([stripBuffer], { type: 'image/png' }));
+        const sc = document.getElementById('stripCanvas');
+        sc.width = stripWidth; sc.height = stripHeight;
+        sc.getContext('2d').drawImage(sbm, 0, 0);
+      }
 
-      // Overlay bounding boxes after layout settles
       const wrap = document.getElementById('img-wrap');
       new ResizeObserver(function cb() {
         this.disconnect();
-        const sx = cc.offsetWidth  / pw;
-        const sy = cc.offsetHeight / ph;
+        const sx = cc.offsetWidth  / width;
+        const sy = cc.offsetHeight / height;
         wrap.querySelectorAll('.ocr-box').forEach(el => el.remove());
         for (const c of callouts) {
-          const bb  = c.bbox;
+          const x0 = c.x0 / 10000 * width * sx, y0 = c.y0 / 10000 * height * sy;
+          const w  = (c.x1 - c.x0) / 10000 * width * sx;
+          const h  = (c.y1 - c.y0) / 10000 * height * sy;
           const div = document.createElement('div');
           div.className = 'ocr-box match';
-          div.dataset.text = c.text;
-          div.style.cssText = `left:${bb.x0/scaleFactor*sx}px;top:${bb.y0/scaleFactor*sy}px;width:${(bb.x1-bb.x0)/scaleFactor*sx}px;height:${(bb.y1-bb.y0)/scaleFactor*sy}px`;
-          div.addEventListener('click', () => selectCallout(c.text));
+          div.dataset.text = c.number;
+          div.style.cssText = `left:${x0}px;top:${y0}px;width:${w}px;height:${h}px`;
+          div.addEventListener('click', () => selectCallout(c.number));
           const lbl = document.createElement('span');
-          lbl.className   = 'ocr-label';
-          lbl.textContent = c.text;
+          lbl.className = 'ocr-label';
+          lbl.textContent = c.number;
           div.appendChild(lbl);
           wrap.appendChild(div);
         }
@@ -669,8 +267,8 @@
       }
     }
 
-    async function prevPage() { if (diagramIdx > 0)                           { diagramIdx--; await goToIdx(); } }
-    async function nextPage() { if (diagramIdx < diagramPages.length - 1)     { diagramIdx++; await goToIdx(); } }
+    async function prevPage() { if (diagramIdx > 0)                       { diagramIdx--; await goToIdx(); } }
+    async function nextPage() { if (diagramIdx < diagramPages.length - 1) { diagramIdx++; await goToIdx(); } }
     async function goToIdx()  { document.getElementById('pageNum').value = diagramPages[diagramIdx]; updateNav(); await runPage(); }
     function updateNav() {
       document.getElementById('navInfo').textContent =

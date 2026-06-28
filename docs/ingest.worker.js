@@ -73,6 +73,9 @@ self.onmessage = async ({ data }) => {
   } else if (data.type === 'reingest-sections') {
     try { await reingestSections(data.buffer, data.catalogId, data.sectionNums, data.partsOnly ?? false); }
     catch (err) { post('error', { message: String(err) }); }
+  } else if (data.type === 'ocr-page') {
+    try { await ocrPage(data); }
+    catch (err) { post('error', { message: String(err) }); }
   }
 };
 
@@ -718,48 +721,69 @@ function imgObjToOffscreenCanvas(obj) {
 }
 
 // Extract callout numbers from a rendered diagram canvas.
-// Returns [{ number, confidence, x0, y0, x1, y1 }] normalized 0–10000 in PNG pixel space.
+// Returns { callouts, strip, stats } where callouts are normalized 0–10000 in PNG pixel space.
 // diagRect: if provided, canvas is already cropped to that rect (skip internal crop step).
-async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null) {
+// params: { binThresh, targetPx, minConf, debug } — fall back to module constants when omitted.
+//   debug: when true, builds a strip canvas of blobs fed to Tesseract and populates stats.
+async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params = {}) {
+  const {
+    binThresh = OCR_BIN_THRESH,
+    targetPx  = OCR_TARGET_PX,
+    minConf   = OCR_MIN_CONF,
+    debug     = false,
+  } = params;
   const t0 = performance.now();
 
   let crop, cx, cy, cw, ch, rect;
   if (diagRect) {
-    // Canvas is already cropped to the diagram; skip re-cropping
     rect = diagRect;
     crop = canvas;
     cx = 0; cy = 0;
     cw = canvas.width; ch = canvas.height;
   } else {
     const rects = imageRectsFromOpList(opList);
-    if (!rects.length) return [];
+    if (!rects.length) return { callouts: [], strip: null, stats: null };
     rect = rects.reduce((a, b) => a.area >= b.area ? a : b);
     cx = Math.round(rect.x0 * DIAGRAM_SCALE);
     cy = Math.round(vp.height - rect.y1 * DIAGRAM_SCALE);
     cw = Math.round((rect.x1 - rect.x0) * DIAGRAM_SCALE);
     ch = Math.round((rect.y1 - rect.y0) * DIAGRAM_SCALE);
-    if (cw <= 0 || ch <= 0) return [];
+    if (cw <= 0 || ch <= 0) return { callouts: [], strip: null, stats: null };
     crop = new OffscreenCanvas(cw, ch);
     crop.getContext('2d').drawImage(canvas, cx, cy, cw, ch, 0, 0, cw, ch);
   }
 
   let t = performance.now();
   const pxPerPt = cw / (rect.x1 - rect.x0);
-  const binned  = binarize(crop, OCR_BIN_THRESH);
+  const binned  = binarize(crop, binThresh);
   TIMING.binarizeUpscale += performance.now() - t;
 
-  const minH = OCR_TARGET_PX * 0.9, maxH = OCR_TARGET_PX * 1.1;
+  const minH = targetPx * 0.9, maxH = targetPx * 1.1;
 
-  // Build blob canvases and run both OCR passes; return confirmed digits or null
+  // Build blob canvases and run both OCR passes; return confirmed digits or null.
+  // When debug is true, also builds a strip canvas showing all blobs fed to Tesseract.
   async function tryAtScale(candidates, ink, W, H) {
     let ts = performance.now();
-    const PAD = Math.round(OCR_TARGET_PX * 0.3);
+    const PAD = Math.round(targetPx * 0.3);
     const blobItems = candidates.map(b => ({
-      blob: b,
+      blob:   b,
       canvas: renderBlobCanvas(ink, W, H, b, PAD),
     }));
     TIMING.renderBlobs    += performance.now() - ts;
     TIMING.candidateCount += candidates.length;
+
+    let strip = null;
+    if (debug) {
+      const SEP    = Math.round(targetPx * 1.2);
+      const stripH = Math.round(targetPx * 1.8);
+      let cursor = SEP;
+      const positions = blobItems.map(it => { const sx = cursor; cursor += it.canvas.width + SEP; return sx; });
+      strip = new OffscreenCanvas(cursor, stripH);
+      const sctx = strip.getContext('2d');
+      sctx.fillStyle = 'white'; sctx.fillRect(0, 0, cursor, stripH);
+      for (let i = 0; i < blobItems.length; i++)
+        sctx.drawImage(blobItems[i].canvas, positions[i], Math.round((stripH - blobItems[i].canvas.height) / 2));
+    }
 
     async function runPass(psm) {
       ts = performance.now();
@@ -791,22 +815,23 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null) {
     const digitResults = [];
     for (let i = 0; i < blobItems.length; i++) {
       const r10 = pass10[i], r8 = pass8[i];
-      const ok10 = /^\d$/.test(r10.text) && r10.conf >= OCR_MIN_CONF;
-      const ok8  = /^\d$/.test(r8.text)  && r8.conf  >= OCR_MIN_CONF;
+      const ok10 = /^\d$/.test(r10.text) && r10.conf >= minConf;
+      const ok8  = /^\d$/.test(r8.text)  && r8.conf  >= minConf;
       if (!ok10 && !ok8) continue;
       const pick = !ok10 ? r8 : !ok8 ? r10 : r10.conf >= r8.conf ? r10 : r8;
       digitResults.push({ text: pick.text, confidence: pick.conf, blob: blobItems[i].blob });
     }
 
     if (!digitResults.length) return null;
-    return { digitResults, blobItems };
+    return { digitResults, strip };
   }
 
   // Multi-scale cascade: try each candidate font size, stop on first confirmed digit
-  let scale, digitResults;
+  let scale, digitResults, strip = null;
+  let fontPtUsed, totalBlobs, candidateCount;
   for (const fontPt of OCR_FONT_PT_CANDIDATES) {
     t = performance.now();
-    const s = Math.max(1, OCR_TARGET_PX / (fontPt * pxPerPt));
+    const s = Math.max(1, targetPx / (fontPt * pxPerPt));
     const processed = upscale(binned, s);
     TIMING.binarizeUpscale += performance.now() - t;
 
@@ -818,16 +843,21 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null) {
     if (!candidates.length) continue;
 
     const out = await tryAtScale(candidates, ink, W, H);
-    if (out) { scale = s; digitResults = out.digitResults; break; }
+    if (out) {
+      scale = s; digitResults = out.digitResults;
+      fontPtUsed = fontPt; totalBlobs = blobs.length; candidateCount = candidates.length;
+      if (debug) strip = out.strip;
+      break;
+    }
   }
 
   TIMING.diagramCount++;
   TIMING.totalOcr += performance.now() - t0;
 
-  if (!digitResults) return [];
+  if (!digitResults) return { callouts: [], strip: null, stats: null };
 
   digitResults.sort((a, b) => a.blob.x0 - b.blob.x0);
-  const X_GAP = OCR_TARGET_PX * 0.9, Y_TOL = OCR_TARGET_PX * 0.1;
+  const X_GAP = targetPx * 0.9, Y_TOL = targetPx * 0.1;
   const numGroups = [];
   for (const dr of digitResults) {
     const b = dr.blob, yc = (b.y0 + b.y1) / 2;
@@ -845,7 +875,7 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null) {
   }
 
   const pngW = canvas.width, pngH = canvas.height;
-  return numGroups
+  const callouts = numGroups
     .map(g => ({
       number:     g.digits.map(d => d.text).join(''),
       confidence: Math.round(g.digits.reduce((s, d) => s + d.confidence, 0) / g.digits.length),
@@ -855,6 +885,12 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null) {
       y1: Math.round((g.y1 / scale + cy) / pngH * 10000),
     }))
     .filter(c => !/^0+$/.test(c.number));
+
+  const stats = debug
+    ? { fontPtUsed, totalBlobs, candidateCount, digitCount: digitResults.length,
+        elapsed: ((performance.now() - t0) / 1000).toFixed(1) }
+    : null;
+  return { callouts, strip, stats };
 }
 
 // ── Partial re-ingest ─────────────────────────────────────────────────────────
@@ -1085,7 +1121,7 @@ async function renderDiagram(pdf, pageNum, sectionNum, imagesDir, catalogId, tWo
   let callouts = [];
   if (tWorker) {
     try {
-      callouts = await ocrDiagram(ocrCanvas, opList, vp, tWorker, diagRect);
+      ({ callouts } = await ocrDiagram(ocrCanvas, opList, vp, tWorker, diagRect));
     } catch (e) {
       // OCR failure is non-fatal; parts table works without callouts
     }
@@ -1153,4 +1189,88 @@ function insertSection(db, mgId, catalogId, num, title, partsPage, diagPage, img
     [mgId, catalogId, num, title, partsPage, diagPage, imgPath]
   );
   return db.exec('SELECT last_insert_rowid()')[0].values[0][0];
+}
+
+// ── Single-page OCR for spike/debug use ──────────────────────────────────────
+// Handles { type:'ocr-page', buffer, pageNum, binThresh?, targetPx?, minConf? }
+// Posts { type:'ocr-result', callouts, pngBuffer, stripBuffer, stripWidth,
+//         stripHeight, width, height, native, srcLabel, stats }
+
+let _spikeOcrWorker = null;
+let _spikeOcrWorkerInit = null;
+
+function getSpikeOcrWorker() {
+  if (_spikeOcrWorker) return Promise.resolve(_spikeOcrWorker);
+  if (!_spikeOcrWorkerInit) {
+    post('status', { message: 'Initialising Tesseract…' });
+    _spikeOcrWorkerInit = initTesseract().then(w => {
+      _spikeOcrWorker = w;
+      post('status', { message: 'Tesseract ready.' });
+      return w;
+    });
+  }
+  return _spikeOcrWorkerInit;
+}
+
+async function ocrPage({ buffer, pageNum, binThresh = OCR_BIN_THRESH, targetPx = OCR_TARGET_PX, minConf = OCR_MIN_CONF }) {
+  const pdf  = await pdfjsLib.getDocument({ data: buffer, ...PDFJS_OPTS, canvasFactory: CANVAS_FACTORY }).promise;
+  const page = await pdf.getPage(pageNum);
+  const vp   = page.getViewport({ scale: DIAGRAM_SCALE });
+  const full = new OffscreenCanvas(Math.round(vp.width), Math.round(vp.height));
+
+  const [opList] = await Promise.all([
+    page.getOperatorList(),
+    page.render({ canvasContext: full.getContext('2d'), viewport: vp }).promise,
+  ]);
+
+  const rects = imageRectsFromOpList(opList);
+  if (!rects.length) {
+    page.cleanup(); pdf.destroy();
+    post('ocr-result', { callouts: [], pngBuffer: null, stripBuffer: null,
+      width: 0, height: 0, native: false, srcLabel: 'No image XObject found', stats: null });
+    return;
+  }
+
+  const diagRect = rects.reduce((a, b) => a.area >= b.area ? a : b);
+  const cx = Math.round(diagRect.x0 * DIAGRAM_SCALE);
+  const cy = Math.round(vp.height - diagRect.y1 * DIAGRAM_SCALE);
+  const cw = Math.round((diagRect.x1 - diagRect.x0) * DIAGRAM_SCALE);
+  const ch = Math.round((diagRect.y1 - diagRect.y0) * DIAGRAM_SCALE);
+
+  let cropCanvas = full;
+  if (cw > 0 && ch > 0) {
+    cropCanvas = new OffscreenCanvas(cw, ch);
+    cropCanvas.getContext('2d').drawImage(full, cx, cy, cw, ch, 0, 0, cw, ch);
+  }
+
+  let ocrCanvas = cropCanvas, native = false, nativeKind = null;
+  try {
+    const nativeObj = await getNativeImageObj(page, diagRect.id);
+    if (nativeObj) {
+      const nc = imgObjToOffscreenCanvas(nativeObj);
+      if (nc) { ocrCanvas = nc; native = true; nativeKind = nativeObj.kind ?? 'bitmap'; }
+    }
+  } catch { /* fall through */ }
+  page.cleanup();
+
+  const tWorker = await getSpikeOcrWorker();
+  const { callouts, strip, stats } = await ocrDiagram(
+    ocrCanvas, null, null, tWorker, diagRect, { binThresh, targetPx, minConf, debug: true }
+  );
+  pdf.destroy();
+
+  const pngBuf   = await cropCanvas.convertToBlob({ type: 'image/png' }).then(b => b.arrayBuffer());
+  const stripBuf = strip ? await strip.convertToBlob({ type: 'image/png' }).then(b => b.arrayBuffer()) : null;
+
+  const dpi      = cw / (diagRect.x1 - diagRect.x0) * 72;
+  const kindLabel = native ? (['?','1bpp','RGB','RGBA'][nativeKind] ?? '?') : null;
+  const srcLabel  = native
+    ? `native ${ocrCanvas.width}×${ocrCanvas.height} (${kindLabel}, ${Math.round(dpi)} DPI)`
+    : `render×${DIAGRAM_SCALE} ${cw}×${ch} (${Math.round(dpi)} DPI — fallback)`;
+
+  const transfer = [pngBuf];
+  if (stripBuf) transfer.push(stripBuf);
+  self.postMessage({ type: 'ocr-result', callouts, pngBuffer: pngBuf, stripBuffer: stripBuf,
+    stripWidth: strip?.width, stripHeight: strip?.height,
+    width: cropCanvas.width, height: cropCanvas.height, native, srcLabel, stats }, transfer);
 }
