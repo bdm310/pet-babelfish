@@ -78,9 +78,9 @@
       <label style="margin-left:0.5rem">Nominal font size (pt):</label>
       <input type="number" id="fontPt" value="7" min="1" max="72" style="width:55px">
       <label>Target OCR height (px):</label>
-      <input type="number" id="targetPx" value="80" min="20" max="400" style="width:55px">
+      <input type="number" id="targetPx" value="40" min="20" max="400" style="width:55px">
       <label style="margin-left:0.5rem">Min confidence:</label>
-      <input type="number" id="minConf" value="40" min="0" max="100" style="width:55px">
+      <input type="number" id="minConf" value="90" min="0" max="100" style="width:55px">
     </div>
   </div>
 
@@ -546,13 +546,13 @@
 
       log(`${candidates.length} blobs → ${digitResults.length} digits → ${callouts.length} callouts (${elapsed}s OCR)`);
 
-      const pw = processed.width, ph = processed.height;
+      const pw = crop.width, ph = crop.height;
 
       // ── Build output ──────────────────────────────────────────────────────────
 
       let html = `<div class="layout">
         <div class="panel">
-          <h2>Page ${pageNum} — upscaled ${scaleFactor.toFixed(1)}× (${pw}×${ph})</h2>
+          <h2>Page ${pageNum} — original image (${pw}×${ph})</h2>
           <div id="img-wrap"><canvas id="cropCanvas"></canvas></div>
         </div>
         <div class="panel">
@@ -591,7 +591,7 @@
       cc.width  = pw;
       cc.height = ph;
       const cctx = cc.getContext('2d');
-      cctx.drawImage(processed, 0, 0);
+      cctx.drawImage(crop, 0, 0);
       cctx.strokeStyle = 'red';
       cctx.lineWidth = 3;
       //for (const b of allBlobs) cctx.strokeRect(b.x0, b.y0, b.w, b.h);
@@ -614,7 +614,7 @@
           const div = document.createElement('div');
           div.className = 'ocr-box match';
           div.dataset.text = c.text;
-          div.style.cssText = `left:${bb.x0*sx}px;top:${bb.y0*sy}px;width:${(bb.x1-bb.x0)*sx}px;height:${(bb.y1-bb.y0)*sy}px`;
+          div.style.cssText = `left:${bb.x0/scaleFactor*sx}px;top:${bb.y0/scaleFactor*sy}px;width:${(bb.x1-bb.x0)/scaleFactor*sx}px;height:${(bb.y1-bb.y0)/scaleFactor*sy}px`;
           div.addEventListener('click', () => selectCallout(c.text));
           const lbl = document.createElement('span');
           lbl.className   = 'ocr-label';

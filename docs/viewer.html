@@ -76,12 +76,16 @@
 
     /* ── Diagram panel ───────────────────────────────────────────── */
     .diagram-panel { display: flex; flex-direction: column; overflow: hidden; }
-    .diagram-header { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.82rem;
-                      color: var(--text3); flex-shrink: 0; }
-    .diagram-scroll { flex: 1; overflow: auto; display: flex; align-items: flex-start;
+    .diagram-scroll { flex: 1; overflow: hidden; display: flex; align-items: center;
                       justify-content: center; background: var(--bg4); padding: 0.5rem; }
-    .diagram-scroll img { max-width: 100%; display: block; }
+    .diagram-wrap { position: relative; flex: 1; align-self: stretch; overflow: hidden; }
+    .diagram-wrap img { width: 100%; height: 100%; display: block; object-fit: contain; }
+    #callout-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; }
     .diagram-placeholder { color: var(--text6); font-size: 0.85rem; margin: auto; }
+
+    /* ── Part row highlighting ───────────────────────────────────── */
+    table.parts tr.pos-active td { background: var(--accent-bg) !important; }
+    table.parts tr:hover td { background: var(--row-hover); }
 
     /* Loading spinner */
     .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--border);
@@ -217,7 +221,11 @@
               </thead>
               <tbody>
                 <template x-for="p in parts" :key="p._rowid">
-                  <tr>
+                  <tr :class="{'pos-active': hoveredPos === p.position || selectedPos === p.position}"
+                      :data-pos="p.position"
+                      @click="selectedPos = (selectedPos === p.position ? null : p.position)"
+                      @mouseenter="hoveredPos = p.position"
+                      @mouseleave="hoveredPos = null">
                     <td class="col-pos" x-text="p.position"></td>
                     <td class="col-pn"  x-text="p.part_number"></td>
                     <td class="col-desc">
@@ -253,18 +261,12 @@
 
     <!-- ── Diagram panel ────────────────────────────────────────── -->
     <div class="diagram-panel">
-      <div class="diagram-header"
-           x-text="currentSection
-             ? 'Diagram — ' + currentSection.number + (currentSection.title ? ' ' + currentSection.title : '')
-             : 'Diagram'">
-      </div>
       <div class="diagram-scroll">
-        <template x-if="diagramUrl">
-          <img :src="diagramUrl" alt="Parts diagram">
-        </template>
-        <template x-if="!diagramUrl">
-          <span class="diagram-placeholder">No diagram</span>
-        </template>
+        <div x-show="diagramUrl" class="diagram-wrap">
+          <img :src="diagramUrl || ''" alt="Parts diagram" @load="onDiagramLoad()">
+          <canvas id="callout-canvas" @click="diagramClick($event)"></canvas>
+        </div>
+        <span x-show="!diagramUrl" class="diagram-placeholder">No diagram</span>
       </div>
     </div>
 
@@ -286,6 +288,9 @@
         currentMg:      null,
         parts:          [],
         diagramUrl:     null,
+        callouts:       [],
+        hoveredPos:     null,
+        selectedPos:    null,
         query:          '',
         searchMode:     false,
         searchResults:  [],
@@ -298,6 +303,9 @@
           this.status = 'Loading sql.js…';
           this.SQL = await initSqlJs({ locateFile: () => SQLJS_WASM });
           this.status = '';
+          this.$watch('hoveredPos',  () => this.drawCallouts());
+          this.$watch('selectedPos', () => this.drawCallouts());
+          window.addEventListener('resize', () => requestAnimationFrame(() => this._positionCanvas()));
           await this.listCatalogs();
 
           const params = new URLSearchParams(location.search);
@@ -397,6 +405,14 @@
             showAppl: false,
           }));
 
+          // Load callouts
+          this.callouts = this._query(
+            'SELECT number, x0, y0, x1, y1, confidence FROM callout WHERE section_id=?',
+            [sec.id]
+          ).map(([number, x0, y0, x1, y1, confidence]) => ({ number, x0, y0, x1, y1, confidence }));
+          this.hoveredPos  = null;
+          this.selectedPos = null;
+
           // Load diagram
           this._setDiagram(null);
           if (sec.diagram_image) {
@@ -464,6 +480,87 @@
               return;
             }
           }
+        },
+
+        // ── Callout overlay ──────────────────────────────────────────
+
+        onDiagramLoad() {
+          const img = document.querySelector('.diagram-wrap img');
+          if (!img) return;
+          const natW = img.naturalWidth, natH = img.naturalHeight;
+          if (!natW || !natH) return;
+          // Defer to rAF so x-show has finished making the element visible and the
+          // browser has completed a layout pass — offsetWidth/Height return 0 otherwise.
+          requestAnimationFrame(() => this._positionCanvas());
+        },
+
+        _positionCanvas() {
+          const img = document.querySelector('.diagram-wrap img');
+          const cvs = document.getElementById('callout-canvas');
+          if (!img || !cvs) return;
+          const natW = img.naturalWidth, natH = img.naturalHeight;
+          if (!natW || !natH) return;
+          // img fills diagram-wrap via object-fit:contain with letterboxing.
+          // Position the canvas over exactly the rendered image region.
+          const boxW = img.offsetWidth, boxH = img.offsetHeight;
+          if (!boxW || !boxH) return;
+          const scale = Math.min(boxW / natW, boxH / natH);
+          const rendW = Math.round(natW * scale);
+          const rendH = Math.round(natH * scale);
+          cvs.style.left   = Math.round((boxW - rendW) / 2) + 'px';
+          cvs.style.top    = Math.round((boxH - rendH) / 2) + 'px';
+          cvs.style.width  = rendW + 'px';
+          cvs.style.height = rendH + 'px';
+          cvs.width  = rendW;
+          cvs.height = rendH;
+          this.drawCallouts();
+        },
+
+        drawCallouts() {
+          const cvs = document.getElementById('callout-canvas');
+          if (!cvs) return;
+          const ctx = cvs.getContext('2d');
+          ctx.clearRect(0, 0, cvs.width, cvs.height);
+          if (!this.callouts.length) return;
+          const W = cvs.width, H = cvs.height;
+          const PAD = 3;
+          for (const c of this.callouts) {
+            const x0 = c.x0 / 10000 * W - PAD, y0 = c.y0 / 10000 * H - PAD;
+            const bw  = (c.x1 - c.x0) / 10000 * W + PAD * 2, bh = (c.y1 - c.y0) / 10000 * H + PAD * 2;
+            const sel = c.number === this.hoveredPos || c.number === this.selectedPos;
+            if (sel) {
+              ctx.shadowColor  = 'rgba(255,160,0,0.9)';
+              ctx.shadowBlur   = 8;
+              ctx.strokeStyle  = '#ff9800';
+              ctx.lineWidth    = 3;
+              ctx.strokeRect(x0, y0, bw, bh);
+              ctx.shadowBlur   = 0;
+              ctx.fillStyle    = 'rgba(255,152,0,0.28)';
+              ctx.fillRect(x0, y0, bw, bh);
+            } else {
+              ctx.shadowBlur   = 0;
+              ctx.strokeStyle  = 'rgba(76,175,80,0.65)';
+              ctx.lineWidth    = 1.5;
+              ctx.strokeRect(x0, y0, bw, bh);
+            }
+          }
+        },
+
+        diagramClick(e) {
+          const cvs = document.getElementById('callout-canvas');
+          if (!cvs || !this.callouts.length) return;
+          const r = cvs.getBoundingClientRect();
+          const x = (e.clientX - r.left)  / r.width;
+          const y = (e.clientY - r.top)   / r.height;
+          const hit = this.callouts.find(c =>
+            x >= c.x0/10000 && x <= c.x1/10000 &&
+            y >= c.y0/10000 && y <= c.y1/10000
+          );
+          if (!hit) return;
+          this.hoveredPos  = hit.number;
+          this.selectedPos = hit.number;
+          const row = document.querySelector(`tr[data-pos="${CSS.escape(hit.number)}"]`);
+          if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         },
 
         // ── OPFS helpers ─────────────────────────────────────────────

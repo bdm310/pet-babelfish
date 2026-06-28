@@ -117,6 +117,10 @@
   --row-border:   #ebebeb;
 }
 
+/* Ensure the viewport canvas always matches the theme,
+   not the UA's default (matters for centered-body layouts) */
+html { background: var(--bg); }
+
 /* ── Theme toggle button ─────────────────────────────────── */
 
 .theme-toggle {
