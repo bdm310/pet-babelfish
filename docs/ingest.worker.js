@@ -862,6 +862,7 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null) {
 // sectionNums: string[] to restrict, or null to process all sections
 // partsOnly: skip diagram re-render and OCR, only re-extract parts text
 async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
+  post('status', { message: `reingestSections: sectionNums=${JSON.stringify(sectionNums)}, partsOnly=${partsOnly}` });
   post('status', { message: 'Loading PDF…' });
   const pdf = await pdfjsLib.getDocument({ data: buffer, ...PDFJS_OPTS, canvasFactory: CANVAS_FACTORY }).promise;
 
@@ -884,7 +885,7 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
   const outline       = await pdf.getOutline();
   const { sections }  = await parseOutline(outline, pdf);
   let targets;
-  if (sectionNums) {
+  if (sectionNums?.length) {
     const numSet = new Set(sectionNums);
     targets = sections.filter(s => numSet.has(s.sectionNum));
     if (!targets.length) throw new Error(`No matching sections found for: ${sectionNums.join(', ')}`);
