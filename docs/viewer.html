@@ -58,7 +58,9 @@
     table.parts td { padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--row-border);
                      vertical-align: top; }
     table.parts tr:hover td { background: var(--row-hover); }
-    .col-pos   { width: 2.5rem; color: var(--accent); text-align: center; }
+    .col-pos         { width: 2.5rem; color: var(--accent); text-align: center; }
+    .col-pos.pos-paren { color: var(--text3); font-style: italic; }
+    .col-pos.pos-none  { color: var(--text5); }
     .col-pn    { white-space: nowrap; color: var(--pn); }
     .col-desc  { }
     .col-qty   { width: 2.5rem; text-align: center; color: var(--text2); }
@@ -221,12 +223,15 @@
               </thead>
               <tbody>
                 <template x-for="p in parts" :key="p._rowid">
-                  <tr :class="{'pos-active': hoveredPos === p.position || selectedPos === p.position}"
-                      :data-pos="p.position"
-                      @click="selectedPos = (selectedPos === p.position ? null : p.position)"
-                      @mouseenter="hoveredPos = p.position"
+                  <tr :class="{'pos-active': _posNum(p.position) && (hoveredPos === _posNum(p.position) || selectedPos === _posNum(p.position))}"
+                      :data-pos-num="_posNum(p.position)"
+                      @click="selectedPos = (selectedPos === _posNum(p.position) ? null : _posNum(p.position))"
+                      @mouseenter="hoveredPos = _posNum(p.position)"
                       @mouseleave="hoveredPos = null">
-                    <td class="col-pos" x-text="p.position"></td>
+                    <td class="col-pos"
+                        :class="{'pos-paren': /^\(/.test(p.position), 'pos-none': p.position === '-'}"
+                        :title="p.position === '-' ? 'Not shown in diagram' : /^\(/.test(p.position) ? 'May differ from illustration' : ''"
+                        x-text="p.position"></td>
                     <td class="col-pn"  x-text="p.part_number"></td>
                     <td class="col-desc">
                       <div x-text="p.description"></div>
@@ -559,7 +564,7 @@
           if (!hit) return;
           this.hoveredPos  = hit.number;
           this.selectedPos = hit.number;
-          const row = document.querySelector(`tr[data-pos="${CSS.escape(hit.number)}"]`);
+          const row = document.querySelector(`tr[data-pos-num="${CSS.escape(hit.number)}"]`);
           if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         },
 
@@ -576,6 +581,14 @@
         _setDiagram(url) {
           if (this.diagramUrl) URL.revokeObjectURL(this.diagramUrl);
           this.diagramUrl = url;
+        },
+
+        // Extract numeric part of a position for callout matching.
+        // '5' → '5', '(5)' → '5', '-' → null, '' → null
+        _posNum(pos) {
+          if (!pos || pos === '-') return null;
+          const m = pos.match(/^\(?(\d+)\)?$/);
+          return m ? m[1] : null;
         },
 
         // ── SQL helpers ───────────────────────────────────────────────

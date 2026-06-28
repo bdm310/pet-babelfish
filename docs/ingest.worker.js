@@ -373,7 +373,9 @@ async function extractParts(pdf, pageNum) {
 
     // Part row — checked FIRST because part rows often contain "PR:" codes in
     // the Model column, which would otherwise trigger the applicability heuristic.
-    if (/^\d{1,3}$/.test(texts[0]) && row.items.length >= 5) {
+    // Case 1: plain number "5"
+    // Case 2: parenthesized "(5)" — part may differ from illustration
+    if ((/^\d{1,3}$/.test(texts[0]) || /^\(\d{1,3}\)$/.test(texts[0])) && row.items.length >= 5) {
       seenPart = true;
       flush();
       const cols = assignColumns(row.items, colOrigins);
@@ -391,11 +393,32 @@ async function extractParts(pdf, pageNum) {
       continue;
     }
 
-    // Sub-part inclusion lines: "- 999 571 074 30  Threaded stud  1  PR:447"
-    // These are components included inside a parent part, marked with a leading
-    // dash instead of a position number. Skip them — they're not separately
-    // orderable and would otherwise bleed into the applicability of the parent.
-    if (texts[0] === '-' && row.items.length >= 4) continue;
+    // Case 3: dash position — part exists but is not shown in diagram.
+    // Distinguished from sub-part inclusion lines by column assignment: if the
+    // dash lands in the Pos column with a valid Part Number, it's case 3.
+    // Sub-part dashes appear in the Part Number zone and fall through to be skipped.
+    if (texts[0] === '-') {
+      if (row.items.length >= 4) {
+        const cols = assignColumns(row.items, colOrigins);
+        if (joinCol(cols['Pos']) === '-' && joinCol(cols['Part Number'])) {
+          seenPart = true;
+          flush();
+          // Don't update lastPos — '-' shouldn't propagate to continuation rows
+          current = {
+            pos:           '-',
+            partNumber:    joinCol(cols['Part Number']),
+            description:   joinCol(cols['Description']),
+            qty:           joinCol(cols['Qty']),
+            remark:        joinCol(cols['Remark']),
+            applicability: '',
+            rawColumns:    cols,
+          };
+          continue;
+        }
+      }
+      // Sub-part inclusion line — not separately orderable, skip
+      continue;
+    }
 
     // Applicability continuation — PR option codes or model-year ranges.
     // Only reached after part-row and sub-part checks.
