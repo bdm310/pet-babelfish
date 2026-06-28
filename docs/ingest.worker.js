@@ -71,7 +71,7 @@ self.onmessage = async ({ data }) => {
     try { await ingest(data.buffer, data.catalogId); }
     catch (err) { post('error', { message: String(err) }); }
   } else if (data.type === 'reingest-sections') {
-    try { await reingestSections(data.buffer, data.catalogId, data.sectionNums); }
+    try { await reingestSections(data.buffer, data.catalogId, data.sectionNums, data.partsOnly ?? false); }
     catch (err) { post('error', { message: String(err) }); }
   }
 };
@@ -859,7 +859,9 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null) {
 
 // ── Partial re-ingest ─────────────────────────────────────────────────────────
 
-async function reingestSections(buffer, catalogId, sectionNums) {
+// sectionNums: string[] to restrict, or null to process all sections
+// partsOnly: skip diagram re-render and OCR, only re-extract parts text
+async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
   post('status', { message: 'Loading PDF…' });
   const pdf = await pdfjsLib.getDocument({ data: buffer, ...PDFJS_OPTS, canvasFactory: CANVAS_FACTORY }).promise;
 
@@ -869,7 +871,7 @@ async function reingestSections(buffer, catalogId, sectionNums) {
   let catalogDir;
   try { catalogDir = await opfsRoot.getDirectoryHandle(catalogId); }
   catch { throw new Error(`No existing catalog "${catalogId}" — run a full ingest first.`); }
-  const imagesDir = await catalogDir.getDirectoryHandle('images', { create: true });
+  const imagesDir = partsOnly ? null : await catalogDir.getDirectoryHandle('images', { create: true });
 
   let db;
   try {
@@ -881,17 +883,26 @@ async function reingestSections(buffer, catalogId, sectionNums) {
   post('status', { message: 'Parsing table of contents…' });
   const outline       = await pdf.getOutline();
   const { sections }  = await parseOutline(outline, pdf);
-  const numSet        = new Set(sectionNums);
-  const targets       = sections.filter(s => numSet.has(s.sectionNum));
-  if (!targets.length) throw new Error(`No matching sections found for: ${sectionNums.join(', ')}`);
+  let targets;
+  if (sectionNums) {
+    const numSet = new Set(sectionNums);
+    targets = sections.filter(s => numSet.has(s.sectionNum));
+    if (!targets.length) throw new Error(`No matching sections found for: ${sectionNums.join(', ')}`);
+  } else {
+    targets = sections;
+  }
 
-  post('status', { message: `Found ${targets.length} section(s). Initialising OCR…` });
-  const POOL_SIZE = navigator.hardwareConcurrency || 4;
   let pool = null;
-  try {
-    pool = await createWorkerPool(POOL_SIZE);
-  } catch (e) {
-    post('status', { message: `OCR unavailable (${e.message}) — callouts will be skipped.` });
+  if (!partsOnly) {
+    post('status', { message: `Found ${targets.length} section(s). Initialising OCR…` });
+    const POOL_SIZE = navigator.hardwareConcurrency || 4;
+    try {
+      pool = await createWorkerPool(POOL_SIZE);
+    } catch (e) {
+      post('status', { message: `OCR unavailable (${e.message}) — callouts will be skipped.` });
+    }
+  } else {
+    post('status', { message: `Found ${targets.length} section(s). Extracting parts…` });
   }
 
   const calloutStmt = db.prepare(
@@ -915,11 +926,13 @@ async function reingestSections(buffer, catalogId, sectionNums) {
       const firstPartsPage  = sec.diagramPage + 1;
 
       const [diagramResult, partsResults] = await Promise.all([
-        renderDiagram(pdf, sec.diagramPage, sec.sectionNum, imagesDir, catalogId, tWorker)
-          .catch(e => {
-            post('status', { message: `Diagram render skipped for ${sec.sectionNum}: ${e.message}` });
-            return { imgPath: null, callouts: [] };
-          }),
+        partsOnly
+          ? Promise.resolve({ imgPath: null, callouts: null })
+          : renderDiagram(pdf, sec.diagramPage, sec.sectionNum, imagesDir, catalogId, tWorker)
+              .catch(e => {
+                post('status', { message: `Diagram render skipped for ${sec.sectionNum}: ${e.message}` });
+                return { imgPath: null, callouts: [] };
+              }),
         extractSectionParts(pdf, firstPartsPage, nextDiagramPage),
       ]);
 
@@ -937,9 +950,11 @@ async function reingestSections(buffer, catalogId, sectionNums) {
       if (diagramResult.imgPath)
         db.run('UPDATE section SET diagram_image=? WHERE id=?', [diagramResult.imgPath, secId]);
 
-      db.run('DELETE FROM callout WHERE section_id=?', [secId]);
-      for (const c of diagramResult.callouts)
-        calloutStmt.run([secId, c.number, c.x0, c.y0, c.x1, c.y1, c.confidence]);
+      if (diagramResult.callouts !== null) {
+        db.run('DELETE FROM callout WHERE section_id=?', [secId]);
+        for (const c of diagramResult.callouts)
+          calloutStmt.run([secId, c.number, c.x0, c.y0, c.x1, c.y1, c.confidence]);
+      }
 
       db.run('DELETE FROM part WHERE section_id=?', [secId]);
       for (let pi = 0; pi < partsResults.length; pi++) {

@@ -70,8 +70,15 @@
       </div>
 
       <div>
-        <label for="sectionFilter">Sections to re-ingest <span style="color:var(--text5)">(optional — blank = full ingest)</span></label>
+        <label for="sectionFilter">Sections to re-ingest <span style="color:var(--text5)">(optional — blank = all)</span></label>
         <input type="text" id="sectionFilter" placeholder="e.g. 101-000, 102-000">
+      </div>
+
+      <div>
+        <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
+          <input type="checkbox" id="partsOnly">
+          Parts only <span style="color:var(--text5)">(skip diagram re-render / OCR)</span>
+        </label>
       </div>
 
       <div id="progressWrap">
@@ -95,11 +102,12 @@
     let selectedFile = null;
     let worker = null;
 
-    const dropzone       = document.getElementById('dropzone');
-    const fileInput      = document.getElementById('fileInput');
-    const catalogIdEl    = document.getElementById('catalogId');
+    const dropzone        = document.getElementById('dropzone');
+    const fileInput       = document.getElementById('fileInput');
+    const catalogIdEl     = document.getElementById('catalogId');
     const sectionFilterEl = document.getElementById('sectionFilter');
-    const ingestBtn      = document.getElementById('ingestBtn');
+    const partsOnlyEl     = document.getElementById('partsOnly');
+    const ingestBtn       = document.getElementById('ingestBtn');
     const logEl       = document.getElementById('log');
     const progressBar = document.getElementById('progressBar');
     const progressLabel = document.getElementById('progressLabel');
@@ -132,11 +140,16 @@
 
     catalogIdEl.addEventListener('input', updateBtn);
     sectionFilterEl.addEventListener('input', updateBtn);
+    partsOnlyEl.addEventListener('change', updateBtn);
 
     function updateBtn() {
       ingestBtn.disabled = !(selectedFile && catalogIdEl.value.trim());
-      const partial = sectionFilterEl.value.trim();
-      ingestBtn.textContent = partial ? 'Re-ingest sections' : 'Ingest';
+      const filter   = sectionFilterEl.value.trim();
+      const partsOnly = partsOnlyEl.checked;
+      if (!filter && !partsOnly) ingestBtn.textContent = 'Ingest';
+      else if (!filter)          ingestBtn.textContent = 'Re-ingest parts (all sections)';
+      else if (!partsOnly)       ingestBtn.textContent = 'Re-ingest sections';
+      else                       ingestBtn.textContent = 'Re-ingest sections (parts only)';
     }
 
     // ── Ingest ──────────────────────────────────────────────────────────────
@@ -160,14 +173,14 @@
       const sectionNums   = sectionFilter
         ? sectionFilter.split(',').map(s => s.trim()).filter(Boolean)
         : null;
-      const partial = sectionNums !== null;
+      const partsOnly = partsOnlyEl.checked;
+      const partial   = sectionNums !== null || partsOnly;
 
-      appendLog(
-        partial
-          ? `Re-ingesting sections [${sectionNums.join(', ')}] from "${selectedFile.name}" (catalog "${catalogId}")…`
-          : `Ingesting "${selectedFile.name}" as catalog "${catalogId}"…`,
-        'info'
-      );
+      let logMsg;
+      if (!partial)          logMsg = `Ingesting "${selectedFile.name}" as catalog "${catalogId}"…`;
+      else if (sectionNums)  logMsg = `Re-ingesting [${sectionNums.join(', ')}] from "${selectedFile.name}"${partsOnly ? ' (parts only)' : ''}…`;
+      else                   logMsg = `Re-ingesting all sections from "${selectedFile.name}" (parts only)…`;
+      appendLog(logMsg, 'info');
 
       const buffer = await selectedFile.arrayBuffer();
 
@@ -227,7 +240,7 @@
 
       // Transfer buffer ownership to worker (zero-copy)
       if (partial) {
-        worker.postMessage({ type: 'reingest-sections', buffer, catalogId, sectionNums }, [buffer]);
+        worker.postMessage({ type: 'reingest-sections', buffer, catalogId, sectionNums, partsOnly }, [buffer]);
       } else {
         worker.postMessage({ type: 'ingest', buffer, catalogId }, [buffer]);
       }
