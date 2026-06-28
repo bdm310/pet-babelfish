@@ -46,7 +46,7 @@ const SQLJS_WASM    = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-
 const DIAGRAM_SCALE = 2.0;
 
 // OCR parameters — tuned for Porsche PET callout digits at ~7pt
-const OCR_FONT_PT    = 7;
+const OCR_FONT_PT_CANDIDATES = [7, 9, 12];  // pt sizes to try in cascade order
 const OCR_TARGET_PX  = 40;   // upscale digits to this height before OCR
 const OCR_BIN_THRESH = 128;
 const OCR_MIN_CONF   = 90;
@@ -740,68 +740,87 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null) {
   }
 
   let t = performance.now();
-  const pxPerPt  = cw / (rect.x1 - rect.x0);
-  const srcPx    = OCR_FONT_PT * pxPerPt;
-  const scale    = Math.max(1, OCR_TARGET_PX / srcPx);
-  const processed = upscale(binarize(crop, OCR_BIN_THRESH), scale);
+  const pxPerPt = cw / (rect.x1 - rect.x0);
+  const binned  = binarize(crop, OCR_BIN_THRESH);
   TIMING.binarizeUpscale += performance.now() - t;
 
-  t = performance.now();
-  const { blobs, ink, W, H } = findBlobs(processed);
-  TIMING.findBlobs += performance.now() - t;
-
   const minH = OCR_TARGET_PX * 0.9, maxH = OCR_TARGET_PX * 1.1;
-  const candidates = blobs.filter(b => b.h >= minH && b.h <= maxH && b.w / b.h <= 2);
-  if (!candidates.length) { TIMING.totalOcr += performance.now() - t0; TIMING.diagramCount++; return []; }
 
-  t = performance.now();
-  const PAD = Math.round(OCR_TARGET_PX * 0.3);
-  const blobItems = candidates.map(b => ({
-    blob: b,
-    canvas: renderBlobCanvas(ink, W, H, b, PAD),
-  }));
-  TIMING.renderBlobs   += performance.now() - t;
-  TIMING.candidateCount += candidates.length;
-
-  // PSM 10 and PSM 8 have complementary blind spots; merge both passes
-  async function runPass(psm) {
+  // Build blob canvases and run both OCR passes; return confirmed digits or null
+  async function tryAtScale(candidates, ink, W, H) {
     let ts = performance.now();
-    await tWorker.setParameters({
-      tessedit_char_whitelist: '0123456789',
-      tessedit_pageseg_mode:   psm,
-      user_defined_dpi:        '300',
-    });
-    TIMING.tesseractSet += performance.now() - ts;
-    const out = [];
-    for (const it of blobItems) {
-      // OffscreenCanvas lacks toBlob(); convert to PNG Blob via convertToBlob() so
-      // Tesseract reads raw bytes and never touches any canvas API on its end.
+    const PAD = Math.round(OCR_TARGET_PX * 0.3);
+    const blobItems = candidates.map(b => ({
+      blob: b,
+      canvas: renderBlobCanvas(ink, W, H, b, PAD),
+    }));
+    TIMING.renderBlobs    += performance.now() - ts;
+    TIMING.candidateCount += candidates.length;
+
+    async function runPass(psm) {
       ts = performance.now();
-      const blob = await it.canvas.convertToBlob({ type: 'image/png' });
-      TIMING.convertBlobs += performance.now() - ts;
-      ts = performance.now();
-      const { data } = await tWorker.recognize(blob);
-      TIMING.tesseractOcr  += performance.now() - ts;
-      TIMING.recognizeCount++;
-      out.push({ text: (data.text || '').replace(/\s/g, ''), conf: Math.round(data.confidence || 0) });
+      await tWorker.setParameters({
+        tessedit_char_whitelist: '0123456789',
+        tessedit_pageseg_mode:   psm,
+        user_defined_dpi:        '300',
+      });
+      TIMING.tesseractSet += performance.now() - ts;
+      const out = [];
+      for (const it of blobItems) {
+        // OffscreenCanvas lacks toBlob(); convert to PNG Blob via convertToBlob() so
+        // Tesseract reads raw bytes and never touches any canvas API on its end.
+        ts = performance.now();
+        const blob = await it.canvas.convertToBlob({ type: 'image/png' });
+        TIMING.convertBlobs += performance.now() - ts;
+        ts = performance.now();
+        const { data } = await tWorker.recognize(blob);
+        TIMING.tesseractOcr  += performance.now() - ts;
+        TIMING.recognizeCount++;
+        out.push({ text: (data.text || '').replace(/\s/g, ''), conf: Math.round(data.confidence || 0) });
+      }
+      return out;
     }
-    return out;
+
+    const pass10 = await runPass('10');
+    const pass8  = await runPass('8');
+
+    const digitResults = [];
+    for (let i = 0; i < blobItems.length; i++) {
+      const r10 = pass10[i], r8 = pass8[i];
+      const ok10 = /^\d$/.test(r10.text) && r10.conf >= OCR_MIN_CONF;
+      const ok8  = /^\d$/.test(r8.text)  && r8.conf  >= OCR_MIN_CONF;
+      if (!ok10 && !ok8) continue;
+      const pick = !ok10 ? r8 : !ok8 ? r10 : r10.conf >= r8.conf ? r10 : r8;
+      digitResults.push({ text: pick.text, confidence: pick.conf, blob: blobItems[i].blob });
+    }
+
+    if (!digitResults.length) return null;
+    return { digitResults, blobItems };
   }
 
-  const pass10 = await runPass('10');
-  const pass8  = await runPass('8');
+  // Multi-scale cascade: try each candidate font size, stop on first confirmed digit
+  let scale, digitResults;
+  for (const fontPt of OCR_FONT_PT_CANDIDATES) {
+    t = performance.now();
+    const s = Math.max(1, OCR_TARGET_PX / (fontPt * pxPerPt));
+    const processed = upscale(binned, s);
+    TIMING.binarizeUpscale += performance.now() - t;
+
+    t = performance.now();
+    const { blobs, ink, W, H } = findBlobs(processed);
+    TIMING.findBlobs += performance.now() - t;
+
+    const candidates = blobs.filter(b => b.h >= minH && b.h <= maxH && b.w / b.h <= 2);
+    if (!candidates.length) continue;
+
+    const out = await tryAtScale(candidates, ink, W, H);
+    if (out) { scale = s; digitResults = out.digitResults; break; }
+  }
+
   TIMING.diagramCount++;
   TIMING.totalOcr += performance.now() - t0;
 
-  const digitResults = [];
-  for (let i = 0; i < blobItems.length; i++) {
-    const r10 = pass10[i], r8 = pass8[i];
-    const ok10 = /^\d$/.test(r10.text) && r10.conf >= OCR_MIN_CONF;
-    const ok8  = /^\d$/.test(r8.text)  && r8.conf  >= OCR_MIN_CONF;
-    if (!ok10 && !ok8) continue;
-    const pick = !ok10 ? r8 : !ok8 ? r10 : r10.conf >= r8.conf ? r10 : r8;
-    digitResults.push({ text: pick.text, confidence: pick.conf, blob: blobItems[i].blob });
-  }
+  if (!digitResults) return [];
 
   digitResults.sort((a, b) => a.blob.x0 - b.blob.x0);
   const X_GAP = OCR_TARGET_PX * 0.9, Y_TOL = OCR_TARGET_PX * 0.1;

@@ -75,9 +75,7 @@
     <div class="row">
       <label>Binarize threshold (0–255):</label>
       <input type="number" id="binThresh" value="128" min="0" max="255" style="width:55px">
-      <label style="margin-left:0.5rem">Nominal font size (pt):</label>
-      <input type="number" id="fontPt" value="7" min="1" max="72" style="width:55px">
-      <label>Target OCR height (px):</label>
+      <label style="margin-left:0.5rem">Target OCR height (px):</label>
       <input type="number" id="targetPx" value="40" min="20" max="400" style="width:55px">
       <label style="margin-left:0.5rem">Min confidence:</label>
       <input type="number" id="minConf" value="90" min="0" max="100" style="width:55px">
@@ -97,6 +95,8 @@
       cMapPacked: true,
       standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/',
     };
+
+    const OCR_FONT_PT_CANDIDATES = [7, 9, 12];  // pt sizes to try in cascade order
 
     let pdfDoc = null, tWorker = null, diagramPages = [], diagramIdx = 0;
     const dropzone = document.getElementById('dropzone');
@@ -427,88 +427,106 @@
       const { crop, rect, cw, native, nativeKind } = result;
 
       // ── Preprocessing ────────────────────────────────────────────────────────
-      const fontPt      = parseFloat(document.getElementById('fontPt').value)   || 7;
-      const targetPx    = parseFloat(document.getElementById('targetPx').value) || 35;
-      const pxPerPt     = cw / (rect.x1 - rect.x0);
-      const srcPx       = fontPt * pxPerPt;
-      const scaleFactor = Math.max(1, targetPx / srcPx);
-      const srcDpi      = calcDpi(rect, cw);
-      const kindLabel   = native ? ['?','1bpp','RGB','RGBA'][nativeKind] ?? '?' : null;
-      const srcLabel    = native
+      const targetPx  = parseFloat(document.getElementById('targetPx').value) || 40;
+      const binThresh = parseFloat(document.getElementById('binThresh').value) || 128;
+      const minConf   = parseInt(document.getElementById('minConf').value)     || 90;
+      const pxPerPt   = cw / (rect.x1 - rect.x0);
+      const srcDpi    = calcDpi(rect, cw);
+      const kindLabel = native ? ['?','1bpp','RGB','RGBA'][nativeKind] ?? '?' : null;
+      const srcLabel  = native
         ? `native ${crop.width}×${crop.height} (${kindLabel}, ${Math.round(srcDpi)} DPI)`
         : `render×${RENDER_SCALE} ${cw}×${result.ch} (${Math.round(srcDpi)} DPI — fallback)`;
 
-      log(`Source: ${srcLabel} | ${fontPt}pt = ${srcPx.toFixed(1)}px → scale ${scaleFactor.toFixed(2)}×`);
+      log(`Source: ${srcLabel}`);
 
-      const binThresh = parseFloat(document.getElementById('binThresh').value) || 128;
-      const processed = upscale(binarize(crop, binThresh), scaleFactor);
-
-      const minConf = parseInt(document.getElementById('minConf').value) || 40;
-
-      // ── Phase 1: find digit-height blobs via connected components ───────────
-      // Bypasses Tesseract's internal blob-finder which misses blobs in some
-      // image regions for heuristic reasons unrelated to image quality.
-      const { blobs: allBlobs, ink, W: imgW, H: imgH } = findBlobs(processed);
+      const binned = binarize(crop, binThresh);
       const minH = targetPx * 0.9, maxH = targetPx * 1.1;
-      const candidates = allBlobs.filter(b => b.h >= minH && b.h <= maxH && b.w / b.h <= 2);
 
-      log(`${allBlobs.length} blobs → ${candidates.length} digit-height candidates — building strip…`);
-
-      // ── Phase 2: render each candidate blob into its own canvas ──────────────
-      const PAD    = Math.round(targetPx * 0.3);
-      const SEP    = Math.round(targetPx * 1.2);
-      const stripH = Math.round(targetPx * 1.8);
-      let cursor = SEP;
-      const blobItems = candidates.map(b => {
-        const bc   = renderGroupCanvas(ink, imgW, imgH, { parts: [b], x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 }, PAD);
-        const item = { blob: b, blobCanvas: bc, stripX: cursor };
-        cursor += bc.width + SEP;
-        return item;
-      });
-
-      const strip = document.createElement('canvas');
-      strip.width = cursor; strip.height = stripH;
-      const sctx = strip.getContext('2d');
-      sctx.fillStyle = 'white'; sctx.fillRect(0, 0, strip.width, strip.height);
-      for (const it of blobItems) {
-        const dy = Math.round((stripH - it.blobCanvas.height) / 2);
-        sctx.drawImage(it.blobCanvas, it.stripX, dy);
-      }
-
-      // ── Phase 3: OCR each blob as a single digit ─────────────────────────────
-      // PSM 10 and PSM 8 have complementary blind spots on isolated glyphs
-      // (PSM 10 finds "9" but misreads "1"; PSM 8 reads "1" but loses "9").
-      // Run both passes and merge: where both return a valid single digit, take
-      // the higher-confidence result; where only one does, take that one.
-      async function runPass(psm) {
-        await tWorker.setParameters({
-          tessedit_char_whitelist: '0123456789',
-          tessedit_pageseg_mode:   psm,
-          user_defined_dpi:        '300',
+      // Build blob canvases and run both OCR passes; return confirmed digits or null
+      async function tryAtScale(candidates, ink, W, H) {
+        const PAD    = Math.round(targetPx * 0.3);
+        const SEP    = Math.round(targetPx * 1.2);
+        const stripH = Math.round(targetPx * 1.8);
+        let cursor = SEP;
+        const items = candidates.map(b => {
+          const bc = renderGroupCanvas(ink, W, H, { parts: [b], x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 }, PAD);
+          const item = { blob: b, blobCanvas: bc, stripX: cursor };
+          cursor += bc.width + SEP;
+          return item;
         });
-        const out = [];
-        for (let i = 0; i < blobItems.length; i++) {
-          if (i % 10 === 0) log(`PSM${psm} ${i+1}/${blobItems.length}…`);
-          const { data } = await tWorker.recognize(blobItems[i].blobCanvas);
-          const text = (data.text || '').replace(/\s/g, '');
-          out.push({ text, conf: Math.round(data.confidence || 0) });
+        const strip = document.createElement('canvas');
+        strip.width = cursor; strip.height = stripH;
+        const sctx = strip.getContext('2d');
+        sctx.fillStyle = 'white'; sctx.fillRect(0, 0, strip.width, strip.height);
+        for (const it of items) {
+          const dy = Math.round((stripH - it.blobCanvas.height) / 2);
+          sctx.drawImage(it.blobCanvas, it.stripX, dy);
         }
-        return out;
+
+        // PSM 10 and PSM 8 have complementary blind spots; merge both passes
+        async function runPass(psm) {
+          await tWorker.setParameters({
+            tessedit_char_whitelist: '0123456789',
+            tessedit_pageseg_mode:   psm,
+            user_defined_dpi:        '300',
+          });
+          const out = [];
+          for (let i = 0; i < items.length; i++) {
+            if (i % 10 === 0) log(`PSM${psm} ${i+1}/${items.length}…`);
+            const { data } = await tWorker.recognize(items[i].blobCanvas);
+            out.push({ text: (data.text || '').replace(/\s/g, ''), conf: Math.round(data.confidence || 0) });
+          }
+          return out;
+        }
+
+        const pass10 = await runPass('10');
+        const pass8  = await runPass('8');
+
+        const digitResults = [];
+        for (let i = 0; i < items.length; i++) {
+          const r10 = pass10[i], r8 = pass8[i];
+          const ok10 = /^\d$/.test(r10.text) && r10.conf >= minConf;
+          const ok8  = /^\d$/.test(r8.text)  && r8.conf  >= minConf;
+          if (!ok10 && !ok8) continue;
+          const pick = !ok10 ? r8 : !ok8 ? r10 : r10.conf >= r8.conf ? r10 : r8;
+          digitResults.push({ text: pick.text, confidence: pick.conf, blob: items[i].blob });
+        }
+
+        if (!digitResults.length) return null;
+        return { digitResults, blobItems: items, strip };
       }
 
+      // ── Multi-scale cascade ───────────────────────────────────────────────────
+      let scaleFactor, fontPtUsed, blobItems, strip, digitResults, totalBlobs, candidateCount;
       const t0 = performance.now();
-      const pass10 = await runPass('10');
-      const pass8  = await runPass('8');
+
+      for (const fontPt of OCR_FONT_PT_CANDIDATES) {
+        const scale = Math.max(1, targetPx / (fontPt * pxPerPt));
+        const processed = upscale(binned, scale);
+        const { blobs, ink, W, H } = findBlobs(processed);
+        const candidates = blobs.filter(b => b.h >= minH && b.h <= maxH && b.w / b.h <= 2);
+        log(`${fontPt}pt (×${scale.toFixed(2)}): ${blobs.length} blobs → ${candidates.length} candidates`);
+        if (!candidates.length) continue;
+        const out = await tryAtScale(candidates, ink, W, H);
+        if (out) {
+          scaleFactor    = scale;
+          fontPtUsed     = fontPt;
+          blobItems      = out.blobItems;
+          strip          = out.strip;
+          digitResults   = out.digitResults;
+          totalBlobs     = blobs.length;
+          candidateCount = candidates.length;
+          break;
+        }
+        log(`${fontPt}pt: no confirmed digits — trying next…`);
+      }
+
       const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
 
-      const digitResults = [];
-      for (let i = 0; i < blobItems.length; i++) {
-        const r10 = pass10[i], r8 = pass8[i];
-        const ok10 = /^\d$/.test(r10.text) && r10.conf >= minConf;
-        const ok8  = /^\d$/.test(r8.text)  && r8.conf  >= minConf;
-        if (!ok10 && !ok8) continue;
-        const pick = !ok10 ? r8 : !ok8 ? r10 : r10.conf >= r8.conf ? r10 : r8;
-        digitResults.push({ text: pick.text, confidence: pick.conf, blob: blobItems[i].blob });
+      if (!digitResults) {
+        output.innerHTML = `<p style="color:#ff9800">No callouts found at any scale (${OCR_FONT_PT_CANDIDATES.join(', ')}pt tried, ${elapsed}s).</p>`;
+        log('No confirmed digits at any candidate scale.');
+        return;
       }
 
       // ── Phase 4: group adjacent digit results into multi-digit numbers ────────
@@ -544,7 +562,7 @@
 
       callouts.sort((a, b) => parseInt(a.text) - parseInt(b.text));
 
-      log(`${candidates.length} blobs → ${digitResults.length} digits → ${callouts.length} callouts (${elapsed}s OCR)`);
+      log(`${candidateCount} blobs → ${digitResults.length} digits → ${callouts.length} callouts (${elapsed}s OCR, ${fontPtUsed}pt won)`);
 
       const pw = crop.width, ph = crop.height;
 
@@ -559,7 +577,7 @@
           <h2>OCR results</h2>
           <div>
             <span class="stat ${native ? 'ok' : 'warn'}">${srcLabel}</span>
-            <span class="stat">${candidates.length}/${allBlobs.length} blobs</span>
+            <span class="stat">${candidateCount}/${totalBlobs} blobs · ${fontPtUsed}pt</span>
             <span class="stat">${digitResults.length} digits</span>
             <span class="stat ok">${callouts.length} callouts</span>
             <span class="stat">${elapsed}s · ${scaleFactor.toFixed(1)}×</span>
@@ -581,7 +599,7 @@
 
       html += `</tbody></table></div></div>
         <div class="panel" style="margin-top:0.75rem">
-          <h2>Strip fed to Tesseract (${candidates.length} blobs, ${strip.width}×${strip.height}px)</h2>
+          <h2>Strip fed to Tesseract (${candidateCount} blobs @ ${fontPtUsed}pt, ${strip.width}×${strip.height}px)</h2>
           <div style="overflow-x:auto"><canvas id="stripCanvas" style="max-height:80px;height:80px;width:auto"></canvas></div>
         </div>`;
       output.innerHTML = html;
