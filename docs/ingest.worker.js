@@ -67,11 +67,12 @@ const COL_HEADER_SET = new Set(['Pos', 'Part Number', 'Description', 'Remark', '
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 self.onmessage = async ({ data }) => {
-  if (data.type !== 'ingest') return;
-  try {
-    await ingest(data.buffer, data.catalogId);
-  } catch (err) {
-    post('error', { message: String(err) });
+  if (data.type === 'ingest') {
+    try { await ingest(data.buffer, data.catalogId); }
+    catch (err) { post('error', { message: String(err) }); }
+  } else if (data.type === 'reingest-sections') {
+    try { await reingestSections(data.buffer, data.catalogId, data.sectionNums); }
+    catch (err) { post('error', { message: String(err) }); }
   }
 };
 
@@ -854,6 +855,127 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null) {
       y1: Math.round((g.y1 / scale + cy) / pngH * 10000),
     }))
     .filter(c => !/^0+$/.test(c.number));
+}
+
+// ── Partial re-ingest ─────────────────────────────────────────────────────────
+
+async function reingestSections(buffer, catalogId, sectionNums) {
+  post('status', { message: 'Loading PDF…' });
+  const pdf = await pdfjsLib.getDocument({ data: buffer, ...PDFJS_OPTS, canvasFactory: CANVAS_FACTORY }).promise;
+
+  post('status', { message: 'Loading existing database…' });
+  const SQL      = await initSqlJs({ locateFile: () => SQLJS_WASM });
+  const opfsRoot  = await navigator.storage.getDirectory();
+  let catalogDir;
+  try { catalogDir = await opfsRoot.getDirectoryHandle(catalogId); }
+  catch { throw new Error(`No existing catalog "${catalogId}" — run a full ingest first.`); }
+  const imagesDir = await catalogDir.getDirectoryHandle('images', { create: true });
+
+  let db;
+  try {
+    const fh   = await catalogDir.getFileHandle('catalog.sqlite');
+    const file = await fh.getFile();
+    db = new SQL.Database(new Uint8Array(await file.arrayBuffer()));
+  } catch { throw new Error(`catalog.sqlite not found for "${catalogId}" — run a full ingest first.`); }
+
+  post('status', { message: 'Parsing table of contents…' });
+  const outline       = await pdf.getOutline();
+  const { sections }  = await parseOutline(outline, pdf);
+  const numSet        = new Set(sectionNums);
+  const targets       = sections.filter(s => numSet.has(s.sectionNum));
+  if (!targets.length) throw new Error(`No matching sections found for: ${sectionNums.join(', ')}`);
+
+  post('status', { message: `Found ${targets.length} section(s). Initialising OCR…` });
+  const POOL_SIZE = navigator.hardwareConcurrency || 4;
+  let pool = null;
+  try {
+    pool = await createWorkerPool(POOL_SIZE);
+  } catch (e) {
+    post('status', { message: `OCR unavailable (${e.message}) — callouts will be skipped.` });
+  }
+
+  const calloutStmt = db.prepare(
+    'INSERT INTO callout (section_id, number, x0, y0, x1, y1, confidence) VALUES (?,?,?,?,?,?,?)'
+  );
+  const partStmt = db.prepare(
+    `INSERT INTO part
+       (section_id, catalog_id, position, part_number, description,
+        quantity, remarks, applicability, raw_columns)
+     VALUES (?,?,?,?,?,?,?,?,?)`
+  );
+
+  const sectionIndexMap = new Map(sections.map((s, i) => [s.sectionNum, i]));
+  let doneCount = 0, partCount = 0;
+
+  for (const sec of targets) {
+    const tWorker = pool ? await pool.acquire() : null;
+    try {
+      const idx             = sectionIndexMap.get(sec.sectionNum);
+      const nextDiagramPage = sections[idx + 1]?.diagramPage ?? (pdf.numPages + 1);
+      const firstPartsPage  = sec.diagramPage + 1;
+
+      const [diagramResult, partsResults] = await Promise.all([
+        renderDiagram(pdf, sec.diagramPage, sec.sectionNum, imagesDir, catalogId, tWorker)
+          .catch(e => {
+            post('status', { message: `Diagram render skipped for ${sec.sectionNum}: ${e.message}` });
+            return { imgPath: null, callouts: [] };
+          }),
+        extractSectionParts(pdf, firstPartsPage, nextDiagramPage),
+      ]);
+
+      const secStmt = db.prepare('SELECT id FROM section WHERE catalog_id=? AND number=?');
+      secStmt.bind([catalogId, sec.sectionNum]);
+      let secId = null;
+      if (secStmt.step()) secId = secStmt.getAsObject().id;
+      secStmt.free();
+
+      if (secId == null) {
+        post('status', { message: `Section ${sec.sectionNum} not in DB — skipping` });
+        continue;
+      }
+
+      if (diagramResult.imgPath)
+        db.run('UPDATE section SET diagram_image=? WHERE id=?', [diagramResult.imgPath, secId]);
+
+      db.run('DELETE FROM callout WHERE section_id=?', [secId]);
+      for (const c of diagramResult.callouts)
+        calloutStmt.run([secId, c.number, c.x0, c.y0, c.x1, c.y1, c.confidence]);
+
+      db.run('DELETE FROM part WHERE section_id=?', [secId]);
+      for (let pi = 0; pi < partsResults.length; pi++) {
+        const { parts, titleRow } = partsResults[pi];
+        if (pi === 0 && titleRow)
+          db.run('UPDATE section SET title=?, title_remark=?, title_model=? WHERE id=?',
+            [titleRow.description || sec.sectionTitle, titleRow.remark || null, titleRow.model || null, secId]);
+        for (const part of parts) {
+          partStmt.run([secId, catalogId, part.pos, part.partNumber, part.description,
+            part.qty, part.remark, part.applicability, JSON.stringify(part.rawColumns)]);
+          partCount++;
+        }
+      }
+    } finally {
+      if (tWorker) pool.release(tWorker);
+      doneCount++;
+      post('progress', {
+        pct:   Math.round((doneCount / targets.length) * 100),
+        label: `${sec.sectionNum}${sec.sectionTitle ? ' — ' + sec.sectionTitle : ''}`,
+      });
+    }
+  }
+
+  calloutStmt.free();
+  partStmt.free();
+  if (pool) await pool.terminate();
+
+  post('status', { message: 'Rebuilding search index…' });
+  db.run("INSERT INTO part_fts(part_fts) VALUES ('rebuild')");
+
+  post('status', { message: 'Saving database…' });
+  await writeOpfsFile(catalogDir, 'catalog.sqlite', db.export());
+  db.close();
+  pdf.destroy();
+
+  post('done', { catalogId, sectionCount: targets.length, partCount });
 }
 
 // ── Timing accumulator (OCR profiling) ───────────────────────────────────────

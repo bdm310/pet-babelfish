@@ -69,6 +69,11 @@
         <input type="text" id="catalogId" placeholder="e.g. 997TT-2005">
       </div>
 
+      <div>
+        <label for="sectionFilter">Sections to re-ingest <span style="color:var(--text5)">(optional — blank = full ingest)</span></label>
+        <input type="text" id="sectionFilter" placeholder="e.g. 101-000, 102-000">
+      </div>
+
       <div id="progressWrap">
         <hr>
         <label id="progressLabel">—</label>
@@ -90,10 +95,11 @@
     let selectedFile = null;
     let worker = null;
 
-    const dropzone    = document.getElementById('dropzone');
-    const fileInput   = document.getElementById('fileInput');
-    const catalogIdEl = document.getElementById('catalogId');
-    const ingestBtn   = document.getElementById('ingestBtn');
+    const dropzone       = document.getElementById('dropzone');
+    const fileInput      = document.getElementById('fileInput');
+    const catalogIdEl    = document.getElementById('catalogId');
+    const sectionFilterEl = document.getElementById('sectionFilter');
+    const ingestBtn      = document.getElementById('ingestBtn');
     const logEl       = document.getElementById('log');
     const progressBar = document.getElementById('progressBar');
     const progressLabel = document.getElementById('progressLabel');
@@ -125,9 +131,12 @@
     }
 
     catalogIdEl.addEventListener('input', updateBtn);
+    sectionFilterEl.addEventListener('input', updateBtn);
 
     function updateBtn() {
       ingestBtn.disabled = !(selectedFile && catalogIdEl.value.trim());
+      const partial = sectionFilterEl.value.trim();
+      ingestBtn.textContent = partial ? 'Re-ingest sections' : 'Ingest';
     }
 
     // ── Ingest ──────────────────────────────────────────────────────────────
@@ -146,8 +155,19 @@
       progressLabel.textContent = 'Starting…';
       ingestBtn.disabled = true;
 
-      const catalogId = catalogIdEl.value.trim();
-      appendLog(`Ingesting "${selectedFile.name}" as catalog "${catalogId}"…`, 'info');
+      const catalogId    = catalogIdEl.value.trim();
+      const sectionFilter = sectionFilterEl.value.trim();
+      const sectionNums   = sectionFilter
+        ? sectionFilter.split(',').map(s => s.trim()).filter(Boolean)
+        : null;
+      const partial = sectionNums !== null;
+
+      appendLog(
+        partial
+          ? `Re-ingesting sections [${sectionNums.join(', ')}] from "${selectedFile.name}" (catalog "${catalogId}")…`
+          : `Ingesting "${selectedFile.name}" as catalog "${catalogId}"…`,
+        'info'
+      );
 
       const buffer = await selectedFile.arrayBuffer();
 
@@ -172,10 +192,13 @@
             progressBar.value = 100;
             progressLabel.textContent = 'Done';
             appendLog(
-              `✓ Done — ${data.sectionCount} sections, ${data.partCount} parts ingested.`, 'ok'
+              partial
+                ? `✓ Done — ${data.sectionCount} section(s) re-ingested, ${data.partCount} parts.`
+                : `✓ Done — ${data.sectionCount} sections, ${data.partCount} parts ingested.`,
+              'ok'
             );
             resultEl.innerHTML = `
-              <span class="stat ok">✓ ${data.sectionCount} sections</span>
+              <span class="stat ok">✓ ${data.sectionCount} section${data.sectionCount !== 1 ? 's' : ''}</span>
               <span class="stat ok">${data.partCount} parts</span>
               <span class="stat ok">saved to OPFS</span>
             `;
@@ -183,7 +206,7 @@
             viewerLink.style.display = 'inline';
             viewerLink.href = `viewer.html?catalog=${encodeURIComponent(catalogId)}`;
             ingestBtn.disabled = false;
-            ingestBtn.textContent = 'Ingest again';
+            updateBtn();
             worker = null;
             break;
 
@@ -203,7 +226,11 @@
       };
 
       // Transfer buffer ownership to worker (zero-copy)
-      worker.postMessage({ type: 'ingest', buffer, catalogId }, [buffer]);
+      if (partial) {
+        worker.postMessage({ type: 'reingest-sections', buffer, catalogId, sectionNums }, [buffer]);
+      } else {
+        worker.postMessage({ type: 'ingest', buffer, catalogId }, [buffer]);
+      }
     }
 
     function appendLog(text, cls = 'info') {
