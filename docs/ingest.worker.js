@@ -325,8 +325,8 @@ async function resolveDestPage(dest, pdf) {
 
 // ── Parts extraction ──────────────────────────────────────────────────────────
 
-async function extractParts(pdf, pageNum) {
-  if (pageNum < 1 || pageNum > pdf.numPages) return { parts: [], titleRow: null };
+async function extractParts(pdf, pageNum, initialLastPos = '') {
+  if (pageNum < 1 || pageNum > pdf.numPages) return { parts: [], titleRow: null, lastPos: initialLastPos };
 
   const page    = await pdf.getPage(pageNum);
   const vp      = page.getViewport({ scale: 1 });
@@ -340,7 +340,7 @@ async function extractParts(pdf, pageNum) {
   const parts     = [];
   let current     = null;
   let seenPart    = false;
-  let lastPos     = '';
+  let lastPos     = initialLastPos;
   // Rows before the first part row that have no Pos/Part Number — the diagram title block.
   // Multiple description, remark, and model lines are each collected separately so they can
   // be joined independently.
@@ -462,7 +462,7 @@ async function extractParts(pdf, pageNum) {
       }
     : null;
 
-  return { parts, titleRow };
+  return { parts, titleRow, lastPos };
 }
 
 function isApplicabilityRow(texts) {
@@ -521,23 +521,19 @@ async function extractSectionParts(pdf, firstPartsPage, nextDiagramPage) {
   for (let p = firstPartsPage; p < nextDiagramPage; p++) pageNums.push(p);
   if (!pageNums.length) return [];
 
-  const raw = await Promise.all(
-    pageNums.map(async p => {
-      const t = performance.now();
-      let r = { parts: [], titleRow: null };
-      try {
-        r = await extractParts(pdf, p);
-      } catch (e) {
-        post('status', { message: `Parts extraction skipped p${p}: ${e.message}` });
-      }
-      TIMING.extractParts += performance.now() - t;
-      TIMING.partsPagesCount++;
-      return r;
-    })
-  );
-
   const out = [];
-  for (const r of raw) {
+  let carryLastPos = '';
+  for (const p of pageNums) {
+    const t = performance.now();
+    let r = { parts: [], titleRow: null, lastPos: carryLastPos };
+    try {
+      r = await extractParts(pdf, p, carryLastPos);
+    } catch (e) {
+      post('status', { message: `Parts extraction skipped p${p}: ${e.message}` });
+    }
+    TIMING.extractParts += performance.now() - t;
+    TIMING.partsPagesCount++;
+    carryLastPos = r.lastPos;
     if (!r.parts.length) break;
     out.push(r);
   }

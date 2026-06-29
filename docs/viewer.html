@@ -58,8 +58,8 @@
     table.parts td { padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--row-border);
                      vertical-align: top; }
     table.parts tr:hover td { background: var(--row-hover); }
-    .col-pos         { width: 2.8rem; color: var(--accent); text-align: center;
-                       display: flex; align-items: center; justify-content: center; gap: 2px; }
+    .col-pos         { width: 2.8rem; color: var(--accent);
+                       display: flex; align-items: center; justify-content: flex-start; gap: 2px; }
     .pos-paren { color: var(--text3); font-style: italic; }
     .pos-none  { color: var(--text5); }
     .pos-expand { font-size: 0.55rem; cursor: pointer; color: var(--text5); user-select: none;
@@ -238,9 +238,9 @@
                       @mouseleave="hoveredPos = null">
                     <td class="col-pos"
                         :title="row.part.position === '-' ? 'Not shown in diagram' : /^\(/.test(row.part.position) ? 'May differ from illustration' : ''">
-                      <span x-show="row._hasMore"
-                            class="pos-expand"
-                            @click.stop="toggleGroup(row._gi)"
+                      <span class="pos-expand"
+                            :style="row._hasMore ? '' : 'visibility:hidden'"
+                            @click.stop="row._hasMore && toggleGroup(row._gi)"
                             x-text="row._expanded ? '▼' : '▶'"></span>
                       <span :class="{'pos-paren': /^\(/.test(row.part.position), 'pos-none': row.part.position === '-'}"
                             x-text="row.part.position"></span>
