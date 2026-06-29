@@ -58,9 +58,14 @@
     table.parts td { padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--row-border);
                      vertical-align: top; }
     table.parts tr:hover td { background: var(--row-hover); }
-    .col-pos         { width: 2.5rem; color: var(--accent); text-align: center; }
-    .col-pos.pos-paren { color: var(--text3); font-style: italic; }
-    .col-pos.pos-none  { color: var(--text5); }
+    .col-pos         { width: 2.8rem; color: var(--accent); text-align: center;
+                       display: flex; align-items: center; justify-content: center; gap: 2px; }
+    .pos-paren { color: var(--text3); font-style: italic; }
+    .pos-none  { color: var(--text5); }
+    .pos-expand { font-size: 0.55rem; cursor: pointer; color: var(--text5); user-select: none;
+                  flex-shrink: 0; line-height: 1; }
+    .pos-expand:hover { color: var(--text3); }
+    table.parts tr.pos-subrow td { background: var(--bg2); }
     .col-pn    { white-space: nowrap; color: var(--pn); }
     .col-desc  { }
     .col-qty   { width: 2.5rem; text-align: center; color: var(--text2); }
@@ -222,30 +227,38 @@
                 </tr>
               </thead>
               <tbody>
-                <template x-for="p in parts" :key="p._rowid">
-                  <tr :class="{'pos-active': _posNum(p.position) && (hoveredPos === _posNum(p.position) || selectedPos === _posNum(p.position))}"
-                      :data-pos-num="_posNum(p.position)"
-                      @click="selectedPos = (selectedPos === _posNum(p.position) ? null : _posNum(p.position))"
-                      @mouseenter="hoveredPos = _posNum(p.position)"
+                <template x-for="row in displayRows" :key="row._rowid">
+                  <tr :class="{
+                        'pos-active': row._basePos !== null && (hoveredPos === row._basePos || selectedPos === row._basePos),
+                        'pos-subrow': !row._isHead
+                      }"
+                      :data-pos-num="row._basePos"
+                      @click="row._basePos !== null && (selectedPos = (selectedPos === row._basePos ? null : row._basePos))"
+                      @mouseenter="hoveredPos = row._basePos"
                       @mouseleave="hoveredPos = null">
                     <td class="col-pos"
-                        :class="{'pos-paren': /^\(/.test(p.position), 'pos-none': p.position === '-'}"
-                        :title="p.position === '-' ? 'Not shown in diagram' : /^\(/.test(p.position) ? 'May differ from illustration' : ''"
-                        x-text="p.position"></td>
-                    <td class="col-pn"  x-text="p.part_number"></td>
+                        :title="row.part.position === '-' ? 'Not shown in diagram' : /^\(/.test(row.part.position) ? 'May differ from illustration' : ''">
+                      <span x-show="row._hasMore"
+                            class="pos-expand"
+                            @click.stop="toggleGroup(row._gi)"
+                            x-text="row._expanded ? '▼' : '▶'"></span>
+                      <span :class="{'pos-paren': /^\(/.test(row.part.position), 'pos-none': row.part.position === '-'}"
+                            x-text="row.part.position"></span>
+                    </td>
+                    <td class="col-pn" x-text="row.part.part_number"></td>
                     <td class="col-desc">
-                      <div x-text="p.description"></div>
-                      <div x-show="p.showAppl"
-                           x-text="p.applicability"
+                      <div x-text="row.part.description"></div>
+                      <div x-show="row.part.showAppl"
+                           x-text="row.part.applicability"
                            style="margin-top:0.3rem;color:var(--text4);font-size:0.72rem;white-space:pre-wrap;line-height:1.5"></div>
                     </td>
-                    <td class="col-qty" x-text="p.quantity"></td>
+                    <td class="col-qty" x-text="row.part.quantity"></td>
                     <td class="col-rem">
-                      <span x-text="p.remarks"></span>
-                      <template x-if="p.applicability">
+                      <span x-text="row.part.remarks"></span>
+                      <template x-if="row.part.applicability">
                         <button class="appl-toggle"
-                                @click="p.showAppl = !p.showAppl"
-                                x-text="p.showAppl ? '▲ appl.' : '▼ appl.'">
+                                @click.stop="row.part.showAppl = !row.part.showAppl"
+                                x-text="row.part.showAppl ? '▲ appl.' : '▼ appl.'">
                         </button>
                       </template>
                     </td>
@@ -292,6 +305,8 @@
         currentSection: null,
         currentMg:      null,
         parts:          [],
+        posGroups:      [],
+        displayRows:    [],
         diagramUrl:     null,
         callouts:       [],
         hoveredPos:     null,
@@ -409,6 +424,8 @@
             applicability: applicability || '',
             showAppl: false,
           }));
+          this.posGroups = this._buildPosGroups(this.parts);
+          this._rebuildDisplayRows();
 
           // Load callouts
           this.callouts = this._query(
@@ -564,6 +581,11 @@
           if (!hit) return;
           this.hoveredPos  = hit.number;
           this.selectedPos = hit.number;
+          const gi = this.posGroups.findIndex(g => g.basePos === hit.number);
+          if (gi >= 0 && !this.posGroups[gi].expanded) {
+            this.posGroups[gi].expanded = true;
+            this._rebuildDisplayRows();
+          }
           const row = document.querySelector(`tr[data-pos-num="${CSS.escape(hit.number)}"]`);
           if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         },
@@ -589,6 +611,50 @@
           if (!pos || pos === '-') return null;
           const m = pos.match(/^\(?(\d+)\)?$/);
           return m ? m[1] : null;
+        },
+
+        // ── Position grouping ────────────────────────────────────────
+        _buildPosGroups(parts) {
+          const groups = [];
+          const byBase = new Map();
+          for (const p of parts) {
+            const base = this._posNum(p.position);
+            if (base !== null && byBase.has(base)) {
+              groups[byBase.get(base)].parts.push(p);
+            } else {
+              if (base !== null) byBase.set(base, groups.length);
+              groups.push({ basePos: base, parts: [p], expanded: false });
+            }
+          }
+          return groups;
+        },
+
+        // Rebuild flat display list from posGroups. Call after any expand/collapse.
+        _rebuildDisplayRows() {
+          const rows = [];
+          for (let gi = 0; gi < this.posGroups.length; gi++) {
+            const g = this.posGroups[gi];
+            for (let pi = 0; pi < g.parts.length; pi++) {
+              if (pi === 0 || g.expanded) {
+                rows.push({
+                  part:      g.parts[pi],
+                  _rowid:    g.parts[pi]._rowid,
+                  _gi:       gi,
+                  _pi:       pi,
+                  _isHead:   pi === 0,
+                  _hasMore:  pi === 0 && g.parts.length > 1,
+                  _expanded: g.expanded,
+                  _basePos:  g.basePos,
+                });
+              }
+            }
+          }
+          this.displayRows = rows;
+        },
+
+        toggleGroup(gi) {
+          this.posGroups[gi].expanded = !this.posGroups[gi].expanded;
+          this._rebuildDisplayRows();
         },
 
         // ── SQL helpers ───────────────────────────────────────────────
