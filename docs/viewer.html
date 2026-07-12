@@ -102,6 +102,43 @@
     .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--border);
                border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Vehicle filter bar ──────────────────────────────────── */
+    #filter-bar { display: flex; flex-wrap: wrap; gap: 0.4rem 0.75rem; align-items: center;
+                  padding: 0.35rem 1rem; border-bottom: 1px solid var(--border);
+                  background: var(--bg2); flex-shrink: 0; font-size: 0.78rem; }
+    .fl { color: var(--text4); white-space: nowrap; }
+    #filter-bar input { background: var(--bg); color: var(--text); border: 1px solid var(--border3);
+                        padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; font-size: 0.78rem; }
+    #filter-bar input:focus { outline: none; border-color: var(--accent); }
+    .vf-chips { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
+    .vf-chip { display: inline-flex; align-items: center; gap: 3px; border-radius: 2px;
+               padding: 0.1rem 0.3rem; font-size: 0.68rem; line-height: 1.6;
+               background: var(--accent-bg2); border: 1px solid var(--accent-bd); color: var(--accent); }
+    .vf-chip-desc { color: var(--text3); max-width: 100px; overflow: hidden;
+                    text-overflow: ellipsis; white-space: nowrap; }
+    .vf-chip-x { cursor: pointer; color: var(--text5); }
+    .vf-chip-x:hover { color: var(--text); }
+    .vf-pr-wrap { position: relative; }
+    .vf-pr-dd { position: absolute; top: calc(100% + 2px); left: 0; z-index: 50;
+                background: var(--bg); border: 1px solid var(--border3); border-radius: 4px;
+                max-height: 220px; overflow-y: auto; min-width: 260px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.25); }
+    .vf-pr-dd-item { display: flex; gap: 0.5rem; padding: 0.25rem 0.6rem;
+                     cursor: pointer; font-size: 0.75rem; }
+    .vf-pr-dd-item:hover { background: var(--accent-bg); }
+    .vf-pr-dd-code { color: var(--accent); flex-shrink: 0; min-width: 2.5rem; }
+    .vf-pr-dd-desc { color: var(--text2); }
+    tr.part-no-match td { opacity: 0.25; }
+    tr.part-no-match:hover td { opacity: 0.45; }
+    .btn-filter { background: none; border: 1px solid var(--border3); color: var(--text3);
+                  border-radius: 4px; padding: 0.25rem 0.6rem; cursor: pointer;
+                  font-family: monospace; font-size: 0.8rem; white-space: nowrap; }
+    .btn-filter:hover { border-color: var(--accent); color: var(--text); }
+    .btn-filter.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+    .f-badge { display: inline-block; background: var(--accent); color: white;
+               border-radius: 8px; padding: 0 4px; font-size: 0.6rem; line-height: 1.4;
+               margin-left: 3px; vertical-align: middle; }
   </style>
 </head>
 <body x-data="viewerApp()" x-init="init()">
@@ -121,8 +158,49 @@
            @keydown.escape="clearSearch()"
            :disabled="!db">
     <span id="statusBar" x-text="status"></span>
+    <button class="btn-filter" :class="{on: filterPanelOpen || filterActive}"
+            @click="filterPanelOpen = !filterPanelOpen" :disabled="!db">
+      Vehicle<template x-if="filterActive"><span class="f-badge" x-text="filterCriteriaCount"></span></template>
+    </button>
     <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
   </header>
+
+  <div id="filter-bar" x-show="filterPanelOpen">
+    <span class="fl">MJ</span>
+    <input type="number" x-model="vfYear" placeholder="2008" min="1990" max="2030" style="width:5rem">
+    <span class="fl">Market</span>
+    <input type="text" :value="vfMarket" @input="vfMarket = $event.target.value.toUpperCase()"
+           placeholder="D" style="width:4rem">
+    <span class="fl">PR&nbsp;Codes</span>
+    <div class="vf-chips">
+      <template x-for="pr in vfPrCodes" :key="pr">
+        <span class="vf-chip" :title="prDesc(pr)">
+          PR:<span x-text="pr"></span>
+          <span class="vf-chip-desc" x-text="prDesc(pr)"></span>
+          <span class="vf-chip-x" @click="removePrCode(pr)">×</span>
+        </span>
+      </template>
+    </div>
+    <div class="vf-pr-wrap">
+      <input type="text" x-model="prSearch" placeholder="add…" style="width:5.5rem"
+             @input="updatePrDropdown()"
+             @focus="updatePrDropdown(); prDropdownOpen = true"
+             @blur="setTimeout(() => prDropdownOpen = false, 150)">
+      <div class="vf-pr-dd" x-show="prDropdownOpen && prDropdownItems.length > 0">
+        <template x-for="item in prDropdownItems" :key="item.code">
+          <div class="vf-pr-dd-item" @mousedown.prevent="addPrCode(item.code)">
+            <span class="vf-pr-dd-code" x-text="item.code"></span>
+            <span class="vf-pr-dd-desc" x-text="item.description"></span>
+          </div>
+        </template>
+      </div>
+    </div>
+    <button style="background:none;border:none;color:var(--text4);cursor:pointer;font-family:monospace;font-size:0.78rem"
+            x-show="filterActive" @click="clearVehicleFilter()">✕ clear</button>
+    <template x-if="filterActive && currentSection && !searchMode">
+      <span class="fl" x-text="filterSectionCount + ' of ' + parts.length + ' match'"></span>
+    </template>
+  </div>
 
   <div class="layout">
 
@@ -174,7 +252,7 @@
                   style="color:var(--text4)"></span>
             <span x-text="currentSection.title_model ? ' [' + currentSection.title_model + ']' : ''"
                   style="color:var(--text5);font-size:0.72rem"></span>
-            <span class="count" x-text="parts.length + ' parts'"></span>
+            <span class="count" x-text="filterActive ? (filterSectionCount + ' / ' + parts.length + ' match') : (parts.length + ' parts')"></span>
           </span>
         </template>
         <template x-if="!searchMode && !currentSection">
@@ -234,7 +312,8 @@
                 <template x-for="row in displayRows" :key="row._rowid">
                   <tr :class="{
                         'pos-active': row._basePos !== null && (hoveredPos === row._basePos || selectedPos === row._basePos),
-                        'pos-subrow': !row._isHead
+                        'pos-subrow': !row._isHead,
+                        'part-no-match': filterActive && !partMatchesVehicle(row.part.applicability)
                       }"
                       :data-pos-num="row._basePos"
                       @click="row._basePos !== null && (selectedPos = (selectedPos === row._basePos ? null : row._basePos))"
@@ -317,6 +396,28 @@
         loading:        false,
         status:         '',
 
+        // file-mode: true when loaded via ?sqlite=URL instead of OPFS
+        sqliteFileMode: false,
+
+        // vehicle filter
+        filterPanelOpen:  false,
+        vfYear:           '',
+        vfMarket:         '',
+        vfPrCodes:        [],
+        prSearch:         '',
+        prDropdownOpen:   false,
+        allPrCodes:       [],
+        prDropdownItems:  [],
+
+        get filterActive() { return !!(this.vfYear || this.vfMarket || this.vfPrCodes.length); },
+        get filterCriteriaCount() {
+          return (this.vfYear ? 1 : 0) + (this.vfMarket ? 1 : 0) + this.vfPrCodes.length;
+        },
+        get filterSectionCount() {
+          if (!this.filterActive || !this.parts.length) return '0';
+          return String(this.parts.filter(p => this.partMatchesVehicle(p.applicability)).length);
+        },
+
         // ── Init ────────────────────────────────────────────────────
 
         async init() {
@@ -326,13 +427,19 @@
           this.$watch('hoveredPos',  () => this.drawCallouts());
           this.$watch('selectedPos', () => this.drawCallouts());
           window.addEventListener('resize', () => requestAnimationFrame(() => this._positionCanvas()));
-          await this.listCatalogs();
+          this._startQueryBridge();
 
           const params = new URLSearchParams(location.search);
-          const cid = params.get('catalog');
-          if (cid) {
-            this.catalogId = cid;
-            await this.loadCatalog();
+          const sqliteUrl = params.get('sqlite');
+          if (sqliteUrl) {
+            await this.loadFromUrl(sqliteUrl);
+          } else {
+            await this.listCatalogs();
+            const cid = params.get('catalog');
+            if (cid) {
+              this.catalogId = cid;
+              await this.loadCatalog();
+            }
           }
         },
 
@@ -379,12 +486,82 @@
             }
 
             this._buildToc();
+            this.loadPrCodes();
             this.status = `${this.mainGroups.length} groups, ${this._scalar('SELECT COUNT(*) FROM section')} sections`;
           } catch (e) {
             this.status = 'Error: ' + e.message;
           } finally {
             this.loading = false;
           }
+        },
+
+        // ── File-mode loader ─────────────────────────────────────────
+        // Fetches a SQLite file from a URL and loads it directly (no OPFS).
+        // Diagrams are unavailable in this mode (images live in OPFS).
+        // Usage: viewer.html?sqlite=http://localhost:8080/my-catalog.sqlite
+
+        async loadFromUrl(url) {
+          this.loading       = true;
+          this.sqliteFileMode = true;
+          this.status        = 'Fetching database…';
+          this.mainGroups    = [];
+          this.currentSection = null;
+          this.parts         = [];
+          this._setDiagram(null);
+          try {
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+            const buf  = await resp.arrayBuffer();
+            this.db    = new this.SQL.Database(new Uint8Array(buf));
+            const cat  = this._one('SELECT id, model FROM catalog LIMIT 1');
+            if (cat) {
+              this.catalogId = cat[0];
+              this.catalogs  = [{ id: cat[0], label: cat[1] || cat[0] }];
+            }
+            this._buildToc();
+            this.loadPrCodes();
+            this.status = `${this.mainGroups.length} groups · ${this._scalar('SELECT COUNT(*) FROM section')} sections (file mode — no diagrams)`;
+          } catch (e) {
+            this.status = 'Error: ' + e.message;
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        // ── Query bridge ──────────────────────────────────────────────
+        // Polls the local relay (query-bridge.ps1 / serve.ps1) so SQL
+        // queries can be sent from the command line while the viewer is open.
+
+        _startQueryBridge() {
+          const self = this;
+          const poll = async () => {
+            if (self.db) {
+              try {
+                const r = await fetch('http://localhost:9876/query');
+                if (r.ok) {
+                  const sql = (await r.text()).trim();
+                  if (sql) {
+                    let res;
+                    if (sql === '__EXPORT__') {
+                      const data = self.db.export();
+                      let bin = '';
+                      for (let i = 0; i < data.length; i++) bin += String.fromCharCode(data[i]);
+                      res = { ok: true, export: btoa(bin), filename: (self.catalogId || 'catalog') + '.sqlite' };
+                    } else {
+                      try { res = { ok: true, data: self.db.exec(sql) }; }
+                      catch (e) { res = { ok: false, error: e.message }; }
+                    }
+                    await fetch('http://localhost:9876/result', {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(res),
+                    });
+                  }
+                }
+              } catch { /* bridge not running — ignore */ }
+            }
+            setTimeout(poll, 500);
+          };
+          poll();
         },
 
         // ── TOC ──────────────────────────────────────────────────────
@@ -434,9 +611,9 @@
           this.hoveredPos  = null;
           this.selectedPos = null;
 
-          // Load diagram
+          // Load diagram (OPFS only; not available in file mode)
           this._setDiagram(null);
-          if (sec.diagram_image) {
+          if (sec.diagram_image && !this.sqliteFileMode) {
             try {
               const url = await this._opfsUrl(sec.diagram_image);
               this._setDiagram(url);
@@ -669,6 +846,94 @@
         toggleGroup(gi) {
           this.posGroups[gi].expanded = !this.posGroups[gi].expanded;
           this._rebuildDisplayRows();
+        },
+
+        // ── Vehicle filter ────────────────────────────────────────────
+
+        loadPrCodes() {
+          try {
+            this.allPrCodes = this._query(
+              'SELECT code, description FROM pr_code ORDER BY CAST(code AS INTEGER), code'
+            ).map(([code, description]) => ({ code, description }));
+          } catch { this.allPrCodes = []; }
+        },
+
+        prDesc(code) {
+          return (this.allPrCodes.find(p => p.code === code) || {}).description || '';
+        },
+
+        updatePrDropdown() {
+          const q = this.prSearch.trim().toLowerCase();
+          this.prDropdownItems = (q
+            ? this.allPrCodes.filter(p =>
+                p.code.toLowerCase().includes(q) || p.description.toLowerCase().includes(q))
+            : this.allPrCodes
+          ).filter(p => !this.vfPrCodes.includes(p.code)).slice(0, 40);
+        },
+
+        addPrCode(code) {
+          if (!this.vfPrCodes.includes(code)) this.vfPrCodes = [...this.vfPrCodes, code];
+          this.prSearch = '';
+          this.prDropdownOpen = false;
+          this.prDropdownItems = [];
+        },
+
+        removePrCode(code) {
+          this.vfPrCodes = this.vfPrCodes.filter(p => p !== code);
+        },
+
+        clearVehicleFilter() {
+          this.vfYear = ''; this.vfMarket = ''; this.vfPrCodes = [];
+          this.prSearch = ''; this.prDropdownOpen = false;
+        },
+
+        partMatchesVehicle(applStr) {
+          if (!this.filterActive || !applStr) return true;
+          return applStr.split(' | ').some(seg => this._segmentMatchesVehicle(seg));
+        },
+
+        _segmentMatchesVehicle(seg) {
+          let prs = [], markets = [], mjFrom = null, mjTo = null;
+          for (const tok of seg.trim().split(/\s+/)) {
+            if (!tok || tok === '-' || tok === '>>') continue;
+            if (tok === '(complete)') continue;
+            const prm = tok.match(/^PR:(\w+)/i);
+            if (prm) { prs.push(prm[1]); continue; }
+            // D-MJ2007>>MJ2009 / D-MJ2007>> / D-MJ2007
+            const dm = tok.match(/^([A-Z]{1,5})-MJ(\d{4})(?:>>MJ(\d{4})|>>)?$/i);
+            if (dm) {
+              markets.push(dm[1].toUpperCase());
+              mjFrom = +dm[2];
+              if (dm[3]) mjTo = +dm[3];
+              else if (!tok.includes('>>')) mjTo = mjFrom;
+              continue;
+            }
+            // MJ2007>>MJ2009
+            const rng = tok.match(/^MJ(\d{4})>>MJ(\d{4})$/i);
+            if (rng) { mjFrom = +rng[1]; mjTo = +rng[2]; continue; }
+            // MJ2007>>
+            const frm = tok.match(/^MJ(\d{4})>>$/i);
+            if (frm) { mjFrom = +frm[1]; continue; }
+            // >>MJ2009
+            const too = tok.match(/^>>MJ(\d{4})$/i);
+            if (too) { mjTo = +too[1]; continue; }
+            // MJ2007
+            const mj = tok.match(/^MJ(\d{4})$/i);
+            if (mj) {
+              const yr = +mj[1];
+              if (mjFrom === null) { mjFrom = yr; mjTo = yr; } else mjTo = yr;
+              continue;
+            }
+            if (/^[A-Z]{1,5}$/.test(tok)) markets.push(tok);
+          }
+          if (this.vfYear) {
+            const yr = +this.vfYear;
+            if (mjFrom !== null && yr < mjFrom) return false;
+            if (mjTo   !== null && yr > mjTo)   return false;
+          }
+          if (this.vfMarket && markets.length > 0 && !markets.includes(this.vfMarket.toUpperCase())) return false;
+          if (this.vfPrCodes.length > 0 && prs.length > 0 && !prs.every(pr => this.vfPrCodes.includes(pr))) return false;
+          return true;
         },
 
         // ── SQL helpers ───────────────────────────────────────────────

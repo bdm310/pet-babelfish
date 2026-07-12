@@ -1,3 +1,15 @@
 # Tesseract training artifacts (reproducible via training scripts)
 train/
 docs/spikes/tessdata/
+
+# Playwright browser profile (OPFS data, downloaded Chromium binary cache)
+tools/.playwright-profile/
+
+# Exported SQLite files (generated from OPFS via export-sqlite.ps1)
+exported.sqlite
+tools/*.sqlite
+
+# Verification output (screenshots, summaries)
+verify-output/
+
+pet-source-pdf/

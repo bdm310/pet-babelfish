@@ -16,6 +16,84 @@ We'll use the simplest tools we can for each part. Everything will run local to 
 
 There's two distinct portions of the project, separated by a clean interface. The first is ingesting and converting data to our model, which produces some output artifact(s) like data tables, part images, and diagrams. The second is the application which takes in those artifacts and allows the user to do their desired actions. These parts could share a single user interface or be entirely separate.
 
+## Development tools (`tools/`)
+
+All tools use the same persistent Playwright profile (`tools/.playwright-profile/`) so OPFS catalog data survives between runs.
+
+**One-time setup:**
+```powershell
+uv run --with playwright python -m playwright install chromium
+```
+
+### Ingest (`tools/ingest.py`)
+
+Automates PDF ingest with no browser interaction. Starts a local server, uploads the PDF to `ingest.html` via Playwright, waits for the worker to finish.
+
+```powershell
+# First ingest — runs full pipeline including diagram rendering + OCR (slow)
+uv run --with playwright python tools/ingest.py catalog.pdf --catalog-id 997tt
+
+# Re-extract parts text only — skips OCR entirely (fast, use when iterating on part extraction)
+uv run --with playwright python tools/ingest.py catalog.pdf --catalog-id 997tt --parts-only
+
+# Re-run everything including OCR (use when diagram/OCR logic changes)
+uv run --with playwright python tools/ingest.py catalog.pdf --catalog-id 997tt --force
+```
+
+`--parts-only` falls back to full ingest automatically if the catalog doesn't exist yet.
+
+### Verify (`tools/verify.py`)
+
+Exports the SQLite from OPFS, runs DB summary queries with Python `sqlite3`, and takes four screenshots of the live viewer. Output goes to a timestamped `verify-output/` directory.
+
+```powershell
+uv run --with playwright python tools/verify.py --catalog-id 997tt
+uv run --with playwright python tools/verify.py --catalog-id 997tt --section 101-000 --search "Bremsbelag"
+```
+
+Screenshots produced: `viewer-loaded.png`, `viewer-section.png`, `viewer-search.png`, `catalog-browser.png`. Summary stats (counts, OCR confidence, sample parts) written to `summary.txt`.
+
+### Screenshot (`tools/screenshot.py`)
+
+Single-shot screenshot or JS eval against any page. Useful for quick visual checks without running the full verify suite.
+
+```powershell
+uv run --with playwright python tools/screenshot.py --catalog 997tt --start-server
+uv run --with playwright python tools/screenshot.py --url http://localhost:8080/viewer.html --out before.png
+uv run --with playwright python tools/screenshot.py --eval "document.getElementById('statusBar').textContent"
+```
+
+### Inspect PDF (`tools/inspect-pdf.py`)
+
+Dumps page text from a source PDF for comparison against ingested DB data.
+
+```powershell
+uv run --with pdfplumber python tools/inspect-pdf.py catalog.pdf --toc
+uv run --with pdfplumber python tools/inspect-pdf.py catalog.pdf --pages 10-20 --search "Bremsbelag"
+```
+
+### DB queries (interactive)
+
+Two ways to run SQL against the live in-browser database:
+
+**Via wrapper script** (requires `serve.ps1` running and a catalog open in the browser):
+```powershell
+.\tools\db-query.ps1 "SELECT COUNT(*) FROM part WHERE applicability != ''"
+```
+
+**Export SQLite to file** (then query with any SQL tool):
+```powershell
+.\tools\export-sqlite.ps1 -Out my-catalog.sqlite
+```
+
+### Serve + query bridge (`serve.ps1`)
+
+Starts the static file server on `:8080` and the query bridge on `:9876` together. The query bridge lets `db-query.ps1` and `export-sqlite.ps1` talk to whichever catalog is open in `catalog-browser.html` or `viewer.html`.
+
+```powershell
+.\serve.ps1
+```
+
 ## Database access (live query bridge)
 
 The database lives in the browser (sql.js + OPFS). To query it live:

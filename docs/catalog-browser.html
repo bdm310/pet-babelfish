@@ -85,6 +85,8 @@
       <span x-show="loading"><span class="spinner"></span></span>
       <span x-text="status"></span>
     </span>
+    <button class="theme-toggle" @click="downloadSqlite()" :disabled="!db"
+            style="white-space:nowrap">↓ SQLite</button>
     <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
   </header>
 
@@ -167,6 +169,18 @@
           this._startQueryBridge();
         },
 
+        downloadSqlite() {
+          if (!this.db) return;
+          const data = this.db.export();
+          const blob = new Blob([data], { type: 'application/octet-stream' });
+          const url  = URL.createObjectURL(blob);
+          Object.assign(document.createElement('a'), {
+            href: url,
+            download: (this.catalogId || 'catalog') + '.sqlite',
+          }).click();
+          URL.revokeObjectURL(url);
+        },
+
         _startQueryBridge() {
           const self = this;
           const poll = async () => {
@@ -177,8 +191,16 @@
                   const sql = (await r.text()).trim();
                   if (sql) {
                     let res;
-                    try { res = { ok: true, data: self.db.exec(sql) }; }
-                    catch (e) { res = { ok: false, error: e.message }; }
+                    if (sql === '__EXPORT__') {
+                      // Export full SQLite as base64 for tools/export-sqlite.ps1
+                      const data = self.db.export();
+                      let bin = '';
+                      for (let i = 0; i < data.length; i++) bin += String.fromCharCode(data[i]);
+                      res = { ok: true, export: btoa(bin), filename: self.catalogId + '.sqlite' };
+                    } else {
+                      try { res = { ok: true, data: self.db.exec(sql) }; }
+                      catch (e) { res = { ok: false, error: e.message }; }
+                    }
                     await fetch('http://localhost:9876/result', {
                       method: 'POST', headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify(res),
