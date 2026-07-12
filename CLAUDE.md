@@ -34,10 +34,20 @@ The browser polls `/query` every 500ms, executes against the live DB, and POSTs 
 
 ## Data model summary
 
-Tables: `catalog`, `main_group`, `section`, `part`, `callout`
+Tables: `catalog`, `main_group`, `section`, `part`, `callout`, `pr_code`, `sales_type`, `vin_range`, `engine_code`, `transmission_code`, `engine_number_range`, `transmission_number_range`
 
+**Parts catalog (core)**
 - **catalog**: one row per ingested PDF (`id`, `model`, `page_count`, `ingested_at`)
 - **main_group**: top-level groups 0-9 (Engine, Gearbox, Body, etc.)
 - **section**: numbered like `103-010`; has `parts_page`, `diagram_page`, `diagram_image` path, `title_model` (engine/variant code), `title_remark` (left/right)
 - **part**: `position` is either plain `1`/`2` or parenthesized `(1)`/`(5)` (the latter are diagram callout refs); `applicability` encodes PR option codes + market + model year range, e.g. `(complete) PR:480 | D - MJ 2008>> - MJ 2008`
 - **callout**: OCR-extracted bounding boxes (pixel coords at 2× scale) per section diagram; links to parts via matching `number` against the stripped position value within the same `section_id`
+
+**V-pages (model/option info, parsed from intro pages)**
+- **pr_code**: option code → description, e.g. `480` = "6-speed manual transmission", `XAA` = "Aerokit Cup"; used to decode `part.applicability`
+- **sales_type**: body/trim variants, e.g. `997840` = "Turbo GT2"; has `mount_from`/`mount_to` (MM/YY)
+- **vin_range**: VIN ranges by `model_year`, `vin_from`, `vin_to`, `start_date`, `remark` (market, e.g. "997 Turbo (USA, CN, CDN, MEX, BR)")
+- **engine_code**: EC codes with `displacement_l`, `power_kw`, `power_hp`, `cylinders`, date range
+- **transmission_code**: TC codes with `type_code` (e.g. "6S", "5A"), date range
+- **engine_number_range**: serial ranges (`number_from`/`number_to`) per `model_year` + `vehicle_type` + `engine_type`
+- **transmission_number_range**: serial ranges per `model_year` + `vehicle_type` + `gearbox_type`

@@ -133,6 +133,13 @@ async function ingest(buffer, catalogId) {
     [catalogId, model, pdf.numPages, new Date().toISOString()]
   );
 
+  post('status', { message: 'Parsing model/option information…' });
+  t = performance.now();
+  const { prCodes, salesTypes, vinRanges, engineCodes, transmCodes, engineNums, transmNums }
+    = await parseVPages(pdf, sections[0].diagramPage);
+  insertVPageData(db, catalogId, { prCodes, salesTypes, vinRanges, engineCodes, transmCodes, engineNums, transmNums });
+  TIMING.vPageParse = performance.now() - t;
+
   const mgCache   = new Map(); // `catalogId\0number` → rowid
   let   partCount = 0;
 
@@ -254,6 +261,7 @@ async function ingest(buffer, catalogId) {
     `  Tesseract init     : ${fmt(T.tesseractInit)} [${pct(T.tesseractInit)}]\n` +
     `  OPFS setup         : ${fmt(T.opfsSetup)} [${pct(T.opfsSetup)}]\n` +
     `  TOC parse          : ${fmt(T.tocParse)} [${pct(T.tocParse)}]\n` +
+    `  V-page parse       : ${fmt(T.vPageParse)} [${pct(T.vPageParse)}]\n` +
     `  renderDiagram()    : ${fmt(T.renderDiagram)} [${pct(T.renderDiagram)}] ${perSec(T.renderDiagram)}\n` +
     `    page render+oplist : ${fmt(T.render)} ${perDiag(T.render)}\n` +
     `    PNG convert+save   : ${fmt(T.convertSavePng)} ${perDiag(T.convertSavePng)}\n` +
@@ -321,6 +329,225 @@ async function resolveDestPage(dest, pdf) {
     if (!ref) return null;
     return (await pdf.getPageIndex(ref)) + 1; // convert 0-based → 1-based
   } catch { return null; }
+}
+
+// ── V-pages (intro pages: model info, PR codes, VIN ranges) ──────────────────
+
+async function parseVPages(pdf, firstDiagramPage) {
+  const prCodes      = [];
+  const salesTypes   = [];
+  const vinRanges    = [];
+  const engineCodes  = [];
+  const transmCodes  = [];
+  const engineNums   = [];
+  const transmNums   = [];
+
+  for (let pageNum = 1; pageNum < firstDiagramPage; pageNum++) {
+    const page    = await pdf.getPage(pageNum);
+    const vp      = page.getViewport({ scale: 1 });
+    const content = await page.getTextContent();
+    page.cleanup();
+
+    const items    = content.items.filter(it => it.str?.trim());
+    const rowObjs  = groupIntoRows(items, vp.height);
+    const rows     = rowObjs.map(r => r.items.map(it => it.str.trim()).filter(Boolean));
+    const pageText = rows.map(r => r.join(' ')).join('\n');
+
+    if      (pageText.includes('Optional Equipment'))        parsePRCodesPage(rows, prCodes);
+    else if (pageText.includes('Model Overview Sales Type')) parseSalesTypesPage(rows, salesTypes);
+    else if (pageText.includes('Model Overview EC'))         parseEngineCodesPage(rows, engineCodes);
+    else if (pageText.includes('Model Overview TC'))         parseTransmissionCodesPage(rows, transmCodes);
+    else if (pageText.includes('VIN-Numbers Overview'))      parseVINRangesPage(rows, vinRanges);
+    else if (pageText.includes('Engine type'))               parseEngineNumbersPage(rows, engineNums);
+    else if (pageText.includes('Gearbox type'))              parseTransmissionNumbersPage(rows, transmNums);
+  }
+
+  return { prCodes, salesTypes, vinRanges, engineCodes, transmCodes, engineNums, transmNums };
+}
+
+function parsePRCodesPage(rows, prCodes) {
+  const CODE_RE = /^\d{3}$|^[A-Z][A-Z0-9]{2}$/;
+  let inData  = false;
+  let current = null;
+
+  for (const texts of rows) {
+    if (!texts.length) continue;
+
+    if (!inData) {
+      if (texts.includes('NR') && texts.join(' ').includes('Description')) { inData = true; }
+      continue;
+    }
+
+    // Skip repeated page headers
+    if (texts[0] === 'Optional Equipment' ||
+        texts.some(t => t.startsWith('Model:')) ||
+        texts.some(t => /^\d{2}\.\d{2}\.\d{4}/.test(t))) continue;
+
+    // Footnote markers
+    if (texts[0] === '*') continue;
+
+    if (CODE_RE.test(texts[0])) {
+      if (current) prCodes.push(current);
+      current = { code: texts[0], description: texts.slice(1).join(' ') };
+    } else if (current) {
+      current.description = (current.description + ' ' + texts.join(' ')).trim();
+    }
+  }
+
+  if (current) prCodes.push(current);
+}
+
+function parseSalesTypesPage(rows, salesTypes) {
+  let inData = false;
+
+  for (const texts of rows) {
+    if (!texts.length) continue;
+    if (!inData) {
+      if (texts.join(' ').includes('Sales term')) { inData = true; }
+      continue;
+    }
+
+    // Mounting time is the anchor: "MM/YY-MM/YY"
+    const mountIdx = texts.findIndex(t => /^\d{2}\/\d{2}-\d{2}\/\d{2}$/.test(t));
+    if (mountIdx < 1 || !/^\d{5,6}$/.test(texts[0])) continue;
+
+    const [mountFrom, mountTo] = texts[mountIdx].split('-');
+    salesTypes.push({
+      salesTerm:   texts[0],
+      description: texts.slice(1, mountIdx).join(' '),
+      mountFrom:   mountFrom || null,
+      mountTo:     mountTo   || null,
+      remark:      texts.slice(mountIdx + 1).join(' ') || null,
+    });
+  }
+}
+
+function parseVINRangesPage(rows, vinRanges) {
+  let inData  = false;
+  let current = null;
+
+  for (const texts of rows) {
+    if (!texts.length) continue;
+    if (!inData) {
+      if (texts.join(' ').includes('Model year')) { inData = true; }
+      continue;
+    }
+
+    if (/^\d{4}$/.test(texts[0])) {
+      if (current) vinRanges.push(current);
+      // VIN-to may be its own item ">99-7S783000" or merged with vin_from; find it by ">" prefix
+      const vinToIdx = texts.findIndex((t, i) => i >= 3 && t.startsWith('>'));
+      const vinToRaw = vinToIdx >= 0 ? texts[vinToIdx] : (texts[3] || '');
+      const remarkStart = vinToIdx >= 0 ? vinToIdx + 1 : 4;
+      current = {
+        modelYear: parseInt(texts[0]),
+        startDate: texts[1] || null,
+        vinFrom:   texts[2] || null,
+        vinTo:     vinToRaw.replace(/^>/, '') || null,
+        remark:    texts.slice(remarkStart).join(' ') || null,
+      };
+    } else if (current) {
+      // Skip page header/footer lines (e.g. "19.07.2018 - 1 Kat P30")
+      if (texts.some(t => /^\d{2}\.\d{2}\.\d{4}/.test(t))) continue;
+      const cont = texts.join(' ').trim();
+      if (cont) current.remark = current.remark ? current.remark + ' ' + cont : cont;
+    }
+  }
+
+  if (current) vinRanges.push(current);
+}
+
+function parseEngineCodesPage(rows, engineCodes) {
+  let inData = false;
+  for (const texts of rows) {
+    if (!texts.length) continue;
+    if (!inData) {
+      if (texts[0] === 'EC') { inData = true; }
+      continue;
+    }
+    if (texts.some(t => t.startsWith('Model:') || /^\d{2}\.\d{2}\.\d{4}/.test(t))) continue;
+    const mountIdx = texts.findIndex(t => /^\d{2}\/\d{2}-\d{2}\/\d{2}$/.test(t));
+    if (mountIdx < 1) continue;
+    const [mountFrom, mountTo] = texts[mountIdx].split('-');
+    const pre = texts.slice(1, mountIdx); // [ltr, kw, hp, cyl] reading right-to-left
+    engineCodes.push({
+      ec:            texts[0],
+      displacementL: pre.at(-4) || null,
+      powerKw:       parseInt(pre.at(-3)) || null,
+      powerHp:       parseInt(pre.at(-2)) || null,
+      cylinders:     parseInt(pre.at(-1)) || null,
+      mountFrom, mountTo,
+      remark: texts.slice(mountIdx + 1).join(' ') || null,
+    });
+  }
+}
+
+function parseTransmissionCodesPage(rows, transmCodes) {
+  let inData = false;
+  for (const texts of rows) {
+    if (!texts.length) continue;
+    if (!inData) {
+      if (texts[0] === 'TC') { inData = true; }
+      continue;
+    }
+    if (texts.some(t => t.startsWith('Model:') || /^\d{2}\.\d{2}\.\d{4}/.test(t))) continue;
+    const mountIdx = texts.findIndex(t => /^\d{2}\/\d{2}-\d{2}\/\d{2}$/.test(t));
+    if (mountIdx < 1) continue;
+    const [mountFrom, mountTo] = texts[mountIdx].split('-');
+    transmCodes.push({
+      tc:       texts[0],
+      typeCode: texts.slice(1, mountIdx).at(-1) || null,
+      mountFrom, mountTo,
+      remark: texts.slice(mountIdx + 1).join(' ') || null,
+    });
+  }
+}
+
+function parseEngineNumbersPage(rows, engineNumbers) {
+  let inData = false;
+  for (const texts of rows) {
+    if (!texts.length) continue;
+    if (!inData) {
+      if (texts.join(' ').includes('Engine number')) { inData = true; }
+      continue;
+    }
+    if (texts.some(t => /^\d{2}\.\d{2}\.\d{4}/.test(t))) continue;
+    // Year is always 20xx; engine codes like "9770" are excluded by this pattern
+    const yearIdx = texts.findIndex(t => /^20\d{2}$/.test(t));
+    if (yearIdx < 1) continue;
+    const numberRaw = texts.slice(0, yearIdx).join(' ');
+    const gtMatch   = numberRaw.match(/^(.+?)\s*>\s*(.+)$/);
+    engineNumbers.push({
+      numberFrom:  (gtMatch ? gtMatch[1] : numberRaw).trim(),
+      numberTo:    gtMatch ? gtMatch[2].trim() : null,
+      modelYear:   parseInt(texts[yearIdx]),
+      vehicleType: texts.slice(yearIdx + 1, -1).join(' '),
+      engineType:  texts.at(-1),
+    });
+  }
+}
+
+function parseTransmissionNumbersPage(rows, transmNumbers) {
+  let inData = false;
+  for (const texts of rows) {
+    if (!texts.length) continue;
+    if (!inData) {
+      if (texts.join(' ').includes('Gearbox type')) { inData = true; }
+      continue;
+    }
+    if (texts.some(t => /^\d{2}\.\d{2}\.\d{4}/.test(t))) continue;
+    const yearIdx = texts.findIndex(t => /^20\d{2}$/.test(t));
+    if (yearIdx < 1) continue;
+    const numberRaw = texts.slice(0, yearIdx).join(' ');
+    const gtMatch   = numberRaw.match(/^(.+?)\s*>\s*(.+)$/);
+    transmNumbers.push({
+      numberFrom:  (gtMatch ? gtMatch[1] : numberRaw).trim(),
+      numberTo:    gtMatch ? gtMatch[2].trim() : null,
+      modelYear:   parseInt(texts[yearIdx]),
+      vehicleType: texts.slice(yearIdx + 1, -1).join(' '),
+      gearboxType: texts.at(-1),
+    });
+  }
 }
 
 // ── Parts extraction ──────────────────────────────────────────────────────────
@@ -936,9 +1163,55 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
     db = new SQL.Database(new Uint8Array(await file.arrayBuffer()));
   } catch { throw new Error(`catalog.sqlite not found for "${catalogId}" — run a full ingest first.`); }
 
+  // Migrate schema: add any tables that didn't exist in previously-ingested DBs
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pr_code (
+      id INTEGER PRIMARY KEY, catalog_id TEXT,
+      code TEXT NOT NULL, description TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS sales_type (
+      id INTEGER PRIMARY KEY, catalog_id TEXT,
+      sales_term TEXT NOT NULL, description TEXT NOT NULL,
+      mount_from TEXT, mount_to TEXT, remark TEXT
+    );
+    CREATE TABLE IF NOT EXISTS vin_range (
+      id INTEGER PRIMARY KEY, catalog_id TEXT,
+      model_year INTEGER, start_date TEXT,
+      vin_from TEXT, vin_to TEXT, remark TEXT
+    );
+    CREATE TABLE IF NOT EXISTS engine_code (
+      id INTEGER PRIMARY KEY, catalog_id TEXT,
+      ec TEXT NOT NULL, displacement_l TEXT,
+      power_kw INTEGER, power_hp INTEGER, cylinders INTEGER,
+      mount_from TEXT, mount_to TEXT, remark TEXT
+    );
+    CREATE TABLE IF NOT EXISTS transmission_code (
+      id INTEGER PRIMARY KEY, catalog_id TEXT,
+      tc TEXT NOT NULL, type_code TEXT,
+      mount_from TEXT, mount_to TEXT, remark TEXT
+    );
+    CREATE TABLE IF NOT EXISTS engine_number_range (
+      id INTEGER PRIMARY KEY, catalog_id TEXT,
+      number_from TEXT, number_to TEXT,
+      model_year INTEGER, vehicle_type TEXT, engine_type TEXT
+    );
+    CREATE TABLE IF NOT EXISTS transmission_number_range (
+      id INTEGER PRIMARY KEY, catalog_id TEXT,
+      number_from TEXT, number_to TEXT,
+      model_year INTEGER, vehicle_type TEXT, gearbox_type TEXT
+    );
+  `);
+
   post('status', { message: 'Parsing table of contents…' });
   const outline       = await pdf.getOutline();
   const { sections }  = await parseOutline(outline, pdf);
+
+  post('status', { message: 'Parsing model/option information…' });
+  for (const tbl of ['pr_code','sales_type','vin_range','engine_code','transmission_code','engine_number_range','transmission_number_range'])
+    db.run(`DELETE FROM ${tbl} WHERE catalog_id=?`, [catalogId]);
+  const vp = await parseVPages(pdf, sections[0].diagramPage);
+  insertVPageData(db, catalogId, vp);
+
   let targets;
   if (sectionNums?.length) {
     const numSet = new Set(sectionNums);
@@ -1058,6 +1331,7 @@ const TIMING = {
   tesseractInit:   0,  // initTesseract
   opfsSetup:       0,  // navigator.storage.getDirectory + handle setup
   tocParse:        0,  // pdf.getOutline + parseOutline
+  vPageParse:      0,  // parseVPages() — PR codes, sales types, VIN ranges
   renderDiagram:   0,  // renderDiagram() wall time (includes OCR and PNG save)
   extractParts:    0,  // extractParts() across all pages of all sections
   dbInserts:       0,  // calloutStmt.run + partStmt.run + insertSection
@@ -1160,6 +1434,28 @@ async function writeOpfsFile(dirHandle, name, data) {
 
 // ── SQLite helpers ────────────────────────────────────────────────────────────
 
+function insertVPageData(db, catalogId, { prCodes, salesTypes, vinRanges, engineCodes, transmCodes, engineNums, transmNums }) {
+  const run = (sql, rows, fn) => {
+    const st = db.prepare(sql);
+    for (const r of rows) st.run(fn(r));
+    st.free();
+  };
+  run('INSERT INTO pr_code (catalog_id,code,description) VALUES (?,?,?)',
+    prCodes, p => [catalogId, p.code, p.description]);
+  run('INSERT INTO sales_type (catalog_id,sales_term,description,mount_from,mount_to,remark) VALUES (?,?,?,?,?,?)',
+    salesTypes, s => [catalogId, s.salesTerm, s.description, s.mountFrom, s.mountTo, s.remark]);
+  run('INSERT INTO vin_range (catalog_id,model_year,start_date,vin_from,vin_to,remark) VALUES (?,?,?,?,?,?)',
+    vinRanges, v => [catalogId, v.modelYear, v.startDate, v.vinFrom, v.vinTo, v.remark]);
+  run('INSERT INTO engine_code (catalog_id,ec,displacement_l,power_kw,power_hp,cylinders,mount_from,mount_to,remark) VALUES (?,?,?,?,?,?,?,?,?)',
+    engineCodes, e => [catalogId, e.ec, e.displacementL, e.powerKw, e.powerHp, e.cylinders, e.mountFrom, e.mountTo, e.remark]);
+  run('INSERT INTO transmission_code (catalog_id,tc,type_code,mount_from,mount_to,remark) VALUES (?,?,?,?,?,?)',
+    transmCodes, t => [catalogId, t.tc, t.typeCode, t.mountFrom, t.mountTo, t.remark]);
+  run('INSERT INTO engine_number_range (catalog_id,number_from,number_to,model_year,vehicle_type,engine_type) VALUES (?,?,?,?,?,?)',
+    engineNums, e => [catalogId, e.numberFrom, e.numberTo, e.modelYear, e.vehicleType, e.engineType]);
+  run('INSERT INTO transmission_number_range (catalog_id,number_from,number_to,model_year,vehicle_type,gearbox_type) VALUES (?,?,?,?,?,?)',
+    transmNums, t => [catalogId, t.numberFrom, t.numberTo, t.modelYear, t.vehicleType, t.gearboxType]);
+}
+
 function createSchema(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS catalog (
@@ -1186,6 +1482,41 @@ function createSchema(db) {
       id INTEGER PRIMARY KEY, section_id INTEGER,
       number TEXT, x0 INTEGER, y0 INTEGER, x1 INTEGER, y1 INTEGER,
       confidence INTEGER
+    );
+    CREATE TABLE IF NOT EXISTS pr_code (
+      id INTEGER PRIMARY KEY, catalog_id TEXT,
+      code TEXT NOT NULL, description TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS sales_type (
+      id INTEGER PRIMARY KEY, catalog_id TEXT,
+      sales_term TEXT NOT NULL, description TEXT NOT NULL,
+      mount_from TEXT, mount_to TEXT, remark TEXT
+    );
+    CREATE TABLE IF NOT EXISTS vin_range (
+      id INTEGER PRIMARY KEY, catalog_id TEXT,
+      model_year INTEGER, start_date TEXT,
+      vin_from TEXT, vin_to TEXT, remark TEXT
+    );
+    CREATE TABLE IF NOT EXISTS engine_code (
+      id INTEGER PRIMARY KEY, catalog_id TEXT,
+      ec TEXT NOT NULL, displacement_l TEXT,
+      power_kw INTEGER, power_hp INTEGER, cylinders INTEGER,
+      mount_from TEXT, mount_to TEXT, remark TEXT
+    );
+    CREATE TABLE IF NOT EXISTS transmission_code (
+      id INTEGER PRIMARY KEY, catalog_id TEXT,
+      tc TEXT NOT NULL, type_code TEXT,
+      mount_from TEXT, mount_to TEXT, remark TEXT
+    );
+    CREATE TABLE IF NOT EXISTS engine_number_range (
+      id INTEGER PRIMARY KEY, catalog_id TEXT,
+      number_from TEXT, number_to TEXT,
+      model_year INTEGER, vehicle_type TEXT, engine_type TEXT
+    );
+    CREATE TABLE IF NOT EXISTS transmission_number_range (
+      id INTEGER PRIMARY KEY, catalog_id TEXT,
+      number_from TEXT, number_to TEXT,
+      model_year INTEGER, vehicle_type TEXT, gearbox_type TEXT
     );
   `);
 }
