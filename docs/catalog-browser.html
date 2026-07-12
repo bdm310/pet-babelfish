@@ -164,6 +164,32 @@
           const p = new URLSearchParams(location.search);
           if (p.get('catalog')) { this.catalogId = p.get('catalog'); await this.onCatalogChange(); }
           if (p.get('table'))   { this.tableName = p.get('table');   this.onTableChange(); }
+          this._startQueryBridge();
+        },
+
+        _startQueryBridge() {
+          const self = this;
+          const poll = async () => {
+            if (self.db) {
+              try {
+                const r = await fetch('http://localhost:9876/query');
+                if (r.ok) {
+                  const sql = (await r.text()).trim();
+                  if (sql) {
+                    let res;
+                    try { res = { ok: true, data: self.db.exec(sql) }; }
+                    catch (e) { res = { ok: false, error: e.message }; }
+                    await fetch('http://localhost:9876/result', {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(res),
+                    });
+                  }
+                }
+              } catch { /* bridge not running */ }
+            }
+            setTimeout(poll, 500);
+          };
+          poll();
         },
 
         async listCatalogs() {

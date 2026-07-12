@@ -70,9 +70,13 @@
     .col-desc  { }
     .col-qty   { width: 2.5rem; text-align: center; color: var(--text2); }
     .col-rem   { color: var(--text3); font-size: 0.72rem; }
-    .appl-toggle { font-size: 0.68rem; color: var(--text5); cursor: pointer; border: none;
-                   background: none; padding: 0; font-family: monospace; }
-    .appl-toggle:hover { color: var(--text3); }
+    .appl-chips { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 0.25rem; }
+    .appl-chip  { border-radius: 2px; padding: 0 0.3rem; font-size: 0.63rem; line-height: 1.6;
+                  white-space: nowrap; border: 1px solid var(--border2); background: var(--bg3); }
+    .appl-pr    { color: var(--accent); border-color: var(--accent-bd); background: var(--accent-bg2); }
+    .appl-mj    { color: var(--pn); }
+    .appl-dest  { color: var(--text2); }
+    .appl-other { color: var(--text4); }
     .parts-placeholder { padding: 2rem; color: var(--text5); font-size: 0.85rem; text-align: center; }
 
     /* Search results */
@@ -248,20 +252,16 @@
                     <td class="col-pn" x-text="row.part.part_number"></td>
                     <td class="col-desc">
                       <div x-text="row.part.description"></div>
-                      <div x-show="row.part.showAppl"
-                           x-text="row.part.applicability"
-                           style="margin-top:0.3rem;color:var(--text4);font-size:0.72rem;white-space:pre-wrap;line-height:1.5"></div>
-                    </td>
-                    <td class="col-qty" x-text="row.part.quantity"></td>
-                    <td class="col-rem">
-                      <span x-text="row.part.remarks"></span>
                       <template x-if="row.part.applicability">
-                        <button class="appl-toggle"
-                                @click.stop="row.part.showAppl = !row.part.showAppl"
-                                x-text="row.part.showAppl ? '▲ appl.' : '▼ appl.'">
-                        </button>
+                        <div class="appl-chips">
+                          <template x-for="(chip, ci) in parseAppl(row.part.applicability)" :key="ci">
+                            <span class="appl-chip" :class="'appl-' + chip.type" x-text="chip.text"></span>
+                          </template>
+                        </div>
                       </template>
                     </td>
+                    <td class="col-qty" x-text="row.part.quantity"></td>
+                    <td class="col-rem" x-text="row.part.remarks"></td>
                   </tr>
                 </template>
               </tbody>
@@ -422,7 +422,6 @@
           this.parts = rows.map(([rowid, position, part_number, description, quantity, remarks, applicability]) => ({
             _rowid: rowid, position, part_number, description, quantity, remarks,
             applicability: applicability || '',
-            showAppl: false,
           }));
           this.posGroups = this._buildPosGroups(this.parts);
           this._rebuildDisplayRows();
@@ -489,6 +488,21 @@
           this.query        = '';
           this.searchMode   = false;
           this.searchResults = [];
+        },
+
+        // ── Applicability ────────────────────────────────────────────
+
+        parseAppl(str) {
+          if (!str) return [];
+          return str.split(' | ').flatMap(seg =>
+            seg.trim().split(/\s+/).map(tok => {
+              let type = 'other';
+              if (/^PR:/i.test(tok))             type = 'pr';
+              else if (/^[A-Z]{1,3}-MJ\d{4}/i.test(tok)) type = 'dest';
+              else if (/^MJ\d{4}/i.test(tok))   type = 'mj';
+              return { text: tok, type };
+            })
+          ).filter(c => c.text);
         },
 
         async jumpToSection(result) {
