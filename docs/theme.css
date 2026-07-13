@@ -123,7 +123,7 @@ html { background: var(--bg); }
 
 /* ── Theme toggle button ─────────────────────────────────── */
 
-.theme-toggle {
+.theme-toggle, .hdr-btn {
   background: none;
   border: 1px solid var(--border3);
   color: var(--text3);
@@ -135,10 +135,12 @@ html { background: var(--bg); }
   white-space: nowrap;
   line-height: 1.4;
 }
-.theme-toggle:hover {
+.theme-toggle:hover, .hdr-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
+.hdr-btn.danger { color: var(--text4); }
+.hdr-btn.danger:hover:not(:disabled) { border-color: #c0392b; color: #c0392b; }
 
 /* ── Diagram inversion ───────────────────────────────────── */
 

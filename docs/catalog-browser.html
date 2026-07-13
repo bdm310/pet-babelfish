@@ -85,8 +85,12 @@
       <span x-show="loading"><span class="spinner"></span></span>
       <span x-text="status"></span>
     </span>
-    <button class="theme-toggle" @click="downloadSqlite()" :disabled="!db"
-            style="white-space:nowrap">↓ SQLite</button>
+    <button class="hdr-btn" @click="exportAll()">↓ All</button>
+    <button class="hdr-btn" @click="importAll()">↑ All</button>
+    <input type="file" accept=".zip" x-ref="importZip" style="display:none"
+           @change="onImportZip($event)">
+    <button class="hdr-btn danger" @click="deleteCatalog()" :disabled="!catalogId">✕ Delete</button>
+    <button class="hdr-btn danger" @click="deleteAll()">✕ Delete All</button>
     <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
   </header>
 
@@ -127,6 +131,7 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
   <script src="theme.js"></script>
   <script>
     const SQLJS_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
@@ -169,16 +174,108 @@
           this._startQueryBridge();
         },
 
-        downloadSqlite() {
-          if (!this.db) return;
-          const data = this.db.export();
-          const blob = new Blob([data], { type: 'application/octet-stream' });
-          const url  = URL.createObjectURL(blob);
-          Object.assign(document.createElement('a'), {
-            href: url,
-            download: (this.catalogId || 'catalog') + '.sqlite',
-          }).click();
-          URL.revokeObjectURL(url);
+        async exportAll() {
+          this.loading = true;
+          this.status  = 'Exporting…';
+          try {
+            const root     = await navigator.storage.getDirectory();
+            const files    = {};
+            let catalogCount = 0;
+            for await (const [catId, catHandle] of root.entries()) {
+              if (catHandle.kind !== 'directory') continue;
+              try { await catHandle.getFileHandle('catalog.sqlite'); } catch { continue; }
+              // catalog.sqlite
+              const sqlFh = await catHandle.getFileHandle('catalog.sqlite');
+              files[`${catId}/catalog.sqlite`] = new Uint8Array(await (await sqlFh.getFile()).arrayBuffer());
+              // images/
+              try {
+                const imgDir = await catHandle.getDirectoryHandle('images');
+                for await (const [imgName, imgFh] of imgDir.entries()) {
+                  if (imgFh.kind !== 'file') continue;
+                  files[`${catId}/images/${imgName}`] = new Uint8Array(await (await imgFh.getFile()).arrayBuffer());
+                }
+              } catch { /* no images dir */ }
+              catalogCount++;
+            }
+            if (!catalogCount) { this.status = 'No catalogs found'; return; }
+            const zip  = fflate.zipSync(files);
+            const blob = new Blob([zip], { type: 'application/zip' });
+            const url  = URL.createObjectURL(blob);
+            Object.assign(document.createElement('a'), { href: url, download: 'catalogs.zip' }).click();
+            URL.revokeObjectURL(url);
+            this.status = `Exported ${catalogCount} catalog(s)`;
+          } catch (e) {
+            this.status = 'Export failed: ' + e.message;
+          }
+          this.loading = false;
+        },
+
+        importAll() {
+          this.$refs.importZip.value = '';
+          this.$refs.importZip.click();
+        },
+
+        async onImportZip(event) {
+          const file = event.target.files[0];
+          if (!file) return;
+          this.loading = true;
+          this.status  = 'Importing…';
+          try {
+            const buf      = new Uint8Array(await file.arrayBuffer());
+            const unzipped = fflate.unzipSync(buf);
+            const root     = await navigator.storage.getDirectory();
+            const catalogs = new Set();
+            for (const [zipPath, data] of Object.entries(unzipped)) {
+              // zipPath is e.g. "997tt/catalog.sqlite" or "997tt/images/101-010.png"
+              const segments = zipPath.split('/');
+              const catId    = segments[0];
+              let dir = await root.getDirectoryHandle(catId, { create: true });
+              for (const seg of segments.slice(1, -1))
+                dir = await dir.getDirectoryHandle(seg, { create: true });
+              const fh = await dir.getFileHandle(segments.at(-1), { create: true });
+              const w  = await fh.createWritable();
+              await w.write(data);
+              await w.close();
+              catalogs.add(catId);
+            }
+            await this.listCatalogs();
+            this.status = `Imported ${catalogs.size} catalog(s)`;
+          } catch (e) {
+            this.status = 'Import failed: ' + e.message;
+          }
+          this.loading = false;
+        },
+
+        async deleteCatalog() {
+          if (!this.catalogId) return;
+          if (!confirm(`Delete catalog "${this.catalogId}"? This cannot be undone.`)) return;
+          const id   = this.catalogId;
+          const root = await navigator.storage.getDirectory();
+          await root.removeEntry(id, { recursive: true });
+          this.db        = null;
+          this.catalogId = '';
+          this.columns   = [];
+          this.rows      = [];
+          this.filteredRows = [];
+          this.pageRows  = [];
+          await this.listCatalogs();
+          this.status = `Deleted "${id}"`;
+        },
+
+        async deleteAll() {
+          if (!this.catalogs.length) return;
+          if (!confirm(`Delete all ${this.catalogs.length} catalog(s)? This cannot be undone.`)) return;
+          const root = await navigator.storage.getDirectory();
+          for (const c of this.catalogs)
+            await root.removeEntry(c.id, { recursive: true });
+          this.db        = null;
+          this.catalogId = '';
+          this.columns   = [];
+          this.rows      = [];
+          this.filteredRows = [];
+          this.pageRows  = [];
+          await this.listCatalogs();
+          this.status = 'All catalogs deleted';
         },
 
         _startQueryBridge() {

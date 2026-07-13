@@ -186,7 +186,7 @@
 
       // Terminate any previous worker
       if (worker) worker.terminate();
-      worker = new Worker('ingest.worker.js');
+      worker = new Worker('ingest.worker.js?v=' + Date.now());
 
       worker.onmessage = ({ data }) => {
         switch (data.type) {

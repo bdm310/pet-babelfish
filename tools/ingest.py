@@ -108,13 +108,20 @@ profile_dir = Path(__file__).parent / '.playwright-profile'
 profile_dir.mkdir(exist_ok=True)
 base_url = f'http://localhost:{port}'
 
+# Clear V8 code cache so changes to ingest.worker.js always take effect.
+import shutil
+for cache_name in ('Cache', 'Code Cache'):
+    p = profile_dir / 'Default' / cache_name
+    if p.exists():
+        shutil.rmtree(p, ignore_errors=True)
+
 try:
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(
             str(profile_dir),
             headless=not headed,
             viewport={'width': 1440, 'height': 900},
-            args=['--no-first-run', '--no-default-browser-check'],
+            args=['--no-first-run', '--no-default-browser-check', '--disk-cache-size=1'],
         )
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
 

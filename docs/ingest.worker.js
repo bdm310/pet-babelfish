@@ -301,8 +301,8 @@ async function parseOutline(outline, pdf) {
       const mainGroupTitle = mgMatch?.[2]?.trim() ?? l2.title;
 
       for (const l3 of l2.items ?? []) {
-        // "101-000: Crankcase" or "101-000 Crankcase"
-        const secMatch = l3.title.match(/^(\d{3}-\d{3})[:\s]*(.*)/);
+        // "101-000: Crankcase", "001-00: Tool" (2- or 3-digit suffix), or "101-000 Crankcase"
+        const secMatch = l3.title.match(/^(\d{3}-\d{2,3})[:\s]*(.*)/);
         const sectionNum   = secMatch?.[1] ?? l3.title;
         const sectionTitle = secMatch?.[2]?.trim() ?? '';
 
@@ -358,6 +358,7 @@ async function parseVPages(pdf, firstDiagramPage) {
     else if (pageText.includes('Model Overview EC'))         parseEngineCodesPage(rows, engineCodes);
     else if (pageText.includes('Model Overview TC'))         parseTransmissionCodesPage(rows, transmCodes);
     else if (pageText.includes('VIN-Numbers Overview'))      parseVINRangesPage(rows, vinRanges);
+    else if (pageText.includes('SUMMARY TYPES'))             parseSummaryTypesPage(rows, vinRanges);
     else if (pageText.includes('Engine type'))               parseEngineNumbersPage(rows, engineNums);
     else if (pageText.includes('Gearbox type'))              parseTransmissionNumbersPage(rows, transmNums);
   }
@@ -366,7 +367,7 @@ async function parseVPages(pdf, firstDiagramPage) {
 }
 
 function parsePRCodesPage(rows, prCodes) {
-  const CODE_RE = /^\d{3}$|^[A-Z][A-Z0-9]{2}$/;
+  const CODE_RE = /^\d{3}$|^[A-Z][A-Z0-9]{2,3}$/;
   let inData  = false;
   let current = null;
 
@@ -455,6 +456,115 @@ function parseVINRangesPage(rows, vinRanges) {
   }
 
   if (current) vinRanges.push(current);
+}
+
+// Parses older "SUMMARY TYPES" pages (e.g. Cayenne 955, 356).
+//
+// Cayenne row: CAYENNE [S] [TURBO] [(...markets...)]  03  3  9P3LA  00061>10000  M02.2Y  184  KW
+//   tokens:    [vehicle words...]                      MY  #  pfx    from>to      engine  kw  "KW"
+// 356 row:   *  356 COUPE  50  05001>05410  369/1100
+//   tokens:  *  [vehicle]  MY  from>to      engine
+//
+// Continuation rows (356 only): just an extra from>to on its own line — inherit last vehicle+MY.
+function parseSummaryTypesPage(rows, vinRanges) {
+  let inData      = false;
+  let lastVehicle = null;
+  let lastMY      = null;
+
+  // VIN/chassis range token: optional prefix letters then digits>digits
+  // Handles "00061>10000", "9P6LA00061>10000", "05001>05410", "P90501>P90959"
+  const VIN_RE = /^[A-Z]*\d[\w]*>[A-Z]*\d[\w]*$/;
+
+  for (const texts of rows) {
+    if (!texts.length) continue;
+
+    // Skip page header/footer lines
+    if (texts.some(t => /^\d{2}\.\d{2}\.\d{4}/.test(t))) continue;
+    if (texts.some(t => t.startsWith('Model:'))) continue;
+
+    if (!inData) {
+      // Header row: "VIN" or "VEHICLE IDENT.NR." column label signals start of data
+      if (texts.some(t => t === 'VIN' || t === 'IDENT.NR.' || t.startsWith('IDENT'))) {
+        inData = true;
+      }
+      continue;
+    }
+
+    // Skip section/page title repetitions and footnote text
+    if (texts.includes('SUMMARY') && texts.includes('TYPES')) continue;
+    if (texts.includes('PLEASE') || texts.join(' ').includes('NOTE THE LAST')) continue;
+
+    // Strip leading '*' footnote marker
+    const ts = (texts[0] === '*') ? texts.slice(1) : texts.slice();
+    if (!ts.length) continue;
+
+    // Find the VIN range token
+    const vinIdx = ts.findIndex(t => VIN_RE.test(t));
+    if (vinIdx === -1) continue;
+
+    // Tokens before the VIN range: [...vehicleWords, MY_2digit, ?singleDigit, ?vinPfx]
+    const pre = ts.slice(0, vinIdx);
+
+    // Find the 2-digit MY: last token matching exactly \d{2} in pre
+    let myIdx = -1;
+    for (let i = pre.length - 1; i >= 0; i--) {
+      if (/^\d{2}$/.test(pre[i])) { myIdx = i; break; }
+    }
+
+    let vehicle, my, vinPrefix;
+    if (myIdx >= 0) {
+      vehicle = pre.slice(0, myIdx).join(' ') || lastVehicle;
+      my      = pre[myIdx];
+
+      // After MY: skip single-digit internal code, find optional VIN prefix (mixed alnum)
+      const afterMY = pre.slice(myIdx + 1);
+      const pfxTok  = afterMY.find(t => /[A-Z]/.test(t)); // contains a letter → VIN prefix
+      vinPrefix = pfxTok || '';
+
+      lastVehicle = vehicle;
+      lastMY      = my;
+    } else {
+      // Continuation row (e.g. 356 extra VIN range for same vehicle/MY)
+      vehicle   = lastVehicle;
+      my        = lastMY;
+      vinPrefix = '';
+    }
+
+    // Parse the VIN range token, which may have an embedded prefix (e.g. "9P6LA00061>10000")
+    const vinRaw  = ts[vinIdx];
+    const halves  = vinRaw.split('>');
+    const fromRaw = halves[0] || '';
+    const toRaw   = halves[1] || '';
+
+    // Extract prefix embedded in fromRaw: everything up to and including the last letter
+    // e.g. "9P6LA00061" → prefix "9P6LA", serial "00061"
+    // e.g. "05001"      → prefix "", serial "05001"
+    const embM = fromRaw.match(/^(.*[A-Z])(\d+)$/);
+    const embeddedPfx = embM ? embM[1] : '';
+
+    // The effective prefix is: embedded (from the range token itself) or external (from pre tokens)
+    const pfx = embeddedPfx || vinPrefix;
+
+    // Reconstruct vinFrom (already has pfx embedded if embeddedPfx)
+    const vinFrom = (embeddedPfx ? fromRaw : pfx + fromRaw) || null;
+
+    // For vinTo: if the "to" side is purely numeric, prepend the same prefix
+    const vinTo = (/^\d+$/.test(toRaw) ? pfx : '') + toRaw || null;
+
+    // Tokens after vinIdx: engine type + power → remark suffix
+    const engineStr = ts.slice(vinIdx + 1).join(' ') || null;
+
+    const remarkParts = [vehicle, engineStr].filter(Boolean);
+    const remark      = remarkParts.length ? remarkParts.join(' — ') : null;
+
+    vinRanges.push({
+      modelYear: my ? parseInt(my) : null,
+      startDate: null,
+      vinFrom,
+      vinTo,
+      remark,
+    });
+  }
 }
 
 function parseEngineCodesPage(rows, engineCodes) {

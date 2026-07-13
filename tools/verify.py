@@ -145,6 +145,11 @@ try:
         sqlite_bytes = base64.b64decode(sqlite_b64)
         note(f"  SQLite size: {len(sqlite_bytes) / 1024:.0f} KB")
 
+        # ── Save SQLite to output dir ─────────────────────────────────────────
+        sqlite_out = run_dir / 'catalog.sqlite'
+        sqlite_out.write_bytes(sqlite_bytes)
+        note(f"  Saved → {sqlite_out}")
+
         # ── Query with sqlite3 ────────────────────────────────────────────────
         note("\n─── Database summary ────────────────────────────────────────────")
 
