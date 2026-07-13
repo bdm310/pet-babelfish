@@ -1514,9 +1514,11 @@ async function renderDiagram(pdf, pageNum, sectionNum, imagesDir, catalogId, tWo
 
   page.cleanup();
 
+  // Save native image (or 2× render fallback) binarized to WebP for display.
+  // ocrCanvas is native when available — no upscaling wasted on the stored file.
   t = performance.now();
-  const blob = await saveCanvas.convertToBlob({ type: 'image/png' });
-  const name = `${sectionNum}.png`;
+  const blob = await binarize(ocrCanvas, OCR_BIN_THRESH).convertToBlob({ type: 'image/webp' });
+  const name = `${sectionNum}.webp`;
   await writeOpfsFile(imagesDir, name, await blob.arrayBuffer());
   const imgPath = `${catalogId}/images/${name}`;
   TIMING.convertSavePng += performance.now() - t;
