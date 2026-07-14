@@ -156,7 +156,7 @@
     }
 
     async function handleOcrResult({ callouts, pngBuffer, stripBuffer, stripWidth, stripHeight,
-                                     width, height, native, srcLabel, stats }) {
+                                     stripTiles, width, height, native, srcLabel, stats }) {
       if (!pngBuffer) {
         output.innerHTML = '<p style="color:#ff9800">No image XObject found on this page.</p>';
         log('');
@@ -218,7 +218,8 @@
       if (stripBuffer) {
         html += '<div class="panel" style="margin-top:0.75rem">'
           + '<h2>Strip fed to Tesseract (' + candidateCount + ' blobs @ ' + fontPtUsed + 'pt, ' + stripWidth + '\xd7' + stripHeight + 'px)</h2>'
-          + '<div style="overflow-x:auto"><canvas id="stripCanvas" style="max-height:80px;height:80px;width:auto"></canvas></div>'
+          + '<div style="overflow-x:auto"><canvas id="stripCanvas" style="max-height:80px;height:80px;width:auto;display:block"></canvas>'
+          + '<div id="stripLabels" style="position:relative;height:1.4rem;min-width:' + stripWidth + 'px"></div></div>'
           + '</div>';
       }
       html += cascadeHtml;
@@ -235,6 +236,19 @@
         const sc = document.getElementById('stripCanvas');
         sc.width = stripWidth; sc.height = stripHeight;
         sc.getContext('2d').drawImage(sbm, 0, 0);
+        if (stripTiles) {
+          const scale = 80 / stripHeight;
+          const labelsDiv = document.getElementById('stripLabels');
+          for (const tile of stripTiles) {
+            const span = document.createElement('span');
+            span.textContent = tile.text || '–';
+            span.title = tile.conf + '%';
+            span.style.cssText = 'position:absolute;left:' + (tile.x * scale) + 'px;width:' + (tile.w * scale) + 'px'
+              + ';text-align:center;font-size:10px;line-height:1.4rem;overflow:hidden'
+              + ';color:' + (tile.passed ? '#4caf50' : '#666');
+            labelsDiv.appendChild(span);
+          }
+        }
       }
 
       const wrap = document.getElementById('img-wrap');

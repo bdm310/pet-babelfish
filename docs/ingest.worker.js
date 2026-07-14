@@ -1130,17 +1130,17 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params =
     TIMING.renderBlobs    += performance.now() - ts;
     TIMING.candidateCount += candidates.length;
 
-    let strip = null;
+    let strip = null, stripPositions = null;
     if (debug) {
       const SEP    = Math.round(targetPx * 1.2);
       const stripH = Math.round(targetPx * 1.8);
       let cursor = SEP;
-      const positions = blobItems.map(it => { const sx = cursor; cursor += it.canvas.width + SEP; return sx; });
+      stripPositions = blobItems.map(it => { const sx = cursor; cursor += it.canvas.width + SEP; return sx; });
       strip = new OffscreenCanvas(cursor, stripH);
       const sctx = strip.getContext('2d');
       sctx.fillStyle = 'white'; sctx.fillRect(0, 0, cursor, stripH);
       for (let i = 0; i < blobItems.length; i++)
-        sctx.drawImage(blobItems[i].canvas, positions[i], Math.round((stripH - blobItems[i].canvas.height) / 2));
+        sctx.drawImage(blobItems[i].canvas, stripPositions[i], Math.round((stripH - blobItems[i].canvas.height) / 2));
     }
 
     async function runPass(psm) {
@@ -1181,11 +1181,17 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params =
     }
 
     if (!digitResults.length) return null;
-    return { digitResults, strip };
+    const stripTiles = stripPositions ? blobItems.map((it, i) => {
+      const r10 = pass10[i], r8 = pass8[i];
+      const best = r10.conf >= r8.conf ? r10 : r8;
+      const passed = (/^\d$/.test(r10.text) && r10.conf >= minConf) || (/^\d$/.test(r8.text) && r8.conf >= minConf);
+      return { x: stripPositions[i], w: it.canvas.width, text: best.text, conf: best.conf, passed };
+    }) : null;
+    return { digitResults, strip, stripTiles };
   }
 
   // Multi-scale cascade: try each candidate font size, stop on first confirmed digit
-  let scale, digitResults, strip = null;
+  let scale, digitResults, strip = null, stripTiles = null;
   let fontPtUsed, totalBlobs, candidateCount;
   const cascadeLog = debug ? [] : null;  // per-step diagnostics when debug=true
   for (const fontPt of OCR_FONT_PT_CANDIDATES) {
@@ -1218,7 +1224,7 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params =
     if (out && (!digitResults || out.digitResults.length > digitResults.length)) {
       scale = s; digitResults = out.digitResults;
       fontPtUsed = fontPt; totalBlobs = blobs.length; candidateCount = candidates.length;
-      if (debug) strip = out.strip;
+      if (debug) { strip = out.strip; stripTiles = out.stripTiles; }
     }
   }
 
@@ -1231,7 +1237,7 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params =
           elapsed: ((performance.now() - t0) / 1000).toFixed(1),
           pxPerPt: +pxPerPt.toFixed(2), cascadeLog }
       : null;
-    return { callouts: [], strip: null, stats: failStats };
+    return { callouts: [], strip: null, stripTiles: null, stats: failStats };
   }
 
   digitResults.sort((a, b) => a.blob.x0 - b.blob.x0);
@@ -1269,7 +1275,7 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params =
         elapsed: ((performance.now() - t0) / 1000).toFixed(1),
         pxPerPt: +pxPerPt.toFixed(2), cascadeLog }
     : null;
-  return { callouts, strip, stats };
+  return { callouts, strip, stripTiles, stats };
 }
 
 // ── Partial re-ingest ─────────────────────────────────────────────────────────
@@ -1739,7 +1745,7 @@ async function ocrPage({ buffer, pageNum, binThresh = OCR_BIN_THRESH, targetPx =
   page.cleanup();
 
   const tWorker = await getSpikeOcrWorker();
-  const { callouts, strip, stats } = await ocrDiagram(
+  const { callouts, strip, stripTiles, stats } = await ocrDiagram(
     ocrCanvas, null, null, tWorker, diagRect, { binThresh, targetPx, minConf, debug: true }
   );
   pdf.destroy();
@@ -1756,6 +1762,6 @@ async function ocrPage({ buffer, pageNum, binThresh = OCR_BIN_THRESH, targetPx =
   const transfer = [pngBuf];
   if (stripBuf) transfer.push(stripBuf);
   self.postMessage({ type: 'ocr-result', callouts, pngBuffer: pngBuf, stripBuffer: stripBuf,
-    stripWidth: strip?.width, stripHeight: strip?.height,
+    stripWidth: strip?.width, stripHeight: strip?.height, stripTiles,
     width: cropCanvas.width, height: cropCanvas.height, native, srcLabel, stats }, transfer);
 }
