@@ -853,7 +853,8 @@
         loadPrCodes() {
           try {
             this.allPrCodes = this._query(
-              'SELECT code, description FROM pr_code ORDER BY CAST(code AS INTEGER), code'
+              'SELECT code, description FROM pr_code WHERE catalog_id=? ORDER BY CAST(code AS INTEGER), code',
+              [this.catalogId]
             ).map(([code, description]) => ({ code, description }));
           } catch { this.allPrCodes = []; }
         },

@@ -97,7 +97,7 @@
 
     let pdfDoc = null, rawBuffer = null, diagramPages = [], diagramIdx = 0, currentPage = 1;
 
-    const worker = new Worker('../ingest.worker.js');
+    const worker = new Worker('../ingest.worker.js?v=' + Date.now());
     worker.onmessage = ({ data }) => {
       if (data.type === 'status') {
         log(data.message);
@@ -163,25 +163,44 @@
         return;
       }
 
-      const { fontPtUsed, totalBlobs, candidateCount, digitCount, elapsed } = stats ?? {};
+      const { fontPtUsed, totalBlobs, candidateCount, digitCount, elapsed, pxPerPt, cascadeLog } = stats ?? {};
 
-      let html = `<div class="layout">
-        <div class="panel">
-          <h2>Page ${currentPage} — original image (${width}×${height})</h2>
-          <div id="img-wrap"><canvas id="cropCanvas"></canvas></div>
-        </div>
-        <div class="panel">
-          <h2>OCR results</h2>
-          <div>
-            <span class="stat ${native ? 'ok' : 'warn'}">${escHtml(srcLabel)}</span>
-            ${stats ? `<span class="stat">${candidateCount}/${totalBlobs} blobs · ${fontPtUsed}pt</span>
-            <span class="stat">${digitCount} digits</span>` : ''}
-            <span class="stat ok">${callouts.length} callouts</span>
-            ${stats ? `<span class="stat">${elapsed}s</span>` : ''}
-          </div>
-          <table class="results">
-            <thead><tr><th>Callout</th><th>Conf</th><th>W×H</th></tr></thead>
-            <tbody>`;
+      if (cascadeLog) console.log('cascade', JSON.stringify(cascadeLog, null, 2));
+
+      let cascadeHtml = '';
+      if (cascadeLog) {
+        let rows = '';
+        for (const r of cascadeLog) {
+          rows += '<tr>';
+          rows += '<td>' + r.fontPt + 'pt</td>';
+          rows += '<td>' + r.s + '&times;</td>';
+          rows += '<td>[' + r.window[0] + '&ndash;' + r.window[1] + ']</td>';
+          rows += '<td>' + r.blobs + '</td>';
+          rows += '<td' + (r.candidates > 0 ? ' style="color:#4caf50"' : '') + '>' + r.candidates + '</td>';
+          rows += '<td>' + r.blobH.p10 + '/' + r.blobH.p50 + '/' + r.blobH.p90 + '/' + r.blobH.max + '</td>';
+          rows += '</tr>';
+        }
+        cascadeHtml = '<div class="panel" style="margin-top:0.75rem">'
+          + '<h2>Cascade log &mdash; pxPerPt=' + pxPerPt + '</h2>'
+          + '<table class="results"><thead><tr>'
+          + '<th>fontPt</th><th>s</th><th>window</th><th>blobs</th><th>cands</th><th>blobH p10/p50/p90/max</th>'
+          + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+      }
+
+      let html = '<div class="layout"><div class="panel">'
+        + '<h2>Page ' + currentPage + ' — original image (' + width + '\xd7' + height + ')</h2>'
+        + '<div id="img-wrap"><canvas id="cropCanvas"></canvas></div>'
+        + '</div><div class="panel"><h2>OCR results</h2><div>'
+        + '<span class="stat ' + (native ? 'ok' : 'warn') + '">' + escHtml(srcLabel) + '</span>';
+
+      if (stats) {
+        html += '<span class="stat">' + candidateCount + '/' + totalBlobs + ' blobs &middot; ' + fontPtUsed + 'pt</span>';
+        html += '<span class="stat">' + digitCount + ' digits</span>';
+        html += '<span class="stat">pxPerPt=' + pxPerPt + '</span>';
+      }
+      html += '<span class="stat ok">' + callouts.length + ' callouts</span>';
+      if (stats) html += '<span class="stat">' + elapsed + 's</span>';
+      html += '</div><table class="results"><thead><tr><th>Callout</th><th>Conf</th><th>W\xd7H</th></tr></thead><tbody>';
 
       for (const c of callouts) {
         const conf = c.confidence;
@@ -195,13 +214,14 @@
         </tr>`;
       }
 
-      html += `</tbody></table></div></div>`;
+      html += '</tbody></table></div></div>';
       if (stripBuffer) {
-        html += `<div class="panel" style="margin-top:0.75rem">
-          <h2>Strip fed to Tesseract (${candidateCount} blobs @ ${fontPtUsed}pt, ${stripWidth}×${stripHeight}px)</h2>
-          <div style="overflow-x:auto"><canvas id="stripCanvas" style="max-height:80px;height:80px;width:auto"></canvas></div>
-        </div>`;
+        html += '<div class="panel" style="margin-top:0.75rem">'
+          + '<h2>Strip fed to Tesseract (' + candidateCount + ' blobs @ ' + fontPtUsed + 'pt, ' + stripWidth + '\xd7' + stripHeight + 'px)</h2>'
+          + '<div style="overflow-x:auto"><canvas id="stripCanvas" style="max-height:80px;height:80px;width:auto"></canvas></div>'
+          + '</div>';
       }
+      html += cascadeHtml;
       output.innerHTML = html;
       log('');
 

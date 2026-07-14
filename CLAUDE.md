@@ -16,6 +16,8 @@ We'll use the simplest tools we can for each part. Everything will run local to 
 
 There's two distinct portions of the project, separated by a clean interface. The first is ingesting and converting data to our model, which produces some output artifact(s) like data tables, part images, and diagrams. The second is the application which takes in those artifacts and allows the user to do their desired actions. These parts could share a single user interface or be entirely separate.
 
+There's a selection of catalog PDFs in the pet-source-pdf folder in this repo.
+
 ## Development tools (`tools/`)
 
 All tools use the same persistent Playwright profile (`tools/.playwright-profile/`) so OPFS catalog data survives between runs.

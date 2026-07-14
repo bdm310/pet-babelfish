@@ -21,6 +21,7 @@ Options:
     --timeout N       Max ingest minutes (default: 30)
 """
 import sys, subprocess, time, urllib.request
+sys.stdout.reconfigure(encoding='utf-8')
 from pathlib import Path
 
 # ── Arg parsing ──────────────────────────────────────────────────────────────
@@ -158,7 +159,7 @@ try:
 
         # ── Ingest ────────────────────────────────────────────────────────────
         mode_label = 'parts-only re-ingest' if do_parts_only else 'full ingest (OCR)'
-        print(f"{mode_label}: '{pdf_path.name}' → catalog '{catalog_id}'")
+        print(f"{mode_label}: '{pdf_path.name}' -> catalog '{catalog_id}'")
         page.goto(f'{base_url}/ingest.html', wait_until='load')
 
         page.fill('#catalogId', catalog_id)

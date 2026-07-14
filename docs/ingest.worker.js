@@ -375,12 +375,14 @@ function parsePRCodesPage(rows, prCodes) {
     if (!texts.length) continue;
 
     if (!inData) {
-      if (texts.includes('NR') && texts.join(' ').includes('Description')) { inData = true; }
+      const rowText = texts.join(' ');
+      if (/\bNR\b/.test(rowText) && rowText.includes('Description')) { inData = true; }
       continue;
     }
 
     // Skip repeated page headers
-    if (texts[0] === 'Optional Equipment' ||
+    const rowJoined = texts.join(' ');
+    if (rowJoined.startsWith('Optional Equipment') ||
         texts.some(t => t.startsWith('Model:')) ||
         texts.some(t => /^\d{2}\.\d{2}\.\d{4}/.test(t))) continue;
 
@@ -1185,6 +1187,7 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params =
   // Multi-scale cascade: try each candidate font size, stop on first confirmed digit
   let scale, digitResults, strip = null;
   let fontPtUsed, totalBlobs, candidateCount;
+  const cascadeLog = debug ? [] : null;  // per-step diagnostics when debug=true
   for (const fontPt of OCR_FONT_PT_CANDIDATES) {
     t = performance.now();
     const s = Math.max(1, targetPx / (fontPt * pxPerPt));
@@ -1196,21 +1199,40 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params =
     TIMING.findBlobs += performance.now() - t;
 
     const candidates = blobs.filter(b => b.h >= minH && b.h <= maxH && b.w / b.h <= 2);
+
+    if (cascadeLog) {
+      const hSorted = blobs.map(b => b.h).sort((a, b) => a - b);
+      const p10 = hSorted[Math.floor(hSorted.length * 0.10)] ?? 0;
+      const p50 = hSorted[Math.floor(hSorted.length * 0.50)] ?? 0;
+      const p90 = hSorted[Math.floor(hSorted.length * 0.90)] ?? 0;
+      cascadeLog.push({ fontPt, s: +s.toFixed(2), blobs: blobs.length, candidates: candidates.length,
+                        window: [+minH.toFixed(1), +maxH.toFixed(1)],
+                        blobH: { p10, p50, p90, max: hSorted[hSorted.length-1] ?? 0 } });
+    }
+
     if (!candidates.length) continue;
 
     const out = await tryAtScale(candidates, ink, W, H);
-    if (out) {
+    // Keep the scale that found the most digits — don't stop early, since a later
+    // candidate may find more real callouts than an earlier one found false positives.
+    if (out && (!digitResults || out.digitResults.length > digitResults.length)) {
       scale = s; digitResults = out.digitResults;
       fontPtUsed = fontPt; totalBlobs = blobs.length; candidateCount = candidates.length;
       if (debug) strip = out.strip;
-      break;
     }
   }
 
   TIMING.diagramCount++;
   TIMING.totalOcr += performance.now() - t0;
 
-  if (!digitResults) return { callouts: [], strip: null, stats: null };
+  if (!digitResults) {
+    const failStats = debug
+      ? { fontPtUsed: null, totalBlobs: null, candidateCount: null, digitCount: 0,
+          elapsed: ((performance.now() - t0) / 1000).toFixed(1),
+          pxPerPt: +pxPerPt.toFixed(2), cascadeLog }
+      : null;
+    return { callouts: [], strip: null, stats: failStats };
+  }
 
   digitResults.sort((a, b) => a.blob.x0 - b.blob.x0);
   const X_GAP = targetPx * 0.9, Y_TOL = targetPx * 0.1;
@@ -1244,7 +1266,8 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params =
 
   const stats = debug
     ? { fontPtUsed, totalBlobs, candidateCount, digitCount: digitResults.length,
-        elapsed: ((performance.now() - t0) / 1000).toFixed(1) }
+        elapsed: ((performance.now() - t0) / 1000).toFixed(1),
+        pxPerPt: +pxPerPt.toFixed(2), cascadeLog }
     : null;
   return { callouts, strip, stats };
 }
