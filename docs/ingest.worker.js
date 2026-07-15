@@ -46,7 +46,9 @@ const SQLJS_WASM    = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-
 const DIAGRAM_SCALE = 2.0;
 
 // OCR parameters — tuned for Porsche PET callout digits at ~7pt
-const OCR_FONT_PT_CANDIDATES = [7, 9, 12];  // pt sizes to try in cascade order
+// 6pt catches diagrams whose callouts render smaller (~5.5–6.5pt) because a large,
+// sprawling illustration is scaled down to fit the frame (e.g. 604-015 / p268).
+const OCR_FONT_PT_CANDIDATES = [6, 7, 9, 12];  // pt sizes to try in cascade order
 const OCR_TARGET_PX  = 40;   // upscale digits to this height before OCR
 const OCR_BIN_THRESH = 128;
 const OCR_MIN_CONF   = 90;
