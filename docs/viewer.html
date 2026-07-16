@@ -25,7 +25,13 @@
     #statusBar { font-size: 0.75rem; color: var(--text4); margin-left: auto; white-space: nowrap; }
 
     /* ── 3-panel layout ──────────────────────────────────────────── */
-    .layout { display: grid; grid-template-columns: 220px 1fr 42%; flex: 1; overflow: hidden; min-height: 0; }
+    .layout { display: grid; grid-template-columns: var(--sidebar-w, 220px) 5px 1fr 42%;
+              flex: 1; overflow: hidden; min-height: 0; }
+
+    /* Drag gutter between sidebar and parts panel. */
+    .resizer { cursor: col-resize; background: transparent; transition: background 0.12s; }
+    .resizer:hover, .resizer.dragging { background: var(--accent); }
+    body.resizing { cursor: col-resize; user-select: none; }
 
     /* ── Sidebar ─────────────────────────────────────────────────── */
     .sidebar { border-right: 1px solid var(--border); overflow-y: auto; font-size: 0.78rem; }
@@ -36,12 +42,12 @@
     .mg-header .arrow { font-size: 0.65rem; transition: transform 0.15s; }
     .mg-header.open .arrow { transform: rotate(90deg); }
     .sec-item { padding: 0.25rem 0.75rem 0.25rem 1.2rem; cursor: pointer;
-                color: var(--text2); display: flex; justify-content: space-between; gap: 0.4rem; }
+                color: var(--text2); display: flex; justify-content: flex-start; gap: 0.4rem; }
     .sec-item:hover { background: var(--bg2); color: var(--text); }
     .sec-item.active { background: var(--accent-bg); color: var(--accent); }
     .sec-item .sec-num { flex-shrink: 0; }
     .sec-item .sec-title { color: var(--text4); font-size: 0.72rem; overflow: hidden;
-                           text-overflow: ellipsis; white-space: nowrap; }
+                           text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
     .sidebar-placeholder { padding: 1rem; color: var(--text5); font-size: 0.8rem; }
 
     /* ── Parts panel ─────────────────────────────────────────────── */
@@ -58,18 +64,20 @@
     table.parts td { padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--row-border);
                      vertical-align: top; }
     table.parts tr:hover td { background: var(--row-hover); }
-    .col-pos         { width: 2.8rem; color: var(--accent);
-                       display: flex; align-items: center; justify-content: flex-start; gap: 2px; }
+    .col-pos         { width: 2.8rem; color: var(--accent); white-space: nowrap; }
     .pos-paren { color: var(--text3); font-style: italic; }
     .pos-none  { color: var(--text5); }
     .pos-expand { font-size: 0.55rem; cursor: pointer; color: var(--text5); user-select: none;
-                  flex-shrink: 0; line-height: 1; }
+                  display: inline-block; vertical-align: middle; margin-right: 2px; line-height: 1; }
     .pos-expand:hover { color: var(--text3); }
     table.parts tr.pos-subrow td { background: var(--bg2); }
-    .col-pn    { white-space: nowrap; color: var(--pn); }
-    .col-desc  { }
+    /* Every column shrinks to its contents (width:1% resolves up to min-content);
+       only .col-desc flexes, so it absorbs all leftover table width. */
+    .col-pn    { width: 1%; white-space: nowrap; color: var(--pn); }
+    .col-desc  { width: 100%; }
+    .col-sec   { width: 1%; white-space: nowrap; }
     .col-qty   { width: 2.5rem; text-align: center; color: var(--text2); }
-    .col-rem   { color: var(--text3); font-size: 0.72rem; }
+    .col-rem   { width: 1%; white-space: nowrap; color: var(--text3); font-size: 0.72rem; }
     .appl-chips { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 0.25rem; }
     .appl-chip  { border-radius: 2px; padding: 0 0.3rem; font-size: 0.63rem; line-height: 1.6;
                   white-space: nowrap; border: 1px solid var(--border2); background: var(--bg3); }
@@ -267,6 +275,9 @@
       </template>
     </div>
 
+    <div class="resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical"
+         title="Drag to resize — double-click to reset"></div>
+
     <!-- ── Parts panel ─────────────────────────────────────────── -->
     <div class="parts-panel">
       <div class="parts-header">
@@ -301,7 +312,7 @@
             <thead>
               <tr>
                 <th class="col-pos">Pos</th>
-                <th>Section</th>
+                <th class="col-sec">Section</th>
                 <th class="col-pn">Part Number</th>
                 <th class="col-desc">Description</th>
                 <th class="col-qty">Qty</th>
@@ -314,7 +325,7 @@
               <template x-for="(p, i) in searchResults" :key="i">
                 <tr class="search-result-row" @click="jumpToSection(p)" style="cursor:pointer">
                   <td class="col-pos" x-text="p.position"></td>
-                  <td><span class="sec-badge" x-text="p.section_number"></span></td>
+                  <td class="col-sec"><span class="sec-badge" x-text="p.section_number"></span></td>
                   <td class="col-pn" x-text="p.part_number"></td>
                   <td class="col-desc" x-text="p.description"></td>
                   <td class="col-qty" x-text="p.quantity"></td>
@@ -402,6 +413,62 @@
     </div>
 
   </div>
+
+  <script>
+    // Sidebar drag-resize. Width lives in --sidebar-w on .layout; persisted across sessions.
+    (function () {
+      const DEFAULT_W = 220, MIN_W = 140, MIN_PARTS = 260, GUTTER = 5, KEY = 'pb-sidebar-w';
+      const layout  = document.querySelector('.layout');
+      const resizer = document.getElementById('sidebar-resizer');
+      const apply = w => layout.style.setProperty('--sidebar-w', Math.round(w) + 'px');
+
+      // The diagram column is a fixed %, so the parts panel absorbs everything the
+      // sidebar takes. Stop before it gets crushed rather than at some viewport fraction.
+      const maxW = () => {
+        const diagram = document.querySelector('.diagram-panel');
+        const avail = layout.clientWidth - (diagram ? diagram.offsetWidth : 0) - GUTTER - MIN_PARTS;
+        return Math.max(MIN_W, avail);
+      };
+
+      const saved = parseInt(localStorage.getItem(KEY), 10);
+      if (saved) apply(Math.min(Math.max(saved, MIN_W), maxW()));
+
+      let dragging = false;
+      resizer.addEventListener('pointerdown', e => {
+        dragging = true;
+        resizer.setPointerCapture(e.pointerId);
+        resizer.classList.add('dragging');
+        document.body.classList.add('resizing');
+        e.preventDefault();
+      });
+      resizer.addEventListener('pointermove', e => {
+        if (!dragging) return;
+        const x = e.clientX - layout.getBoundingClientRect().left;
+        apply(Math.min(Math.max(x, MIN_W), maxW()));
+      });
+      const end = e => {
+        if (!dragging) return;
+        dragging = false;
+        resizer.releasePointerCapture(e.pointerId);
+        resizer.classList.remove('dragging');
+        document.body.classList.remove('resizing');
+        localStorage.setItem(KEY, parseInt(layout.style.getPropertyValue('--sidebar-w'), 10));
+      };
+      resizer.addEventListener('pointerup', end);
+      resizer.addEventListener('pointercancel', end);
+
+      resizer.addEventListener('dblclick', () => {
+        apply(DEFAULT_W);
+        localStorage.setItem(KEY, DEFAULT_W);
+      });
+
+      // Keep the sidebar within bounds if the window shrinks under it.
+      window.addEventListener('resize', () => {
+        const cur = parseInt(layout.style.getPropertyValue('--sidebar-w'), 10);
+        if (cur && cur > maxW()) apply(maxW());
+      });
+    })();
+  </script>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
   <script src="theme.js"></script>
