@@ -108,6 +108,13 @@
                   padding: 0.35rem 1rem; border-bottom: 1px solid var(--border);
                   background: var(--bg2); flex-shrink: 0; font-size: 0.78rem; }
     .fl { color: var(--text4); white-space: nowrap; }
+    .vin-box { display: inline-flex; align-items: center; gap: 0.35rem; }
+    .vin-input { background: var(--bg); color: var(--text); border: 1px solid var(--border3);
+                 border-radius: 3px; padding: 2px 6px; font-family: monospace; font-size: 0.78rem;
+                 width: 8.5rem; text-transform: uppercase; }
+    .vin-input:focus { outline: none; border-color: var(--accent); }
+    .vin-result.ok  { color: var(--accent); }
+    .vin-result.err { color: #c0392b; }
     #filter-bar input { background: var(--bg); color: var(--text); border: 1px solid var(--border3);
                         padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; font-size: 0.78rem; }
     #filter-bar input:focus { outline: none; border-color: var(--accent); }
@@ -129,6 +136,9 @@
     .vf-pr-dd-item:hover { background: var(--accent-bg); }
     .vf-pr-dd-code { color: var(--accent); flex-shrink: 0; min-width: 2.5rem; }
     .vf-pr-dd-desc { color: var(--text2); }
+    .vf-pr-warn { cursor: pointer; font-size: 0.68rem; padding: 0.1rem 0.3rem; border-radius: 2px;
+                  background: var(--warn-bg, rgba(200,120,0,0.15)); border: 1px solid var(--warn-bd, rgba(200,120,0,0.4));
+                  color: var(--warn, #c87800); white-space: nowrap; }
     tr.part-no-match td { opacity: 0.25; }
     tr.part-no-match:hover td { opacity: 0.45; }
     .btn-filter { background: none; border: 1px solid var(--border3); color: var(--text3);
@@ -146,6 +156,13 @@
   <header>
     <h1>pet-babelfish</h1>
     <a href="index.html">← home</a>
+    <a href="garage.html">garage</a>
+    <template x-if="activeVehicle">
+      <span class="vf-chip" style="background:var(--accent-bg2)" :title="'Active garage vehicle · ' + (activeVehicle.catalogId||'')">
+        🚗 <span x-text="activeVehicle.nickname || 'vehicle'"></span>
+        <span class="vf-chip-x" @click="clearActiveVehicle()">×</span>
+      </span>
+    </template>
     <select x-model="catalogId" @change="loadCatalog()">
       <option value="">— select catalog —</option>
       <template x-for="c in catalogs" :key="c.id">
@@ -158,6 +175,15 @@
            @keydown.escape="clearSearch()"
            :disabled="!db">
     <span id="statusBar" x-text="status"></span>
+    <span class="vin-box">
+      <input type="text" class="vin-input" x-model="vinInput" placeholder="VIN…" maxlength="17"
+             @keydown.enter="decodeVin()" :disabled="!SQL" title="Decode a 17-char VIN to auto-select catalog + model year">
+      <button class="btn-filter" @click="decodeVin()" :disabled="!SQL">decode</button>
+      <template x-if="vinResult">
+        <span class="fl vin-result" :class="{err: vinResult.error, ok: !vinResult.error && vinResult.matches && vinResult.matches.length}"
+              x-text="vinSummary()"></span>
+      </template>
+    </span>
     <button class="btn-filter" :class="{on: filterPanelOpen || filterActive}"
             @click="filterPanelOpen = !filterPanelOpen" :disabled="!db">
       Vehicle<template x-if="filterActive"><span class="f-badge" x-text="filterCriteriaCount"></span></template>
@@ -182,8 +208,10 @@
       </template>
     </div>
     <div class="vf-pr-wrap">
-      <input type="text" x-model="prSearch" placeholder="add…" style="width:5.5rem"
+      <input type="text" x-model="prSearch" placeholder="add / paste list…" style="width:8rem"
+             title="Type a code and press Enter, or paste your option-sticker (Kardex) list"
              @input="updatePrDropdown()"
+             @keydown.enter.prevent="commitPrEntry()"
              @focus="updatePrDropdown(); prDropdownOpen = true"
              @blur="setTimeout(() => prDropdownOpen = false, 150)">
       <div class="vf-pr-dd" x-show="prDropdownOpen && prDropdownItems.length > 0">
@@ -195,6 +223,12 @@
         </template>
       </div>
     </div>
+    <template x-if="prUnknown.length">
+      <span class="vf-pr-warn" @click="prUnknown = []"
+            :title="'Not in this catalog\'s option list — click to dismiss'">
+        ⚠ unknown: <span x-text="prUnknown.join(', ')"></span> ×
+      </span>
+    </template>
     <button style="background:none;border:none;color:var(--text4);cursor:pointer;font-family:monospace;font-size:0.78rem"
             x-show="filterActive" @click="clearVehicleFilter()">✕ clear</button>
     <template x-if="filterActive && currentSection && !searchMode">
@@ -371,6 +405,8 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
   <script src="theme.js"></script>
+  <script src="vin.js"></script>
+  <script src="garage.js"></script>
   <script>
     const SQLJS_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
 
@@ -408,6 +444,15 @@
         prDropdownOpen:   false,
         allPrCodes:       [],
         prDropdownItems:  [],
+        prUnknown:        [],   // entered codes not found in this catalog's pr_code
+
+        // VIN decode
+        vinInput:         '',
+        vinResult:        null,   // { ...decoded, matches:[…] } | { error }
+        _vinIndex:        null,   // cached cross-catalog vin_range rows
+
+        // active garage vehicle (opened via ?vehicle=<id>)
+        activeVehicle:    null,
 
         get filterActive() { return !!(this.vfYear || this.vfMarket || this.vfPrCodes.length); },
         get filterCriteriaCount() {
@@ -435,12 +480,41 @@
             await this.loadFromUrl(sqliteUrl);
           } else {
             await this.listCatalogs();
-            const cid = params.get('catalog');
-            if (cid) {
-              this.catalogId = cid;
-              await this.loadCatalog();
+            const vid = params.get('vehicle');
+            if (vid) {
+              await this.openVehicle(vid);
+            } else {
+              const cid = params.get('catalog');
+              if (cid) {
+                this.catalogId = cid;
+                await this.loadCatalog();
+              }
             }
           }
+        },
+
+        // ── Garage vehicle ───────────────────────────────────────────
+        // Load a saved vehicle: switch to its catalog and restore its spec filter.
+        async openVehicle(id) {
+          let v = null;
+          try { v = await Garage.get(id); } catch {}
+          if (!v) { this.status = 'Vehicle not found in garage.'; return; }
+          this.activeVehicle = v;
+          if (v.catalogId && this.catalogs.some(c => c.id === v.catalogId)) {
+            this.catalogId = v.catalogId;
+            await this.loadCatalog();   // populates allPrCodes for chip labels
+          }
+          const s = v.spec || {};
+          this.vfYear     = s.vfYear || '';
+          this.vfMarket   = s.vfMarket || '';
+          this.vfPrCodes  = Array.isArray(s.vfPrCodes) ? [...s.vfPrCodes] : [];
+          this.prUnknown  = [];
+          if (this.filterActive) this.filterPanelOpen = true;
+        },
+
+        clearActiveVehicle() {
+          this.activeVehicle = null;
+          this.clearVehicleFilter();
         },
 
         // ── Catalog list ─────────────────────────────────────────────
@@ -879,62 +953,161 @@
           this.prDropdownItems = [];
         },
 
+        // Enter in the add box: commit typed/pasted codes. A single token prefers an
+        // exact code match, then the top filtered suggestion; multiple tokens are a
+        // pasted option-sticker (Kardex) list. Unknown codes are surfaced, not added.
+        commitPrEntry() {
+          const raw = this.prSearch.trim();
+          if (!raw) return;
+          const tokens = raw.split(/[\s,;/|]+/).filter(Boolean);
+          if (tokens.length === 1) {
+            const tok = tokens[0].toUpperCase();
+            const exact = this.allPrCodes.find(p => p.code.toUpperCase() === tok);
+            if (exact) { this.prUnknown = []; this.addPrCode(exact.code); return; }
+            if (this.prDropdownItems.length) { this.prUnknown = []; this.addPrCode(this.prDropdownItems[0].code); return; }
+          }
+          this.addPrCodesBulk(tokens);
+        },
+
+        // Validate a list of entered codes against pr_code; add the known ones,
+        // collect the rest into prUnknown for display.
+        addPrCodesBulk(tokens) {
+          const unknown = [];
+          const toAdd = [];
+          for (const t of tokens) {
+            const code = t.toUpperCase();
+            const match = this.allPrCodes.find(p => p.code.toUpperCase() === code);
+            if (match) {
+              if (!this.vfPrCodes.includes(match.code) && !toAdd.includes(match.code)) toAdd.push(match.code);
+            } else if (!unknown.includes(code)) {
+              unknown.push(code);
+            }
+          }
+          if (toAdd.length) this.vfPrCodes = [...this.vfPrCodes, ...toAdd];
+          this.prUnknown = unknown;
+          this.prSearch = '';
+          this.prDropdownOpen = false;
+          this.prDropdownItems = [];
+        },
+
         removePrCode(code) {
           this.vfPrCodes = this.vfPrCodes.filter(p => p !== code);
         },
 
         clearVehicleFilter() {
           this.vfYear = ''; this.vfMarket = ''; this.vfPrCodes = [];
-          this.prSearch = ''; this.prDropdownOpen = false;
+          this.prSearch = ''; this.prDropdownOpen = false; this.prUnknown = [];
+        },
+
+        // ── VIN decode ────────────────────────────────────────────────
+        // Scan every ingested catalog's vin_range once and cache it. Reuses the
+        // already-open db for the current catalog; opens/closes the rest.
+        async _loadVinIndex() {
+          // Don't keep an empty cache: a decode can fire before listCatalogs() fills the list.
+          if (this._vinIndex && this._vinIndex.length) return this._vinIndex;
+          const idx = [];
+          const add = (db, catalogId) => {
+            let res;
+            try { res = db.exec('SELECT model_year, vin_from, vin_to, remark FROM vin_range'); }
+            catch { return; }
+            for (const [modelYear, from, to, remark] of (res[0]?.values ?? []))
+              idx.push({ catalogId, modelYear, from, to, remark });
+          };
+          if (this.sqliteFileMode || !navigator.storage?.getDirectory) {
+            if (this.db) add(this.db, this.catalogId || '(file)');
+          } else {
+            const root = await navigator.storage.getDirectory();
+            for (const c of this.catalogs) {
+              if (c.id === this.catalogId && this.db) { add(this.db, c.id); continue; }
+              let db = null;
+              try {
+                const dir = await root.getDirectoryHandle(c.id);
+                const fh  = await dir.getFileHandle('catalog.sqlite');
+                const buf = await (await fh.getFile()).arrayBuffer();
+                db = new this.SQL.Database(new Uint8Array(buf));
+                add(db, c.id);
+              } catch { /* skip unreadable catalog */ }
+              finally { if (db) db.close(); }
+            }
+          }
+          this._vinIndex = idx;
+          return idx;
+        },
+
+        async decodeVin() {
+          const dec = VIN.decodeVin(this.vinInput);
+          if (!dec.ok) { this.vinResult = { error: dec.error }; return; }
+          const idx     = await this._loadVinIndex();
+          const matches = dec.chassis ? VIN.matchChassis(dec.chassis, idx) : [];
+          this.vinResult = { ...dec, matches };
+          if (matches.length) await this.applyVinMatch(matches[0]);
+        },
+
+        async applyVinMatch(m) {
+          if (m.catalogId && m.catalogId !== this.catalogId && !this.sqliteFileMode) {
+            this.catalogId = m.catalogId;
+            await this.loadCatalog();
+          }
+          this.filterPanelOpen = true;
+          if (m.modelYear) this.vfYear = String(m.modelYear);
+          this.vinResult = { ...this.vinResult, applied: m };
+        },
+
+        vinSummary() {
+          const r = this.vinResult;
+          if (!r) return '';
+          if (r.error) return r.error;
+          const fam = (r.family || 'unknown').toUpperCase();
+          const my  = r.modelYear ? `MJ ${r.modelYear}` : (r.yearChar || '?');
+          const ms  = r.matches || [];
+          if (!ms.length) return `${fam} · ${my} · ${r.chassis || '?'} — no catalog match`;
+          const pm      = VIN.parseMarket(ms[0].remark);
+          const variant = pm.variant || ms[0].remark || '';
+          const mkt     = pm.marketLabel ? ` · ${pm.marketLabel}` : '';
+          const extra   = ms.length > 1 ? ` (+${ms.length - 1})` : '';
+          return `${fam} · ${my} · ${variant}${mkt}${extra} → ${ms[0].catalogId}`;
         },
 
         partMatchesVehicle(applStr) {
           if (!this.filterActive || !applStr) return true;
-          return applStr.split(' | ').some(seg => this._segmentMatchesVehicle(seg));
-        },
-
-        _segmentMatchesVehicle(seg) {
-          let prs = [], markets = [], mjFrom = null, mjTo = null;
-          for (const tok of seg.trim().split(/\s+/)) {
-            if (!tok || tok === '-' || tok === '>>') continue;
-            if (tok === '(complete)') continue;
-            const prm = tok.match(/^PR:(\w+)/i);
-            if (prm) { prs.push(prm[1]); continue; }
-            // D-MJ2007>>MJ2009 / D-MJ2007>> / D-MJ2007
-            const dm = tok.match(/^([A-Z]{1,5})-MJ(\d{4})(?:>>MJ(\d{4})|>>)?$/i);
-            if (dm) {
-              markets.push(dm[1].toUpperCase());
-              mjFrom = +dm[2];
-              if (dm[3]) mjTo = +dm[3];
-              else if (!tok.includes('>>')) mjTo = mjFrom;
-              continue;
-            }
-            // MJ2007>>MJ2009
-            const rng = tok.match(/^MJ(\d{4})>>MJ(\d{4})$/i);
-            if (rng) { mjFrom = +rng[1]; mjTo = +rng[2]; continue; }
-            // MJ2007>>
-            const frm = tok.match(/^MJ(\d{4})>>$/i);
-            if (frm) { mjFrom = +frm[1]; continue; }
-            // >>MJ2009
-            const too = tok.match(/^>>MJ(\d{4})$/i);
-            if (too) { mjTo = +too[1]; continue; }
-            // MJ2007
-            const mj = tok.match(/^MJ(\d{4})$/i);
-            if (mj) {
-              const yr = +mj[1];
-              if (mjFrom === null) { mjFrom = yr; mjTo = yr; } else mjTo = yr;
-              continue;
-            }
-            if (/^[A-Z]{1,5}$/.test(tok)) markets.push(tok);
-          }
+          const c = this._parseApplConstraints(applStr);
           if (this.vfYear) {
             const yr = +this.vfYear;
-            if (mjFrom !== null && yr < mjFrom) return false;
-            if (mjTo   !== null && yr > mjTo)   return false;
+            if (c.mjFrom !== null && yr < c.mjFrom) return false;
+            if (c.mjTo   !== null && yr > c.mjTo)   return false;
           }
-          if (this.vfMarket && markets.length > 0 && !markets.includes(this.vfMarket.toUpperCase())) return false;
-          if (this.vfPrCodes.length > 0 && prs.length > 0 && !prs.every(pr => this.vfPrCodes.includes(pr))) return false;
+          if (this.vfMarket && c.market && !VIN.applMarketAdmits(c.market, this.vfMarket)) return false;
+          if (this.vfPrCodes.length > 0 && c.prs.length > 0 && !c.prs.every(pr => this.vfPrCodes.includes(pr))) return false;
           return true;
+        },
+
+        // Parse a whole applicability string into filter constraints. Each catalog
+        // applicability has at most one MJ year clause (verified across all catalogs),
+        // so ` | ` segments are facets — PR condition, market/year, chassis/engine
+        // breakpoint — of ONE rule, never alternative year ranges. So we gather every
+        // dimension across the entire string rather than OR-ing segments (which would
+        // let a PR- or breakpoint-only segment satisfy the filter vacuously).
+        //
+        // Stored form is spaced: "D - MJ 2006>> - MJ 2008". FROM is the year suffixed
+        // with ">>"; TO is the last year NOT suffixed with ">>". Handles "MJ 2006>>",
+        // ">> - MJ 2007" (open start). Only `D` is a real market (baseline = all);
+        // "F >>"/"M >>" are chassis/engine serial breakpoints (Phase E), not markets,
+        // and carry no MJ so they're ignored here.
+        _parseApplConstraints(applStr) {
+          const prs = [];
+          for (const m of applStr.matchAll(/PR:([\w,]+)/gi))
+            for (const c of m[1].split(',')) if (c) prs.push(c.toUpperCase());
+
+          let mjFrom = null, mjTo = null;
+          const fm = applStr.match(/MJ\s*(\d{4})\s*>>/i);
+          if (fm) mjFrom = +fm[1];
+          const toMs = [...applStr.matchAll(/MJ\s*(\d{4})(?!\s*>>)/gi)];
+          if (toMs.length) mjTo = +toMs[toMs.length - 1][1];
+
+          const mkm = applStr.match(/([A-Z])\s*(?:>>\s*)?(?:-\s*)?MJ\s*\d{4}/i);
+          const market = mkm ? mkm[1].toUpperCase() : null;
+
+          return { prs, mjFrom, mjTo, market };
         },
 
         // ── SQL helpers ───────────────────────────────────────────────

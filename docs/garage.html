@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Garage — pet-babelfish</title>
+  <script>(function(){var t=localStorage.getItem('pb-theme');if(t)document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: monospace; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    header { display: flex; gap: 0.75rem; align-items: center; padding: 0.6rem 1rem;
+             border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    header h1 { font-size: 0.95rem; color: var(--text-hi); white-space: nowrap; }
+    header a  { color: var(--accent); font-size: 0.8rem; text-decoration: none; white-space: nowrap; }
+    header .spacer { margin-left: auto; }
+
+    button, select, input {
+      background: var(--bg2); color: var(--text); border: 1px solid var(--border3);
+      padding: 0.3rem 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.82rem;
+    }
+    button { cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    button.primary { background: var(--accent-bg); color: var(--accent); border-color: var(--accent-bd); }
+    button.danger:hover { border-color: var(--err, #d66); color: var(--err, #d66); }
+    input:focus, select:focus { outline: none; border-color: var(--accent); }
+    .theme-toggle { }
+
+    main { max-width: 1000px; margin: 1.5rem auto; padding: 0 1rem; }
+    .toolbar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; }
+    .toolbar h2 { font-size: 1.05rem; color: var(--text-hi); }
+    .count { color: var(--text5); font-size: 0.8rem; }
+
+    /* ── Vehicle cards ─────────────────────────────────────────── */
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+    .card { border: 1px solid var(--border2); border-radius: 6px; padding: 0.9rem 1rem;
+            background: var(--bg2); display: flex; flex-direction: column; gap: 0.5rem; }
+    .card .nick { font-size: 1rem; color: var(--text-hi); font-weight: bold; }
+    .card .sub  { font-size: 0.78rem; color: var(--text3); }
+    .card .vin  { font-size: 0.72rem; color: var(--text5); word-break: break-all; }
+    .badges { display: flex; flex-wrap: wrap; gap: 4px; }
+    .badge { display: inline-block; background: var(--bg3); border: 1px solid var(--border2);
+             border-radius: 3px; padding: 0.05rem 0.4rem; font-size: 0.7rem; color: var(--text3); }
+    .badge.cat { color: var(--accent); border-color: var(--accent-bd); background: var(--accent-bg2); }
+    .badge.pr  { color: var(--pn); }
+    .card .actions { display: flex; gap: 0.4rem; margin-top: 0.3rem; }
+    .card .actions button { padding: 0.25rem 0.5rem; font-size: 0.76rem; }
+    .card .actions .spacer { margin-left: auto; }
+
+    .empty { color: var(--text5); font-size: 0.9rem; padding: 3rem 1rem; text-align: center;
+             border: 1px dashed var(--border3); border-radius: 6px; }
+
+    /* ── Edit form (modal-ish) ─────────────────────────────────── */
+    .form-wrap { border: 1px solid var(--border2); border-radius: 6px; background: var(--bg2);
+                 padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
+    .form-wrap h3 { font-size: 0.95rem; color: var(--text-hi); margin-bottom: 0.8rem; }
+    .row { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.7rem; flex-wrap: wrap; }
+    .row > label { width: 6rem; color: var(--text3); font-size: 0.8rem; text-align: right; flex-shrink: 0; }
+    .row input[type=text], .row input[type=number] { flex: 1; min-width: 8rem; }
+    .row .hint { font-size: 0.72rem; color: var(--text5); }
+    .vin-result { font-size: 0.75rem; padding: 0.2rem 0.4rem; border-radius: 3px; }
+    .vin-result.ok  { color: var(--accent); background: var(--accent-bg2); }
+    .vin-result.err { color: var(--err, #d66); }
+    .form-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+    .form-actions .spacer { margin-left: auto; }
+    .pr-preview { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 0.3rem; }
+  </style>
+</head>
+<body x-data="garageApp()" x-init="init()">
+
+  <header>
+    <h1>pet-babelfish</h1>
+    <a href="index.html">← home</a>
+    <a href="viewer.html">browse parts →</a>
+    <span class="spacer"></span>
+    <span class="count" x-text="status"></span>
+    <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
+  </header>
+
+  <main>
+    <div class="toolbar">
+      <h2>Garage</h2>
+      <span class="count" x-text="vehicles.length + (vehicles.length === 1 ? ' vehicle' : ' vehicles')"></span>
+      <span class="spacer" style="margin-left:auto"></span>
+      <button class="primary" @click="newVehicle()" x-show="!form">+ Add vehicle</button>
+    </div>
+
+    <!-- ── Add / edit form ─────────────────────────────────────── -->
+    <template x-if="form">
+      <div class="form-wrap">
+        <h3 x-text="form.id ? 'Edit vehicle' : 'Add vehicle'"></h3>
+
+        <div class="row">
+          <label>Nickname</label>
+          <input type="text" x-model="form.nickname" placeholder="e.g. My GT2" style="flex:1">
+        </div>
+
+        <div class="row">
+          <label>VIN</label>
+          <input type="text" x-model="form.vin" maxlength="17" placeholder="17-char VIN (optional)"
+                 @keydown.enter="decodeVin()">
+          <button @click="decodeVin()" :disabled="!SQL">decode</button>
+          <template x-if="vinMsg">
+            <span class="vin-result" :class="vinOk ? 'ok' : 'err'" x-text="vinMsg"></span>
+          </template>
+        </div>
+
+        <div class="row">
+          <label>Catalog</label>
+          <select x-model="form.catalogId" @change="onCatalogChange()" style="flex:1">
+            <option value="">— select catalog —</option>
+            <template x-for="c in catalogs" :key="c.id">
+              <option :value="c.id" x-text="c.id"></option>
+            </template>
+          </select>
+        </div>
+
+        <div class="row">
+          <label>Model year</label>
+          <input type="number" x-model="form.vfYear" placeholder="2008" min="1990" max="2030" style="width:6rem">
+          <label style="width:auto">Market</label>
+          <input type="text" :value="form.vfMarket"
+                 @input="form.vfMarket = $event.target.value.toUpperCase()"
+                 placeholder="D" style="width:4rem">
+          <span class="hint">market rarely filters parts (baseline D)</span>
+        </div>
+
+        <div class="row" style="align-items:flex-start">
+          <label>PR codes</label>
+          <div style="flex:1">
+            <input type="text" x-model="form.prText" @input="refreshPrPreview()"
+                   placeholder="e.g. 480 X51 XAA  (space/comma separated)" style="width:100%">
+            <div class="pr-preview">
+              <template x-for="pr in prPreview" :key="pr.code">
+                <span class="badge pr" :title="pr.desc" x-text="pr.desc ? (pr.code + ' · ' + pr.desc) : pr.code"></span>
+              </template>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button class="primary" @click="saveForm()" :disabled="!form.catalogId && !form.nickname">Save</button>
+          <button @click="cancelForm()">Cancel</button>
+          <span class="spacer"></span>
+          <template x-if="form.id">
+            <button class="danger" @click="deleteVehicle(form.id)">Delete</button>
+          </template>
+        </div>
+      </div>
+    </template>
+
+    <!-- ── Vehicle cards ───────────────────────────────────────── -->
+    <template x-if="!vehicles.length && !form">
+      <div class="empty">No vehicles yet. Add one to save its catalog and spec filter for quick access.</div>
+    </template>
+
+    <div class="cards">
+      <template x-for="v in vehicles" :key="v.id">
+        <div class="card">
+          <span class="nick" x-text="v.nickname || '(unnamed)'"></span>
+          <span class="sub" x-text="vehicleSubtitle(v)"></span>
+          <template x-if="v.vin"><span class="vin" x-text="v.vin"></span></template>
+          <div class="badges">
+            <span class="badge cat" x-text="v.catalogId || 'no catalog'"></span>
+            <template x-if="v.spec && v.spec.vfYear"><span class="badge" x-text="'MJ ' + v.spec.vfYear"></span></template>
+            <template x-if="v.spec && v.spec.vfMarket"><span class="badge" x-text="v.spec.vfMarket"></span></template>
+            <template x-if="v.spec && v.spec.vfPrCodes && v.spec.vfPrCodes.length">
+              <span class="badge pr" x-text="v.spec.vfPrCodes.length + ' PR'"></span>
+            </template>
+          </div>
+          <div class="actions">
+            <button class="primary" @click="openInViewer(v)" :disabled="!v.catalogId">Open ▸</button>
+            <button @click="editVehicle(v)">Edit</button>
+            <span class="spacer"></span>
+            <button class="danger" @click="deleteVehicle(v.id)">✕</button>
+          </div>
+        </div>
+      </template>
+    </div>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+  <script src="theme.js"></script>
+  <script src="vin.js"></script>
+  <script src="garage.js"></script>
+  <script>
+    const SQLJS_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
+
+    function garageApp() {
+      return {
+        catalogs:  [],
+        vehicles:  [],
+        SQL:       null,
+        status:    '',
+        form:      null,      // editable vehicle draft, or null
+        vinMsg:    '', vinOk: false,
+        prCodes:   {},        // code -> description for the selected catalog
+        prPreview: [],
+        _vinIndex: null,
+
+        async init() {
+          this.status = 'Loading…';
+          try { this.SQL = await initSqlJs({ locateFile: () => SQLJS_WASM }); } catch {}
+          await this.listCatalogs();
+          await this.refresh();
+          this.status = '';
+        },
+
+        async refresh() { this.vehicles = await Garage.list(); },
+
+        // ── OPFS catalog discovery (mirrors viewer) ────────────────
+        async listCatalogs() {
+          const found = [];
+          try {
+            const rootDir = await navigator.storage.getDirectory();
+            for await (const [name, handle] of rootDir.entries()) {
+              if (handle.kind !== 'directory') continue;
+              try { await handle.getFileHandle('catalog.sqlite'); found.push({ id: name }); }
+              catch { /* not a catalog dir */ }
+            }
+          } catch {}
+          this.catalogs = found;
+        },
+
+        async _openCatalogDb(id) {
+          const rootDir = await navigator.storage.getDirectory();
+          const dir = await rootDir.getDirectoryHandle(id);
+          const fh  = await dir.getFileHandle('catalog.sqlite');
+          const buf = await (await fh.getFile()).arrayBuffer();
+          return new this.SQL.Database(new Uint8Array(buf));
+        },
+
+        // ── Form lifecycle ─────────────────────────────────────────
+        blankForm() {
+          return { id: null, nickname: '', vin: '', catalogId: '',
+                   vfYear: '', vfMarket: '', prText: '' };
+        },
+        newVehicle() {
+          this.form = this.blankForm();
+          this.vinMsg = ''; this.prPreview = []; this.prCodes = {};
+        },
+        editVehicle(v) {
+          const s = v.spec || {};
+          this.form = {
+            id: v.id, nickname: v.nickname || '', vin: v.vin || '',
+            catalogId: v.catalogId || '', decoded: v.decoded || null,
+            vfYear: s.vfYear || '', vfMarket: s.vfMarket || '',
+            prText: (s.vfPrCodes || []).join(' '),
+          };
+          this.vinMsg = '';
+          this.onCatalogChange();
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+        cancelForm() { this.form = null; },
+
+        // ── VIN decode → prefill catalog + year + nickname ─────────
+        async _buildVinIndex() {
+          if (this._vinIndex) return this._vinIndex;
+          const idx = [];
+          for (const c of this.catalogs) {
+            let db = null;
+            try {
+              db = await this._openCatalogDb(c.id);
+              const res = db.exec('SELECT model_year, vin_from, vin_to, remark FROM vin_range');
+              for (const [modelYear, from, to, remark] of (res[0]?.values ?? []))
+                idx.push({ catalogId: c.id, modelYear, from, to, remark });
+            } catch {} finally { if (db) db.close(); }
+          }
+          this._vinIndex = idx;
+          return idx;
+        },
+
+        async decodeVin() {
+          const dec = VIN.decodeVin(this.form.vin);
+          if (!dec.ok) { this.vinMsg = dec.error; this.vinOk = false; return; }
+          const idx     = await this._buildVinIndex();
+          const matches = dec.chassis ? VIN.matchChassis(dec.chassis, idx) : [];
+          const fam = (dec.family || 'unknown').toUpperCase();
+          const my  = dec.modelYear ? `MJ ${dec.modelYear}` : (dec.yearChar || '?');
+          if (!matches.length) {
+            this.vinMsg = `${fam} · ${my} — no catalog match`;
+            this.vinOk  = false;
+            if (dec.modelYear) this.form.vfYear = String(dec.modelYear);
+            return;
+          }
+          const m  = matches[0];
+          const pm = VIN.parseMarket(m.remark);
+          this.form.catalogId = m.catalogId;
+          this.form.decoded = { family: dec.family, variant: pm.variant,
+                                marketLabel: pm.marketLabel, modelYear: dec.modelYear };
+          if (m.modelYear) this.form.vfYear = String(m.modelYear);
+          if (!this.form.nickname) this.form.nickname = [fam, pm.variant].filter(Boolean).join(' ');
+          const extra = matches.length > 1 ? ` (+${matches.length - 1})` : '';
+          this.vinMsg = `${fam} · ${my} · ${pm.variant || m.remark || ''}${pm.marketLabel ? ' · ' + pm.marketLabel : ''}${extra} → ${m.catalogId}`;
+          this.vinOk  = true;
+          await this.onCatalogChange();
+        },
+
+        // ── PR-code labeling for the selected catalog ──────────────
+        async onCatalogChange() {
+          this.prCodes = {};
+          if (!this.form.catalogId || !this.SQL) { this.refreshPrPreview(); return; }
+          let db = null;
+          try {
+            db = await this._openCatalogDb(this.form.catalogId);
+            const res = db.exec('SELECT code, description FROM pr_code');
+            for (const [code, desc] of (res[0]?.values ?? [])) this.prCodes[String(code).toUpperCase()] = desc;
+          } catch {} finally { if (db) db.close(); }
+          this.refreshPrPreview();
+        },
+        parsePrText() {
+          return (this.form.prText || '').split(/[\s,;/|]+/)
+                   .map(s => s.trim().toUpperCase()).filter(Boolean);
+        },
+        refreshPrPreview() {
+          this.prPreview = this.parsePrText().map(code => ({ code, desc: this.prCodes[code] || '' }));
+        },
+
+        // ── Save / delete ──────────────────────────────────────────
+        async saveForm() {
+          const prCodes = this.parsePrText();
+          const vehicle = {
+            id: this.form.id || undefined,
+            nickname: this.form.nickname.trim(),
+            vin: this.form.vin.trim().toUpperCase(),
+            catalogId: this.form.catalogId,
+            decoded: this.form.decoded || null,
+            spec: {
+              vfYear: this.form.vfYear ? String(this.form.vfYear) : '',
+              vfMarket: (this.form.vfMarket || '').toUpperCase(),
+              vfPrCodes: prCodes,
+            },
+          };
+          await Garage.upsert(vehicle);
+          this.form = null;
+          await this.refresh();
+        },
+
+        async deleteVehicle(id) {
+          const v = this.vehicles.find(x => x.id === id);
+          if (!confirm(`Delete "${(v && v.nickname) || 'this vehicle'}" from the garage?`)) return;
+          await Garage.remove(id);
+          if (this.form && this.form.id === id) this.form = null;
+          await this.refresh();
+        },
+
+        openInViewer(v) {
+          if (!v.catalogId) return;
+          location.href = `viewer.html?vehicle=${encodeURIComponent(v.id)}`;
+        },
+
+        // ── Display helpers ────────────────────────────────────────
+        vehicleSubtitle(v) {
+          const bits = [];
+          if (v.decoded && v.decoded.family) bits.push(String(v.decoded.family).toUpperCase());
+          if (v.decoded && v.decoded.variant) bits.push(v.decoded.variant);
+          if (v.decoded && v.decoded.marketLabel) bits.push(v.decoded.marketLabel);
+          return bits.join(' · ');
+        },
+      };
+    }
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.13.3/cdn.min.js" defer></script>
+</body>
+</html>
