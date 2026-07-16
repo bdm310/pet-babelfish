@@ -48,7 +48,7 @@ const DIAGRAM_SCALE = 2.0;
 // OCR parameters — tuned for Porsche PET callout digits at ~7pt
 // 6pt catches diagrams whose callouts render smaller (~5.5–6.5pt) because a large,
 // sprawling illustration is scaled down to fit the frame (e.g. 604-015 / p268).
-const OCR_FONT_PT_CANDIDATES = [6, 7, 9, 12];  // pt sizes to try in cascade order
+const OCR_FONT_PT_CANDIDATES = [6, 7, 8, 9, 12];  // pt sizes to try in cascade order
 const OCR_TARGET_PX  = 40;   // upscale digits to this height before OCR
 const OCR_BIN_THRESH = 128;
 const OCR_MIN_CONF   = 90;
@@ -1243,15 +1243,21 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params =
   }
 
   digitResults.sort((a, b) => a.blob.x0 - b.blob.x0);
-  const X_GAP = targetPx * 0.9, Y_TOL = targetPx * 0.1;
+  // Merge digits into multi-digit numbers by edge-to-edge whitespace, not
+  // center-to-center. A narrow leading "1" has a large right bearing that inflates
+  // the center distance, which used to push "1X" callouts just past the threshold
+  // and split them into separate digits. Whitespace between adjacent digits of one
+  // number is small (well under a digit-width); between separate callouts it is a
+  // full digit-width or more.
+  const MAX_GAP = targetPx * 0.6, Y_TOL = targetPx * 0.1;
   const numGroups = [];
   for (const dr of digitResults) {
     const b = dr.blob, yc = (b.y0 + b.y1) / 2;
     let placed = false;
     for (const g of numGroups) {
       const last = g.digits[g.digits.length-1], lb = last.blob;
-      const xGap = (b.x0+b.x1)/2 - (lb.x0+lb.x1)/2;
-      if (Math.abs(yc - (lb.y0+lb.y1)/2) < Y_TOL && xGap >= 0 && xGap < X_GAP) {
+      const gap = b.x0 - g.x1;  // whitespace between this digit and the group's right edge
+      if (Math.abs(yc - (lb.y0+lb.y1)/2) < Y_TOL && gap < MAX_GAP) {
         g.digits.push(dr);
         g.x1 = Math.max(g.x1, b.x1); g.y0 = Math.min(g.y0, b.y0); g.y1 = Math.max(g.y1, b.y1);
         placed = true; break;
