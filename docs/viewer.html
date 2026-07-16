@@ -74,10 +74,27 @@
     /* Every column shrinks to its contents (width:1% resolves up to min-content);
        only .col-desc flexes, so it absorbs all leftover table width. */
     .col-pn    { width: 1%; white-space: nowrap; color: var(--pn); }
+    .pn-link   { color: inherit; text-decoration: none; }
+    .pn-link:hover { text-decoration: underline; }
     .col-desc  { width: 100%; }
     .col-sec   { width: 1%; white-space: nowrap; }
     .col-qty   { width: 2.5rem; text-align: center; color: var(--text2); }
     .col-rem   { width: 1%; white-space: nowrap; color: var(--text3); font-size: 0.72rem; }
+    /* Per-vehicle columns — only rendered when a garage vehicle is open. */
+    .col-ok    { width: 1%; text-align: center; }
+    /* min-width, not width: .col-desc's width:100% otherwise starves this column
+       down to the placeholder, since the input's width:100% contributes no
+       min-content of its own. */
+    .col-notes { width: 1%; min-width: 12rem; }
+    .ok-box    { cursor: pointer; accent-color: var(--accent); margin: 0; vertical-align: middle; }
+    .ok-hd     { display: inline-flex; align-items: center; gap: 4px; }
+    .note-input { width: 100%; background: transparent; border: 1px solid transparent;
+                  border-radius: 3px; color: var(--text2); font-family: monospace;
+                  font-size: 0.72rem; padding: 1px 3px; }
+    .note-input::placeholder { color: var(--text6); }
+    .note-input:hover  { border-color: var(--border2); }
+    .note-input:focus  { outline: none; border-color: var(--accent); background: var(--bg); color: var(--text); }
+    table.parts tr.part-ok td.col-pn { color: var(--accent); }
     .appl-chips { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 0.25rem; }
     .appl-chip  { border-radius: 2px; padding: 0 0.3rem; font-size: 0.63rem; line-height: 1.6;
                   white-space: nowrap; border: 1px solid var(--border2); background: var(--bg3); }
@@ -196,6 +213,12 @@
             @click="filterPanelOpen = !filterPanelOpen" :disabled="!db">
       Vehicle<template x-if="filterActive"><span class="f-badge" x-text="filterCriteriaCount"></span></template>
     </button>
+    <template x-if="vehicleMode">
+      <button class="btn-filter" :class="{on: hideOk}" @click="hideOk = !hideOk"
+              title="Hide parts marked Ok, and sections where every part is marked Ok">
+        Hide Ok<template x-if="hideOk && okSectionIds.length"><span class="f-badge" x-text="okSectionIds.length"></span></template>
+      </button>
+    </template>
     <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
   </header>
 
@@ -255,14 +278,14 @@
         <div class="sidebar-placeholder"><span class="spinner"></span> Loading…</div>
       </template>
       <template x-for="mg in mainGroups" :key="mg.id">
-        <div>
+        <div x-show="visibleSections(mg).length > 0">
           <div class="mg-header" :class="{open: mg.open}" @click="mg.open = !mg.open">
             <span x-text="mg.title || ('Group ' + mg.number)"></span>
             <span class="arrow">▶</span>
           </div>
           <template x-if="mg.open">
             <div>
-              <template x-for="sec in mg.sections" :key="sec.id">
+              <template x-for="sec in visibleSections(mg)" :key="sec.id">
                 <div class="sec-item" :class="{active: currentSection && sec.id === currentSection.id}"
                      @click="selectSection(sec, mg)">
                   <span class="sec-num" x-text="sec.number"></span>
@@ -298,6 +321,7 @@
             <span x-text="currentSection.title_model ? ' [' + currentSection.title_model + ']' : ''"
                   style="color:var(--text5);font-size:0.72rem"></span>
             <span class="count" x-text="filterActive ? (filterSectionCount + ' / ' + parts.length + ' match') : (parts.length + ' parts')"></span>
+            <span class="count" x-show="hiddenOkCount > 0" x-text="'· ' + hiddenOkCount + ' Ok hidden'"></span>
           </span>
         </template>
         <template x-if="!searchMode && !currentSection">
@@ -340,63 +364,107 @@
           </table>
         </template>
 
-        <!-- Section parts table -->
-        <template x-if="!searchMode">
-          <template x-if="parts.length > 0">
-            <table class="parts">
-              <thead>
-                <tr>
-                  <th class="col-pos">Pos</th>
-                  <th class="col-pn">Part Number</th>
-                  <th class="col-desc">Description</th>
-                  <th class="col-qty">Qty</th>
-                  <th class="col-rem">Remark</th>
-                </tr>
-              </thead>
-              <tbody>
-                <template x-for="row in displayRows" :key="row._rowid">
-                  <tr :class="{
-                        'pos-active': row._basePos !== null && (hoveredPos === row._basePos || selectedPos === row._basePos),
-                        'pos-subrow': !row._isHead,
-                        'part-no-match': filterActive && !partMatchesVehicle(row.part.applicability)
-                      }"
-                      :data-pos-num="row._basePos"
-                      @click="row._basePos !== null && (selectedPos = (selectedPos === row._basePos ? null : row._basePos))"
-                      @mouseenter="hoveredPos = row._basePos"
-                      @mouseleave="hoveredPos = null">
-                    <td class="col-pos"
-                        :title="row.part.position === '-' ? 'Not shown in diagram' : /^\(/.test(row.part.position) ? 'May differ from illustration' : ''">
-                      <span class="pos-expand"
-                            :style="row._hasMore ? '' : 'visibility:hidden'"
-                            @click.stop="row._hasMore && toggleGroup(row._gi)"
-                            x-text="row._expanded ? '▼' : '▶'"></span>
-                      <span :class="{'pos-paren': /^\(/.test(row.part.position), 'pos-none': row.part.position === '-'}"
-                            x-text="row.part.position"></span>
-                    </td>
-                    <td class="col-pn" x-text="row.part.part_number"></td>
-                    <td class="col-desc">
-                      <div x-text="row.part.description"></div>
-                      <template x-if="row.part.applicability">
-                        <div class="appl-chips">
-                          <template x-for="(chip, ci) in parseAppl(row.part.applicability)" :key="ci">
-                            <span class="appl-chip" :class="'appl-' + chip.type" x-text="chip.text"></span>
-                          </template>
-                        </div>
-                      </template>
-                    </td>
-                    <td class="col-qty" x-text="row.part.quantity"></td>
-                    <td class="col-rem" x-text="row.part.remarks"></td>
-                  </tr>
+        <!-- Section parts table. These states are flat siblings, not nested inside a
+             single `x-if="!searchMode"`: x-if clones only content.firstElementChild,
+             so wrapping them would render the table and silently drop every placeholder. -->
+        <template x-if="!searchMode && displayRows.length > 0">
+          <table class="parts">
+            <thead>
+              <tr>
+                <th class="col-pos">Pos</th>
+                <th class="col-pn">Part Number</th>
+                <th class="col-desc">Description</th>
+                <th class="col-qty">Qty</th>
+                <th class="col-rem">Remark</th>
+                <template x-if="vehicleMode">
+                  <th class="col-ok">
+                    <span class="ok-hd">
+                      <!-- indeterminate is an IDL property, not an attribute — :indeterminate
+                           would no-op, so drive it from an effect. -->
+                      <input type="checkbox" class="ok-box" :checked="sectionOkState === 'all'"
+                             x-effect="$el.indeterminate = sectionOkState === 'some'"
+                             @change="toggleSectionOk()" :title="sectionOkTitle()">
+                      <span :title="'Physical status on ' + (activeVehicle.nickname || 'this vehicle')">Ok</span>
+                    </span>
+                  </th>
                 </template>
-              </tbody>
-            </table>
-          </template>
-          <template x-if="parts.length === 0 && currentSection">
-            <div class="parts-placeholder">No parts extracted for this section.</div>
-          </template>
-          <template x-if="!currentSection">
-            <div class="parts-placeholder">Select a section from the sidebar.</div>
-          </template>
+                <template x-if="vehicleMode">
+                  <th class="col-notes">Notes</th>
+                </template>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="row in displayRows" :key="row._rowid">
+                <tr :class="{
+                      'pos-active': row._basePos !== null && (hoveredPos === row._basePos || selectedPos === row._basePos),
+                      'pos-subrow': !row._isHead,
+                      'part-no-match': filterActive && !partMatchesVehicle(row.part.applicability),
+                      'part-ok': vehicleMode && partOk(row.part._key)
+                    }"
+                    :data-pos-num="row._basePos"
+                    @click="row._basePos !== null && (selectedPos = (selectedPos === row._basePos ? null : row._basePos))"
+                    @mouseenter="hoveredPos = row._basePos"
+                    @mouseleave="hoveredPos = null">
+                  <td class="col-pos"
+                      :title="row.part.position === '-' ? 'Not shown in diagram' : /^\(/.test(row.part.position) ? 'May differ from illustration' : ''">
+                    <span class="pos-expand"
+                          :style="row._hasMore ? '' : 'visibility:hidden'"
+                          @click.stop="row._hasMore && toggleGroup(row._gi)"
+                          x-text="row._expanded ? '▼' : '▶'"></span>
+                    <span :class="{'pos-paren': /^\(/.test(row.part.position), 'pos-none': row.part.position === '-'}"
+                          x-text="row.part.position"></span>
+                  </td>
+                  <td class="col-pn">
+                    <a class="pn-link" target="_blank" rel="noopener" @click.stop
+                       :href="'https://www.google.com/search?q=' + encodeURIComponent(row.part.part_number)"
+                       :title="'Search Google for ' + row.part.part_number"
+                       x-text="row.part.part_number"></a>
+                  </td>
+                  <td class="col-desc">
+                    <div x-text="row.part.description"></div>
+                    <template x-if="row.part.applicability">
+                      <div class="appl-chips">
+                        <template x-for="(chip, ci) in parseAppl(row.part.applicability)" :key="ci">
+                          <span class="appl-chip" :class="'appl-' + chip.type" x-text="chip.text"></span>
+                        </template>
+                      </div>
+                    </template>
+                  </td>
+                  <td class="col-qty" x-text="row.part.quantity"></td>
+                  <td class="col-rem" x-text="row.part.remarks"></td>
+                  <template x-if="vehicleMode">
+                    <td class="col-ok" @click.stop>
+                      <input type="checkbox" class="ok-box" :checked="partOk(row.part._key)"
+                             @change="setPartOk(row.part._key, $event.target.checked)"
+                             :title="partOk(row.part._key) ? 'Marked OK' : 'Mark OK'">
+                    </td>
+                  </template>
+                  <template x-if="vehicleMode">
+                    <td class="col-notes" @click.stop>
+                      <input type="text" class="note-input" placeholder="…"
+                             :value="partNotes(row.part._key)"
+                             :title="partNotes(row.part._key)"
+                             @input="setPartNotes(row.part._key, $event.target.value)"
+                             @blur="flushPartNotes(row.part._key)"
+                             @keydown.enter="$event.target.blur()">
+                    </td>
+                  </template>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </template>
+        <template x-if="!searchMode && currentSection && parts.length === 0">
+          <div class="parts-placeholder">No parts extracted for this section.</div>
+        </template>
+        <template x-if="!searchMode && currentSection && parts.length > 0 && displayRows.length === 0">
+          <div class="parts-placeholder">
+            Every part here is marked Ok.
+            <a href="#" style="color:var(--accent)" @click.prevent="hideOk = false">show them</a>
+          </div>
+        </template>
+        <template x-if="!searchMode && !currentSection">
+          <div class="parts-placeholder">Select a section from the sidebar.</div>
         </template>
       </div>
     </div>
@@ -520,6 +588,19 @@
 
         // active garage vehicle (opened via ?vehicle=<id>)
         activeVehicle:    null,
+        partMeta:         {},   // partKey -> { ok, notes } for activeVehicle
+        _noteTimers:      {},   // partKey -> debounce timer for notes writes
+
+        // hide-Ok filter (vehicle mode only)
+        hideOk:           false,
+        okSectionIds:     [],   // sections whose every in-scope part is marked Ok
+        _sectionParts:    null,  // sectionId -> [{ key, appl }]; built lazily, see _sectionPartIndex
+
+        // Ok/Notes are per-vehicle, so only offer them while actually viewing the
+        // open vehicle's own catalog (the catalog picker can move off it).
+        get vehicleMode() {
+          return !!this.activeVehicle && this.activeVehicle.catalogId === this.catalogId;
+        },
 
         get filterActive() { return !!(this.vfYear || this.vfMarket || this.vfPrCodes.length); },
         get filterCriteriaCount() {
@@ -538,6 +619,10 @@
           this.status = '';
           this.$watch('hoveredPos',  () => this.drawCallouts());
           this.$watch('selectedPos', () => this.drawCallouts());
+          this.$watch('hideOk', () => { this._reflowParts(); this._recomputeOkSections(); });
+          // The spec filter decides which parts a section's Ok rollup counts.
+          for (const f of ['vfYear', 'vfMarket', 'vfPrCodes'])
+            this.$watch(f, () => this._recomputeOkSections());
           window.addEventListener('resize', () => requestAnimationFrame(() => this._positionCanvas()));
           this._startQueryBridge();
 
@@ -567,6 +652,7 @@
           try { v = await Garage.get(id); } catch {}
           if (!v) { this.status = 'Vehicle not found in garage.'; return; }
           this.activeVehicle = v;
+          this.partMeta      = v.partMeta || {};
           if (v.catalogId && this.catalogs.some(c => c.id === v.catalogId)) {
             this.catalogId = v.catalogId;
             await this.loadCatalog();   // populates allPrCodes for chip labels
@@ -581,7 +667,207 @@
 
         clearActiveVehicle() {
           this.activeVehicle = null;
+          this.partMeta      = {};
+          this.hideOk        = false;
+          this.okSectionIds  = [];
           this.clearVehicleFilter();
+          this._reflowParts();
+        },
+
+        // ── Hide-Ok filter ───────────────────────────────────────────
+        // Drops parts already marked Ok from the table, and sections whose every
+        // in-scope part is marked from the sidebar — the "what's left to do" view.
+        // Scope matches the diagram mark-all (sectionOkTargets): the spec filter
+        // decides which parts count, so a section of parts that aren't on this car
+        // is not "done" and stays listed.
+
+        get _visibleParts() {
+          if (!this.hideOk || !this.vehicleMode) return this.parts;
+          return this.parts.filter(p => !this.partOk(p._key));
+        },
+
+        get hiddenOkCount() {
+          return this.parts.length - this._visibleParts.length;
+        },
+
+        // The open section always stays listed even once fully marked — otherwise
+        // ticking its last part would yank the sidebar out from under the user.
+        visibleSections(mg) {
+          if (!this.hideOk || !this.okSectionIds.length) return mg.sections;
+          const cur = this.currentSection && this.currentSection.id;
+          return mg.sections.filter(s => s.id === cur || !this.okSectionIds.includes(s.id));
+        },
+
+        // Rebuild the table from the parts the filter admits. Position groups are
+        // rebuilt from scratch (a hidden head row promotes the next part to head),
+        // so carry expand state across on basePos.
+        _reflowParts() {
+          const expanded = new Set(
+            this.posGroups.filter(g => g.expanded && g.basePos !== null).map(g => g.basePos));
+          this.posGroups = this._buildPosGroups(this._visibleParts);
+          if (expanded.size)
+            for (const g of this.posGroups)
+              if (g.basePos !== null && expanded.has(g.basePos)) g.expanded = true;
+          this._rebuildDisplayRows();
+        },
+
+        // Every section's parts keyed as selectSection keys them (same occurrence
+        // counter, same rowid order), so Ok state can be rolled up section-wide
+        // without loading each one. Built once per catalog, on demand.
+        _sectionPartIndex() {
+          if (this._sectionParts) return this._sectionParts;
+          const idx = new Map();
+          this._sectionParts = idx;
+          if (!this.db || !this.vehicleMode) return idx;
+          let rows = [];
+          try {
+            rows = this._query(
+              `SELECT p.section_id, s.number, p.position, p.part_number, p.applicability
+               FROM part p JOIN section s ON p.section_id = s.id
+               WHERE p.catalog_id=? ORDER BY p.section_id, p.rowid`,
+              [this.catalogId]
+            );
+          } catch { return idx; }
+          let curSec = null, occurrence = null, list = null;
+          for (const [sid, snum, position, part_number, applicability] of rows) {
+            if (sid !== curSec) {
+              curSec = sid; occurrence = this._occurrenceCounter(); list = [];
+              idx.set(sid, list);
+            }
+            const n = occurrence(position, part_number);
+            list.push({ key: this._partKey(snum, position, part_number, n), appl: applicability || '' });
+          }
+          return idx;
+        },
+
+        _recomputeOkSections() {
+          if (!this.hideOk || !this.vehicleMode) { this.okSectionIds = []; return; }
+          const out = [];
+          for (const [sid, list] of this._sectionPartIndex()) {
+            const targets = list.filter(e => this.partMatchesVehicle(e.appl));
+            if (targets.length && targets.every(e => this.partOk(e.key))) out.push(sid);
+          }
+          this.okSectionIds = out;
+        },
+
+        // Marks change what the filter hides — refresh both views. No-op when the
+        // filter is off, so an unfiltered table never rebuilds on a checkbox click.
+        _afterMarkChange() {
+          if (!this.hideOk) return;
+          this._reflowParts();
+          this._recomputeOkSections();
+        },
+
+        // ── Per-part ok / notes (active vehicle only) ────────────────
+        // Marks live on the garage vehicle, not the catalog DB — catalog DBs are
+        // rebuilt on re-ingest. See Garage.setPartMeta.
+
+        partOk(key)    { return !!(this.partMeta[key] && this.partMeta[key].ok); },
+        partNotes(key) { return (this.partMeta[key] && this.partMeta[key].notes) || ''; },
+
+        setPartOk(key, ok) {
+          this._applyPartMeta(key, { ok: !!ok });
+          this._afterMarkChange();
+          this._persistPartMeta(key);
+        },
+
+        // ── Mark the whole diagram ───────────────────────────────────
+        // Targets every part in the section the vehicle filter admits — marking
+        // the physical state of a part that isn't on this car is meaningless.
+        // partMatchesVehicle() is true for everything when no filter is set, so
+        // with no filter this is simply all parts. Includes parts hidden inside
+        // collapsed position groups: the scope is the diagram, not the viewport.
+        get sectionOkTargets() {
+          if (!this.vehicleMode) return [];
+          return this.parts.filter(p => p._key && this.partMatchesVehicle(p.applicability));
+        },
+
+        get sectionOkState() {
+          const t = this.sectionOkTargets;
+          if (!t.length) return 'none';
+          const n = t.filter(p => this.partOk(p._key)).length;
+          return n === 0 ? 'none' : n === t.length ? 'all' : 'some';
+        },
+
+        sectionOkTitle() {
+          const t = this.sectionOkTargets;
+          if (!t.length) return 'No parts to mark';
+          const scope = this.filterActive ? 'matching parts' : 'parts';
+          if (this.sectionOkState === 'all') return `Clear Ok on all ${t.length} ${scope} on this diagram`;
+          const n = t.filter(p => this.partOk(p._key)).length;
+          const done = n ? ` (${n} already marked)` : '';
+          return `Mark all ${t.length} ${scope} on this diagram Ok${done}`;
+        },
+
+        // All-or-nothing: partially marked ("some") fills the rest in, matching
+        // the indeterminate checkbox's affordance.
+        toggleSectionOk() {
+          const targets = this.sectionOkTargets;
+          if (!targets.length) return;
+          const ok = this.sectionOkState !== 'all';
+          const meta = { ...this.partMeta }, patches = {};
+          for (const p of targets) {
+            meta[p._key] = { ...(meta[p._key] || { notes: '' }), ok };   // keeps any note
+            patches[p._key] = { ok };
+          }
+          this.partMeta = meta;
+          this._afterMarkChange();
+          this._persistPartMetaMany(patches);
+        },
+
+        // Typing writes through debounced; blur (below) flushes immediately so a
+        // note is safe as soon as the user leaves the field.
+        setPartNotes(key, notes) {
+          this._applyPartMeta(key, { notes });
+          clearTimeout(this._noteTimers[key]);
+          this._noteTimers[key] = setTimeout(() => this._persistPartMeta(key), 400);
+        },
+
+        flushPartNotes(key) {
+          if (this._noteTimers[key]) this._persistPartMeta(key);
+        },
+
+        _applyPartMeta(key, patch) {
+          const cur = this.partMeta[key] || { ok: false, notes: '' };
+          this.partMeta = { ...this.partMeta, [key]: { ...cur, ...patch } };
+        },
+
+        async _persistPartMeta(key) {
+          clearTimeout(this._noteTimers[key]);
+          delete this._noteTimers[key];
+          const e = this.partMeta[key] || {};
+          await this._persistPartMetaMany({ [key]: { ok: !!e.ok, notes: e.notes || '' } });
+        },
+
+        async _persistPartMetaMany(patches) {
+          if (!this.activeVehicle) return;
+          try {
+            await Garage.setPartMetaMany(this.activeVehicle.id, patches);
+          } catch (err) {
+            this.status = 'Could not save mark: ' + err.message;
+          }
+        },
+
+        // Stable identity for a part row across re-ingest. rowid can't be used —
+        // it is reassigned every ingest. Content alone isn't unique either: a
+        // section can repeat a row verbatim (997 601-000 lists "Alloy wheel"
+        // 997 363 156 05 five times), so disambiguate by occurrence index.
+        _partKey(sectionNumber, position, partNumber, n) {
+          return [this.catalogId, sectionNumber, position, partNumber, n].join('|');
+        },
+
+        // One occurrence counter per section, fed rows in rowid order. Both key
+        // producers (selectSection and _sectionPartIndex) go through this: they must
+        // number repeats identically or a mark lands on a different part than the one
+        // that was ticked.
+        _occurrenceCounter() {
+          const seen = new Map();
+          return (position, partNumber) => {
+            const base = position + '|' + partNumber;
+            const n = seen.get(base) || 0;
+            seen.set(base, n + 1);
+            return n;
+          };
         },
 
         // ── Catalog list ─────────────────────────────────────────────
@@ -608,6 +894,7 @@
           this.mainGroups     = [];
           this.currentSection = null;
           this.parts          = [];
+          this._sectionParts  = null;   // per-catalog; rebuilt on demand
           this._setDiagram(null);
 
           try {
@@ -628,6 +915,7 @@
 
             this._buildToc();
             this.loadPrCodes();
+            this._recomputeOkSections();
             this.status = `${this.mainGroups.length} groups, ${this._scalar('SELECT COUNT(*) FROM section')} sections`;
           } catch (e) {
             this.status = 'Error: ' + e.message;
@@ -737,12 +1025,17 @@
              FROM part WHERE section_id=? ORDER BY rowid`,
             [sec.id]
           );
-          this.parts = rows.map(([rowid, position, part_number, description, quantity, remarks, applicability]) => ({
-            _rowid: rowid, position, part_number, description, quantity, remarks,
-            applicability: applicability || '',
-          }));
-          this.posGroups = this._buildPosGroups(this.parts);
-          this._rebuildDisplayRows();
+          const occurrence = this._occurrenceCounter();
+          this.parts = rows.map(([rowid, position, part_number, description, quantity, remarks, applicability]) => {
+            const n = occurrence(position, part_number);
+            return {
+              _rowid: rowid, _key: this._partKey(sec.number, position, part_number, n),
+              position, part_number, description, quantity, remarks,
+              applicability: applicability || '',
+            };
+          });
+          this.posGroups = [];   // fresh section: nothing to carry expand state from
+          this._reflowParts();
 
           // Load callouts
           this.callouts = this._query(
