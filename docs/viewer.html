@@ -1034,6 +1034,12 @@
           this.catalogs = found;
         },
 
+        // "Porsche 911 Turbo/GT2 - 997T07". Either half may be missing on an odd
+        // catalog, so drop the dash rather than print a dangling one.
+        _catalogLabel(title, model, fallback) {
+          return [title, model].filter(Boolean).join(' - ') || fallback || this.catalogId;
+        },
+
         // ── Load catalog ─────────────────────────────────────────────
 
         async loadCatalog() {
@@ -1060,10 +1066,10 @@
               return;
             }
 
-            // Update catalog label with model name from DB
-            const cat = this._one('SELECT model FROM catalog WHERE id=?', [this.catalogId]);
+            // Update catalog label with the title/model from DB
+            const cat = this._one('SELECT title, model FROM catalog WHERE id=?', [this.catalogId]);
             if (cat) {
-              const label = cat[0] || this.catalogId;
+              const label = this._catalogLabel(cat[0], cat[1]);
               this.catalogs = this.catalogs.map(c =>
                 c.id === this.catalogId ? { ...c, label } : c
               );
@@ -1105,10 +1111,10 @@
               this.db = null;
               return;
             }
-            const cat  = this._one('SELECT id, model FROM catalog LIMIT 1');
+            const cat  = this._one('SELECT id, title, model FROM catalog LIMIT 1');
             if (cat) {
               this.catalogId = cat[0];
-              this.catalogs  = [{ id: cat[0], label: cat[1] || cat[0] }];
+              this.catalogs  = [{ id: cat[0], label: this._catalogLabel(cat[1], cat[2], cat[0]) }];
             }
             this.loadFacetOptions();
             this._buildToc();

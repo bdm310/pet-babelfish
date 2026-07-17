@@ -130,19 +130,21 @@ async function ingest(buffer, catalogId) {
   post('status', { message: 'Parsing table of contents…' });
   t = performance.now();
   const outline = await pdf.getOutline();
-  const { model, sections } = await parseOutline(outline, pdf);
+  const { title, sections } = await parseOutline(outline, pdf);
   TIMING.tocParse = performance.now() - t;
 
   if (!sections.length) throw new Error('No sections found in TOC — is this a PET catalog?');
 
-  db.run(
-    'INSERT OR REPLACE INTO catalog (id, model, page_count, ingested_at) VALUES (?,?,?,?)',
-    [catalogId, model, pdf.numPages, new Date().toISOString()]
-  );
-
   post('status', { message: 'Parsing model/option information…' });
   t = performance.now();
   const vp = await parseVPages(pdf, sections[0].diagramPage);
+
+  // After parseVPages: the model code comes off the V-page headers.
+  db.run(
+    'INSERT OR REPLACE INTO catalog (id, title, model, page_count, ingested_at) VALUES (?,?,?,?,?)',
+    [catalogId, title, vp.model, pdf.numPages, new Date().toISOString()]
+  );
+
   insertVPageData(db, catalogId, vp);
   // V-pages are parsed before any section, so the code index comes straight from
   // this parse — no re-query and no second pass over the sections.
@@ -279,11 +281,11 @@ async function parseOutline(outline, pdf) {
   if (!outline?.length) throw new Error('PDF has no outline/TOC');
 
   const sections = [];
-  let model = '';
+  let title = '';
 
   for (const l1 of outline) {
     if (!l1.items?.length) continue;
-    if (!model) model = l1.title;
+    if (!title) title = l1.title;
 
     for (const l2 of l1.items) {
       // "Main group 1: Engine" or fallback "1 - Engine"
@@ -306,7 +308,7 @@ async function parseOutline(outline, pdf) {
     }
   }
 
-  return { model, sections };
+  return { title, sections };
 }
 
 async function resolveDestPage(dest, pdf) {
@@ -335,6 +337,7 @@ async function parseVPages(pdf, firstDiagramPage) {
   const transmNums   = [];
   // Carries the open PR entry across page breaks — see parsePRCodesPage.
   const prState      = { current: null };
+  let   model        = '';
 
   for (let pageNum = 1; pageNum < firstDiagramPage; pageNum++) {
     const page    = await pdf.getPage(pageNum);
@@ -346,6 +349,11 @@ async function parseVPages(pdf, firstDiagramPage) {
     const rowObjs  = groupIntoRows(items, vp.height);
     const rows     = rowObjs.map(r => r.items.map(it => it.str.trim()).filter(Boolean));
     const pageText = rows.map(r => r.join(' ')).join('\n');
+
+    // Every V-page repeats "Model: 997T07 Model life 2007>>2009". The code is not
+    // one token — "356 50" and "9PA 03" contain a space — so "Model life" is the
+    // only reliable right edge.
+    if (!model) model = pageText.match(/Model:\s*(.+?)\s+Model life/)?.[1] ?? '';
 
     if      (pageText.includes('Optional Equipment'))        parsePRCodesPage(rows, prCodes, prState);
     else if (pageText.includes('Model Overview Sales Type')) parseSalesTypesPage(rows, salesTypes);
@@ -359,7 +367,7 @@ async function parseVPages(pdf, firstDiagramPage) {
 
   if (prState.current) prCodes.push(prState.current);
 
-  return { prCodes, salesTypes, vinRanges, engineCodes, transmCodes, engineNums, transmNums };
+  return { model, prCodes, salesTypes, vinRanges, engineCodes, transmCodes, engineNums, transmNums };
 }
 
 // `state.current` is the open entry and is owned by the caller, because a description
@@ -1576,13 +1584,14 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
   } catch { throw new Error(`catalog.sqlite not found for "${catalogId}" — run a full ingest first.`); }
 
   post('status', { message: 'Parsing table of contents…' });
-  const outline       = await pdf.getOutline();
-  const { sections }  = await parseOutline(outline, pdf);
+  const outline          = await pdf.getOutline();
+  const { title, sections } = await parseOutline(outline, pdf);
 
   post('status', { message: 'Parsing model/option information…' });
   for (const tbl of ['pr_code','sales_type','vin_range','engine_code','transmission_code','engine_number_range','transmission_number_range'])
     db.run(`DELETE FROM ${tbl} WHERE catalog_id=?`, [catalogId]);
   const vp = await parseVPages(pdf, sections[0].diagramPage);
+  db.run('UPDATE catalog SET title=?, model=? WHERE id=?', [title, vp.model, catalogId]);
   insertVPageData(db, catalogId, vp);
   const codeIndex = buildCodeIndex(vp);
 

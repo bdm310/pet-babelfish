@@ -15,7 +15,9 @@
   function create(db) {
     db.exec(`
       CREATE TABLE IF NOT EXISTS catalog (
-        id TEXT PRIMARY KEY, model TEXT, page_count INTEGER, ingested_at TEXT
+        -- title is the TOC's top-level title ("Porsche 911 Turbo/GT2"); model is the
+        -- code the V-page headers key on ("997T07"). Displayed as "title - model".
+        id TEXT PRIMARY KEY, title TEXT, model TEXT, page_count INTEGER, ingested_at TEXT
       );
       CREATE TABLE IF NOT EXISTS main_group (
         id INTEGER PRIMARY KEY, catalog_id TEXT, number TEXT, title TEXT
