@@ -119,11 +119,15 @@ Tables: `catalog`, `main_group`, `section`, `part`, `callout`, `pr_code`, `sales
 **Parts catalog (core)**
 - **catalog**: one row per ingested PDF (`id`, `model`, `page_count`, `ingested_at`)
 - **main_group**: top-level groups 0-9 (Engine, Gearbox, Body, etc.)
-- **section**: numbered like `103-010`; has `parts_page`, `diagram_page`, `diagram_image` path, `title_model` (engine/variant code), `title_remark` (left/right), `applicability` (section-level scope printed on the title row — gates every part in the section, e.g. `701-000` = `PR:480`)
+- **section**: numbered like `103-010`; has `parts_page`, `diagram_page`, `diagram_image` path, `title_remark` (left/right), `applicability` (section-level scope printed on the title row — gates every part in the section, e.g. `701-000` = `PR:480`)
+  - `title_model` is the Model column **as printed** and is display-only — it conflates engine, gearbox, model line and body style in one free-text string. `engine_code`, `gearbox_code`, `body_line`, `body_style` hold the same tokens typed and separated, each a canonical OR-list (`gearbox_code = 'G9750,G9788'` = either gearbox); NULL means the section does not constrain that facet. Filter on these, never on `title_model`.
+  - A section title's engine/gearbox code is the **union** of the codes inside, not a per-part gate: gearbox-specific parts carry their own code, genuinely shared parts (fluid, bearings) carry none. Match it as an OR-list — `title_model == vehicle.engine` breaks the parts behind `9770+` and `G9750,G9788`.
 - **part**: `position` is either plain `1`/`2` or parenthesized `(1)`/`(5)` (the latter are diagram callout refs); `applicability` encodes PR option codes + variant token + market + model year range, e.g. `TURBO/COUPE PR:098,490,981 | D >> - MJ 2007`
-  - `parent_id` — colour/trim variants are **child rows** of their parent block. They carry no `position` and no `applicability` of their own: they inherit the parent's (the viewer resolves this via `COALESCE(NULLIF(p.applicability,''), pp.applicability)`). Top-level parts are `parent_id IS NULL`.
+  - `parent_id` — colour/trim variants are **child rows** of their parent block. They carry no `position`. Top-level parts are `parent_id IS NULL`.
+  - A child's `applicability` is empty when it shares the parent's scope, and the viewer inherits via `COALESCE(NULLIF(p.applicability,''), pp.applicability)`. When a variant carries its own scope (its own Model text, or a year footer printed under it) the child stores its **full effective scope** — the parent's facets already merged in — because that COALESCE *replaces* rather than merges, and a child holding only its own delta would silently escape the parent's PR gate.
   - `colour_code` — the trim code on a variant row (`FSA`), also retained as a suffix on `part_number`.
-  - A part is a **block**: a header row plus continuation rows that extend each column independently. `extractParts()` is block-oriented; a row-oriented read of this PDF is wrong. See AUDIT.md.
+  - A part is a **block**: a header row plus continuation rows that extend each column independently. `extractParts()` is block-oriented; a row-oriented read of this PDF is wrong. A year footer scopes the single row it is printed under, not the run of rows above it.
+  - Applicability also carries **serial breakpoints**: `F >> 99-8S780 473` (chassis) and `M >> 628 01460` (engine number). These are not a flat number line — the catalog allocates a separate block per variant/market, so a breakpoint only speaks about a car in its own `vin_range`/`engine_number_range` block. `APPL.serialAdmits` enforces that; the viewer resolves the car's block and passes it in.
 - **callout**: OCR-extracted bounding boxes (pixel coords at 2× scale) per section diagram; links to parts via matching `number` against the stripped position value within the same `section_id`
 
 **V-pages (model/option info, parsed from intro pages)**
@@ -132,5 +136,13 @@ Tables: `catalog`, `main_group`, `section`, `part`, `callout`, `pr_code`, `sales
 - **vin_range**: VIN ranges by `model_year`, `vin_from`, `vin_to`, `start_date`, `remark` (market, e.g. "997 Turbo (USA, CN, CDN, MEX, BR)")
 - **engine_code**: EC codes with `displacement_l`, `power_kw`, `power_hp`, `cylinders`, date range
 - **transmission_code**: TC codes with `type_code` (e.g. "6S", "5A"), date range
-- **engine_number_range**: serial ranges (`number_from`/`number_to`) per `model_year` + `vehicle_type` + `engine_type`
-- **transmission_number_range**: serial ranges per `model_year` + `vehicle_type` + `gearbox_type`
+- **engine_number_range**: serial ranges (`number_from`/`number_to`) per `model_year` + `vehicle_type` + `engine_type`. Sound — an engine number resolves to exactly one row, so this is how `vfEngine` is derived.
+- **transmission_number_range**: serial ranges per `model_year` + `vehicle_type` + `gearbox_type`. **Never derive a gearbox from this table.** The `A9750` and `G9750` ranges are byte-identical in every model year, so it structurally cannot tell Tiptronic from manual, and a real serial resolves to the wrong code. Gearbox comes from a PR code or from the user.
+
+## Applicability grammar (`docs/appl.js`)
+
+One parser, shared by `ingest.worker.js` (via `importScripts`) and the viewer/garage (via `<script src>`), same module pattern as `vin.js`. It is the only thing that understands the scope language printed in the Model column and in year/breakpoint footers: `PR:` option slots (OR within a token, AND across tokens, `-nnn` negates), model lines, body styles, engine/gearbox codes, `MJ` year ranges, quoted markets (`"ROK"`, `-"CN."`), and chassis/engine serial breakpoints. `,` is OR and `+` is AND — a `+` that dangles at the end of a column has simply lost its right operand to the column split.
+
+`parse()` returns typed, separate facets; `matches(parsed, vehicle)` evaluates them against a vehicle spec. Two invariants: **a blank vehicle field never constrains and never rejects**, and **an unrecognised token is captured in `unknown` and never enforced** (which is what keeps `Z97.00`, a code with no V-page table, permissive rather than fatal). Vehicle facets (`vfLine`, `vfBody`, `vfEngine`, `vfGearbox`, `vfYear`, `vfMarket`, `vfPrCodes`) are user-editable per vehicle in the garage, offered from the catalog's own tables and VIN-prefilled only where a sound derivation exists.
+
+`tools/appl-test.js` holds the assertions (run via the repo's Chromium — there is no node here). Extend it alongside any grammar change.

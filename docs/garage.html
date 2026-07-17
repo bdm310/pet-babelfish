@@ -43,6 +43,7 @@
              border-radius: 3px; padding: 0.05rem 0.4rem; font-size: 0.7rem; color: var(--text3); }
     .badge.cat { color: var(--accent); border-color: var(--accent-bd); background: var(--accent-bg2); }
     .badge.pr  { color: var(--pn); }
+    .badge.unknown { color: var(--warn, #c87800); border-color: var(--warn-bd, rgba(200,120,0,0.4)); }
     .card .actions { display: flex; gap: 0.4rem; margin-top: 0.3rem; }
     .card .actions button { padding: 0.25rem 0.5rem; font-size: 0.76rem; }
     .card .actions .spacer { margin-left: auto; }
@@ -121,20 +122,78 @@
           <label style="width:auto">Market</label>
           <input type="text" :value="form.vfMarket"
                  @input="form.vfMarket = $event.target.value.toUpperCase()"
-                 placeholder="D" style="width:4rem">
-          <span class="hint">market rarely filters parts (baseline D)</span>
+                 list="mkt-codes" placeholder="USA" style="width:5rem">
+          <datalist id="mkt-codes">
+            <template x-for="m in opts.markets" :key="m"><option :value="m"></option></template>
+          </datalist>
+          <span class="hint">only parts printed for a named market are filtered on it</span>
+        </div>
+
+        <div class="row" x-show="opts.lines.length || opts.bodies.length">
+          <label>Model</label>
+          <select x-model="form.vfLine" style="width:9rem">
+            <option value="">any line</option>
+            <template x-for="l in opts.lines" :key="l"><option :value="l" x-text="l"></option></template>
+          </select>
+          <label style="width:auto">Body</label>
+          <select x-model="form.vfBody" style="width:9rem">
+            <option value="">any body</option>
+            <template x-for="b in opts.bodies" :key="b"><option :value="b" x-text="b"></option></template>
+          </select>
+          <span class="hint">left blank, a facet does not filter</span>
+        </div>
+
+        <div class="row" x-show="opts.engines.length">
+          <label>Engine</label>
+          <select x-model="form.vfEngine" style="flex:1;min-width:12rem">
+            <option value="">any engine</option>
+            <template x-for="e in opts.engines" :key="e.code">
+              <option :value="e.code" x-text="e.label"></option>
+            </template>
+          </select>
+          <label style="width:auto">Engine no.</label>
+          <input type="text" x-model="form.engineNo" @input="deriveSpec()"
+                 placeholder="62807297" style="width:8rem"
+                 title="Stamped on the engine — looks the code up in the catalog's own serial ranges, and filters parts whose changeover is printed against it">
+        </div>
+
+        <div class="row">
+          <label>Chassis no.</label>
+          <input type="text" :value="form.vfChassis"
+                 @input="form.vfChassis = $event.target.value.toUpperCase()"
+                 placeholder="99-8S784090" style="width:12rem"
+                 title="Filled in from the VIN — parts whose changeover is printed against your car's own number block are filtered on it">
+          <span class="hint">from the VIN; changeovers printed for another block never apply</span>
+        </div>
+
+        <div class="row" x-show="opts.gearboxes.length">
+          <label>Gearbox</label>
+          <select x-model="form.vfGearbox" style="flex:1;min-width:12rem">
+            <option value="">any gearbox</option>
+            <template x-for="g in opts.gearboxes" :key="g.code">
+              <option :value="g.code" x-text="g.label"></option>
+            </template>
+          </select>
+          <span class="hint" x-show="!form.vfGearbox">the transmission serial ranges cannot tell these apart — pick or leave open</span>
         </div>
 
         <div class="row" style="align-items:flex-start">
           <label>PR codes</label>
           <div style="flex:1">
-            <input type="text" x-model="form.prText" @input="refreshPrPreview()"
+            <input type="text" x-model="form.prText" @input="refreshPrPreview(); deriveSpec()"
                    placeholder="e.g. 480 X51 XAA  (space/comma separated)" style="width:100%">
             <div class="pr-preview">
               <template x-for="pr in prPreview" :key="pr.code">
-                <span class="badge pr" :title="pr.desc" x-text="pr.desc ? (pr.code + ' · ' + pr.desc) : pr.code"></span>
+                <span class="badge pr" :class="{unknown: !pr.desc}" :title="pr.desc || 'Not in this catalog\'s option list'"
+                      x-text="pr.desc ? (pr.code + ' · ' + pr.desc) : pr.code"></span>
               </template>
             </div>
+            <template x-if="prUnknown.length">
+              <div class="hint" style="margin-top:0.3rem;color:var(--warn, #c87800)"
+                   title="Kept and filtered on — this catalog's option list just does not describe them. Check for a typo.">
+                ⚠ not in this catalog's option list: <span x-text="prUnknown.join(', ')"></span>
+              </div>
+            </template>
           </div>
         </div>
 
@@ -163,7 +222,7 @@
           <div class="badges">
             <span class="badge cat" x-text="v.catalogId || 'no catalog'"></span>
             <template x-if="v.spec && v.spec.vfYear"><span class="badge" x-text="'MJ ' + v.spec.vfYear"></span></template>
-            <template x-if="v.spec && v.spec.vfMarket"><span class="badge" x-text="v.spec.vfMarket"></span></template>
+            <template x-for="f in specBadges(v)" :key="f"><span class="badge" x-text="f"></span></template>
             <template x-if="v.spec && v.spec.vfPrCodes && v.spec.vfPrCodes.length">
               <span class="badge pr" x-text="v.spec.vfPrCodes.length + ' PR'"></span>
             </template>
@@ -181,10 +240,24 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
   <script src="theme.js"></script>
+  <script src="appl.js"></script>
   <script src="vin.js"></script>
   <script src="garage.js"></script>
   <script>
     const SQLJS_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
+
+    // Nobody knows their car by its EC/TC code, so name it with what the catalog says
+    // about it. A transmission's `type_code` is speeds plus A(utomatik) or
+    // S(chaltgetriebe) — the reading gearboxFromPrCodes depends on too. An unfamiliar
+    // shape is left as printed rather than guessed at.
+    const gearboxLabel = (tc, type) => {
+      const m = /^(\d)([AS])$/.exec(String(type || '').toUpperCase());
+      return [tc, type, m && `${m[1]}-speed ${m[2] === 'A' ? 'automatic' : 'manual'}`]
+             .filter(Boolean).join(' — ');
+    };
+    const engineLabel = (ec, displacement, hp) =>
+      [ec, [displacement && displacement + ' l', hp && hp + ' hp'].filter(Boolean).join(', ')]
+      .filter(Boolean).join(' — ');
 
     function garageApp() {
       return {
@@ -196,6 +269,12 @@
         vinMsg:    '', vinOk: false,
         prCodes:   {},        // code -> description for the selected catalog
         prPreview: [],
+        prUnknown: [],
+        // Facet vocabularies for the selected catalog — see onCatalogChange.
+        opts:      { engines: [], gearboxes: [], lines: [], bodies: [], markets: [] },
+        _engineNums:  [],     // engine serial ranges, for deriveSpec
+        _transmCodes: [],
+        _derived:  {},        // field -> the value deriveSpec last put there
         _vinIndex: null,
 
         async init() {
@@ -233,18 +312,26 @@
         // ── Form lifecycle ─────────────────────────────────────────
         blankForm() {
           return { id: null, nickname: '', vin: '', catalogId: '',
-                   vfYear: '', vfMarket: '', prText: '' };
+                   vfYear: '', vfMarket: '', vfLine: '', vfBody: '',
+                   vfEngine: '', vfGearbox: '', engineNo: '', vfChassis: '', prText: '' };
         },
         newVehicle() {
           this.form = this.blankForm();
-          this.vinMsg = ''; this.prPreview = []; this.prCodes = {};
+          this.vinMsg = ''; this.prPreview = []; this.prUnknown = []; this.prCodes = {};
+          this._derived = {};
         },
         editVehicle(v) {
+          // Nothing on a saved vehicle is a guess any more — it is what the owner
+          // kept — so no field here is deriveSpec's to overwrite.
+          this._derived = {};
           const s = v.spec || {};
           this.form = {
             id: v.id, nickname: v.nickname || '', vin: v.vin || '',
             catalogId: v.catalogId || '', decoded: v.decoded || null,
             vfYear: s.vfYear || '', vfMarket: s.vfMarket || '',
+            vfLine: s.vfLine || '', vfBody: s.vfBody || '',
+            vfEngine: s.vfEngine || '', vfGearbox: s.vfGearbox || '',
+            engineNo: s.engineNo || '', vfChassis: s.vfChassis || '',
             prText: (s.vfPrCodes || []).join(' '),
           };
           this.vinMsg = '';
@@ -293,27 +380,135 @@
           const extra = matches.length > 1 ? ` (+${matches.length - 1})` : '';
           this.vinMsg = `${fam} · ${my} · ${pm.variant || m.remark || ''}${pm.marketLabel ? ' · ' + pm.marketLabel : ''}${extra} → ${m.catalogId}`;
           this.vinOk  = true;
-          await this.onCatalogChange();
+          await this.onCatalogChange();   // the facet vocabularies the remark is read against
+
+          // The matched range names the car — the one thing the decode knows that the
+          // filter cannot get anywhere else. Blank fields only: a re-decode must not
+          // overwrite a correction the owner already made.
+          const remarks = idx.filter(r => r.catalogId === m.catalogId).map(r => r.remark);
+          const f = VIN.variantFacets(m.remark, remarks, this.opts.lines, this.opts.bodies);
+          if (!this.form.vfLine   && f.line)   this.form.vfLine   = f.line;
+          if (!this.form.vfBody   && f.body)   this.form.vfBody   = f.body;
+          if (!this.form.vfMarket && f.market) this.form.vfMarket = f.market;
+          // The chassis number the VIN reconstructs is exactly the one the parts
+          // pages print their changeovers against.
+          if (!this.form.vfChassis && dec.chassis) this.form.vfChassis = dec.chassis;
         },
 
-        // ── PR-code labeling for the selected catalog ──────────────
+        // ── Catalog facts for the selected catalog ─────────────────
+        // Every choice the form offers comes from the catalog that will be filtered.
+        // A hard-coded vocabulary would be wrong for the next model line, and a facet
+        // value no part carries could only hide the whole catalog.
         async onCatalogChange() {
           this.prCodes = {};
+          this.opts = { engines: [], gearboxes: [], lines: [], bodies: [], markets: [] };
+          this._engineNums = []; this._transmCodes = [];
           if (!this.form.catalogId || !this.SQL) { this.refreshPrPreview(); return; }
           let db = null;
           try {
             db = await this._openCatalogDb(this.form.catalogId);
-            const res = db.exec('SELECT code, description FROM pr_code');
-            for (const [code, desc] of (res[0]?.values ?? [])) this.prCodes[String(code).toUpperCase()] = desc;
+            const q = sql => (db.exec(sql)[0]?.values ?? []);
+            for (const [code, desc] of q('SELECT code, description FROM pr_code'))
+              this.prCodes[String(code).toUpperCase()] = desc;
+
+            this.opts.engines = q('SELECT ec, displacement_l, power_hp FROM engine_code ORDER BY ec')
+              .map(([ec, disp, hp]) => ({ code: ec, label: engineLabel(ec, disp, hp) }));
+            this.opts.gearboxes = q('SELECT tc, type_code FROM transmission_code ORDER BY tc')
+              .map(([tc, type]) => ({ code: tc, label: gearboxLabel(tc, type) }));
+
+            // The typed section columns are OR-lists ("TURBO,GT2"); a section scoped
+            // to either offers both, not the pair.
+            const split = col => [...new Set(
+              q(`SELECT DISTINCT ${col} FROM section WHERE COALESCE(${col},'')!=''`)
+                .flatMap(([v]) => v.split(',')).map(v => v.trim()).filter(Boolean))].sort();
+            this.opts.lines  = split('body_line');
+            this.opts.bodies = split('body_style');
+
+            this.opts.markets = [...new Set(
+              q(`SELECT applicability FROM part WHERE applicability LIKE '%"%'
+                 UNION SELECT applicability FROM section WHERE applicability LIKE '%"%'`)
+                .flatMap(([a]) => {
+                  const m = APPL.parse(a).markets;
+                  return [...m.any, ...m.not];
+                }))].sort();
+
+            this._engineNums = q('SELECT number_from, number_to, engine_type FROM engine_number_range')
+              .map(([from, to, type]) => ({ from, to, type }));
+            this._transmCodes = q('SELECT tc, type_code FROM transmission_code')
+              .map(([tc, type]) => ({ tc, type }));
           } catch {} finally { if (db) db.close(); }
           this.refreshPrPreview();
+          this.deriveSpec();
         },
+
+        // Fill in what the car's own numbers imply. A derivation is a starting point,
+        // never an answer: it only ever writes over a blank field or its own previous
+        // guess, so a hand-picked code survives, while a corrected engine number is
+        // free to move the code it derived.
+        deriveSpec() {
+          const set = (field, value) => {
+            const cur = this.form[field];
+            if (cur && cur !== this._derived[field]) return;   // the owner's, leave it
+            this.form[field]   = value;
+            this._derived[field] = value;
+          };
+          set('vfEngine',  this.engineFromNumber(this.form.engineNo));
+          set('vfGearbox', this.gearboxFromPrCodes(this.parsePrText()));
+        },
+
+        // Engine number → engine code, via the catalog's own serial ranges. The
+        // numbers are printed as a block prefix plus a serial ("628 00501>18000");
+        // comparing the whole number keeps the blocks apart.
+        engineFromNumber(no) {
+          const n = parseInt(String(no || '').replace(/\D/g, ''), 10);
+          if (!n) return '';
+          const hits = new Set();
+          for (const r of this._engineNums) {
+            const from = parseInt(String(r.from || '').replace(/\D/g, ''), 10);
+            const to   = parseInt(String(r.to   || '').replace(/\D/g, ''), 10);
+            if (from && to && n >= from && n <= to && r.type) hits.add(APPL.normalizeEngine(r.type));
+          }
+          return hits.size === 1 ? [...hits][0] : '';
+        },
+
+        // Gearbox from the option list. The transmission SERIAL ranges cannot do this
+        // — A9750's and G9750's are printed byte-identical, so they can never tell a
+        // Tiptronic from a manual — but an option code names the transmission outright.
+        // Read both tables rather than naming codes: `type_code` is speeds + A(utomatic)
+        // or S(ynchromesh), and an option whose description is a transmission spec
+        // ("6-speed manual transmission", "Tiptronic transmission") states the same
+        // thing in prose. Where that lands on two codes at once — this catalog has two
+        // different 6-speed manuals — nothing is derivable and the field stays open.
+        gearboxFromPrCodes(codes) {
+          const SPEC_RE = /^(?:(\d)-speed\s+)?(manual|automatic|tiptronic|pdk)\b[^.]*\b(?:transmission|gearbox)\b/i;
+          const KIND    = { manual: 'S', automatic: 'A', tiptronic: 'A', pdk: 'A' };
+          const hits = new Set();
+          for (const code of codes) {
+            const m = SPEC_RE.exec(this.prCodes[code] || '');
+            if (!m) continue;
+            for (const t of (this._transmCodes || [])) {
+              const tm = /^(\d)([A-Z])$/.exec(String(t.type || '').toUpperCase());
+              if (!tm) continue;
+              if (tm[2] !== KIND[m[2].toLowerCase()]) continue;
+              if (m[1] && tm[1] !== m[1]) continue;
+              hits.add(t.tc);
+            }
+          }
+          return hits.size === 1 ? [...hits][0] : '';
+        },
+
         parsePrText() {
           return (this.form.prText || '').split(/[\s,;/|]+/)
                    .map(s => s.trim().toUpperCase()).filter(Boolean);
         },
+        // Codes the catalog cannot label are still the car's, so they are kept and
+        // filtered on — PR codes and M-numbers are one vocabulary here and the
+        // sticker's M-numbers gate real parts. They are only called out, never dropped.
         refreshPrPreview() {
-          this.prPreview = this.parsePrText().map(code => ({ code, desc: this.prCodes[code] || '' }));
+          const codes = this.parsePrText();
+          this.prPreview = codes.map(code => ({ code, desc: this.prCodes[code] || '' }));
+          this.prUnknown = Object.keys(this.prCodes).length
+            ? codes.filter(c => !(c in this.prCodes)) : [];
         },
 
         // ── Save / delete ──────────────────────────────────────────
@@ -328,6 +523,15 @@
             spec: {
               vfYear: this.form.vfYear ? String(this.form.vfYear) : '',
               vfMarket: (this.form.vfMarket || '').toUpperCase(),
+              vfLine: this.form.vfLine || '',
+              vfBody: this.form.vfBody || '',
+              vfEngine: this.form.vfEngine || '',
+              vfGearbox: this.form.vfGearbox || '',
+              // Kept so the code can be re-derived if the catalog is re-ingested —
+              // and read directly: it is the number engine breakpoints are printed
+              // against, not just the way in to the engine code.
+              engineNo: (this.form.engineNo || '').trim(),
+              vfChassis: (this.form.vfChassis || '').trim().toUpperCase(),
               vfPrCodes: prCodes,
             },
           };
@@ -350,6 +554,11 @@
         },
 
         // ── Display helpers ────────────────────────────────────────
+        specBadges(v) {
+          const s = v.spec || {};
+          return [s.vfLine, s.vfBody, s.vfEngine, s.vfGearbox, s.vfMarket].filter(Boolean);
+        },
+
         vehicleSubtitle(v) {
           const bits = [];
           if (v.decoded && v.decoded.family) bits.push(String(v.decoded.family).toUpperCase());

@@ -31,6 +31,10 @@ importScripts(
   'https://cdn.jsdelivr.net/npm/tesseract.js@7/dist/tesseract.min.js'
 );
 
+// The applicability grammar, shared verbatim with the viewer so a part's scope
+// means the same thing when written as it does when read.
+importScripts(new URL('./appl.js', self.location.href).href);
+
 // Prevent pdf.min.js from spawning a nested worker — it should use the
 // already-running pdf.worker.min.js indirectly via the fake worker path.
 pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -137,9 +141,11 @@ async function ingest(buffer, catalogId) {
 
   post('status', { message: 'Parsing model/option information…' });
   t = performance.now();
-  const { prCodes, salesTypes, vinRanges, engineCodes, transmCodes, engineNums, transmNums }
-    = await parseVPages(pdf, sections[0].diagramPage);
-  insertVPageData(db, catalogId, { prCodes, salesTypes, vinRanges, engineCodes, transmCodes, engineNums, transmNums });
+  const vp = await parseVPages(pdf, sections[0].diagramPage);
+  insertVPageData(db, catalogId, vp);
+  // V-pages are parsed before any section, so the code index comes straight from
+  // this parse — no re-query and no second pass over the sections.
+  const codeIndex = buildCodeIndex(vp);
   TIMING.vPageParse = performance.now() - t;
 
   const mgCache   = new Map(); // `catalogId\0number` → rowid
@@ -203,7 +209,7 @@ async function ingest(buffer, catalogId) {
     for (let pi = 0; pi < partsResults.length; pi++) {
       const { parts, titleRow } = partsResults[pi];
       t = performance.now();
-      if (pi === 0 && titleRow) applyTitleRow(db, secId, titleRow, sec.sectionTitle);
+      if (pi === 0 && titleRow) applyTitleRow(db, secId, titleRow, sec.sectionTitle, codeIndex);
       partCount += insertPartBlocks(db, partStmt, secId, catalogId, parts);
       TIMING.dbInserts += performance.now() - t;
     }
@@ -680,25 +686,69 @@ function parseTransmissionNumbersPage(rows, transmNumbers) {
 //                                                                         [488]PR:098,490,  <- Model wrap
 //                            [162]Leather                                 [488]981          <- Description AND Model
 //   [57]997 555 201 05 [138]FSA [162]black/grey                                             <- colour variant (child row)
-//                            [162]D >> - MJ 2007                                           <- year footer, scopes the BLOCK
+//                            [162]D >> - MJ 2007                                           <- year footer, scopes FSA
 //
 // Rows are routed BY COLUMN, never by sniffing the whole row:
 //   Pos / Qty   — header row only. Accumulating them would corrupt values that
 //                 are currently exact.
-//   Model       — always extends the PARENT block's applicability, even when a
-//                 colour variant intervenes.
+//   Model       — extends the CURRENT row. A Model-only continuation (no part
+//                 number) extends the parent block; a row that carries a part
+//                 number is a new child and owns whatever Model text it carries.
 //   Description — applicability-shaped text ("D - MJ 2008>>", "F >> 99-9S770 428")
-//                 extends the parent's applicability; anything else extends the
-//                 CURRENT row's description (the parent, or the last variant).
+//                 scopes the CURRENT row; anything else extends the current row's
+//                 description (the parent, or the last variant).
 //   Remark      — extends the current row's remark.
 //
 // A colour variant (Part Number but no Pos) becomes a CHILD of the open block: it
 // stays orderable and searchable but occupies no position of its own.
+//
+// A year/chassis footer scopes exactly the ONE row it is printed under — never a
+// run of rows, and never the whole block. 809-020 (p487) proves it: the same
+// "D >> - MJ 2007" is reprinted under each of three consecutive colours, and
+// colours with no footer sit BETWEEN footered ones ("M7Z GT Silver" between two
+// "D >> - MJ 2008" rows). Sweeping a footer back over the preceding run would
+// restrict long-running colours to the year in which a neighbour was introduced.
+//
+// Because a child's scope must survive on its own — the viewer resolves a child
+// through COALESCE(child.applicability, parent.applicability), which REPLACES
+// rather than merges — a child that carries any scope of its own is given the
+// parent's scope too. Storing only the child's own footer would silently drop the
+// parent's PR gate from every such row.
 
 // Cross-reference / sub-assembly markers. Their bodies are printed back at the
 // Description origin, so once one appears it closes description+remark
 // accumulation for the block (applicability continuations still route normally).
-const ANNOT_RE = /^(?:with:|without:|also use:|only in conj\. with:|see illustration)/i;
+// "comprising:" lists a kit's contents, "We take back:" names the core a part is
+// exchanged against, "Group:" and "use if required:" point at a technical manual
+// or an alternative number — none of them describe the part they sit under.
+const ANNOT_RE = /^(?:with:|without:|also use:|use if required:|only in conj\. with:|see illustration|comprising:|we take back:|group:)/i;
+
+// "Valid up to:" / "Valid from:" head the F/M breakpoint rows printed beneath
+// them. The direction is already carried by where each clause puts its '>>', so
+// the label adds nothing — but it must NOT close the block the way a cross-
+// reference does, because those clauses still have to reach the row they scope.
+const SCOPE_LABEL_RE = /^(?:valid up to:|valid from:)/i;
+
+// A labelled value rather than prose: the label sits in the Description column
+// while the value it names is over in Remark ("relay location/code no.:" | "S4").
+// The pair belongs in the remark — the label alone pollutes the description, and
+// the bare "S4" is the only thing telling three otherwise identical relays apart.
+const REMARK_LABEL_RE = /^relay location\/code no\.:/i;
+
+// A market exclusion printed as prose, with the country named on the row below.
+// It joins the market vocabulary the catalog already quotes ('"AUS"', '"GB."',
+// '"J.."', '"ROK"', '"CN."') and leads year clauses with ("D" = Deutschland):
+// those are international vehicle registration codes, under which Australia is
+// AUS and Austria would be A — so the reading is not ambiguous. 001-005 prints
+// the Australia-only fuel sticker as '"AUS"'; this is its complement.
+// Only a name we can place is mapped. Anything else stays description text: a
+// country silently mapped to the wrong code hides parts that do fit the car.
+const NOT_FOR_RE      = /^not for:/i;
+const MARKET_NAME_CODE = { AUSTRALIEN: 'AUS' };
+
+// A cut-to-length row: "16 | shorten to: | 980 MM | 1" printed under the bulk
+// stock it is cut from ("- 900 918 005 40 | Pipe | *").
+const CUT_LENGTH_RE = /^shorten to:/i;
 
 // A Pos value: plain "5", or "(5)" when the part differs from the illustration.
 const POS_RE = /^(?:\d{1,3}|\(\d{1,3}\))$/;
@@ -720,6 +770,13 @@ function isApplicabilityModel(t) {
   return /^PR:/.test(t) || /\bMJ\b/.test(t) || t.includes('>>');
 }
 
+// A colour variant's Model text, kept only if the whole value parses as scope.
+// No code index here: extraction runs before any DB handle exists, and a variant
+// never carries an engine/gearbox code — shape alone settles every value we see.
+function variantScope(model) {
+  return model && APPL.isScope(model) ? model : '';
+}
+
 // Model-column tokens are space-joined, EXCEPT a wrapped PR list: "PR:098,490,"
 // followed by "981" must become the single token "PR:098,490,981". Two separate
 // tokens would be read as two option slots and AND-ed, wrongly rejecting the part.
@@ -732,22 +789,64 @@ function appendText(acc, tok) {
   return acc ? acc + ' ' + tok : tok;
 }
 
-function makeBlock(pos, partNumber, colourCode, description, qty, remark, model, cols) {
+function makeBlock(pos, partNumber, colourCode, description, qty, remark, model) {
   return {
     pos, partNumber, colourCode,
     description, qty, remark,
     applicability: model,   // Model column of the header row — the biggest single
     applDesc:      [],      // fix: this never used to reach the DB at all.
     annotClosed:   false,
+    awaitNotFor:   false,   // a "Not for:" marker is waiting for its country row
     children:      [],
-    rawColumns:    rawColumns(cols),
   };
 }
 
-// Final applicability string. Segments are joined by ' | '; the viewer parses PR
-// tokens and MJ years out of the whole string, so segment order is not load-bearing.
+function makeChild(partNumber, colourCode, description, remark, model) {
+  return {
+    pos: null, partNumber, colourCode,
+    description, qty: '', remark,
+    applicability: model,   // a variant's own Model text is its own scope, not the
+    applDesc:      [],      // parent's — the parent may carry none at all.
+  };
+}
+
+// Final applicability string. Segments are joined by ' | '; PR tokens, facets and
+// MJ years are parsed out of the whole string, so segment order is not load-bearing.
 function blockApplicability(b) {
   return [b.applicability, ...b.applDesc].filter(Boolean).join(' | ');
+}
+
+// Which kind of breakpoint a segment states, if any. "PR:XMJ" is an option code,
+// not a year — only a MJ followed by a year is one.
+function segmentKind(seg) {
+  if (/\bMJ\s*\d{4}/.test(seg)) return 'year';
+  if (/^F\s/.test(seg))         return 'chassis';
+  if (/^M\s/.test(seg))         return 'engineNum';
+  return 'facet';
+}
+
+// A child's stored scope is its FULL effective scope: the parent's, then its own.
+// The viewer picks one or the other, never both, so a child that states anything
+// must state everything or it silently escapes the parent's gate. A child with no
+// scope of its own is left empty and inherits the parent as before.
+//
+// Where both state the SAME kind of breakpoint the child's wins outright, because
+// the two are an intersection and segments of one kind read as alternatives: a
+// Sycamore door handle runs ">> - MJ 2008" and its Palm green variant ">> - MJ 2007",
+// which is MY2007 and under — keeping both would read as "either", widening the
+// variant back out to the parent's range. The parent's facets (line, option) are
+// never dropped; those the child only ever adds to.
+function childApplicability(child, block) {
+  const own = blockApplicability(child);
+  if (!own) return '';
+  const ownKinds = new Set(
+    [child.applicability, ...child.applDesc].filter(Boolean).map(segmentKind)
+  );
+  ownKinds.delete('facet');
+  const inherited = blockApplicability(block)
+    .split(' | ')
+    .filter(s => s && !ownKinds.has(segmentKind(s)));
+  return [...inherited, own].join(' | ');
 }
 
 async function extractParts(pdf, pageNum, carry = {}) {
@@ -768,14 +867,22 @@ async function extractParts(pdf, pageNum, carry = {}) {
   // may be printed at the top of the next page.
   let block  = carry.block  ?? null;  // open parent block
   let curRow = carry.curRow ?? null;  // parent, or its last colour variant
+  // The last block that carried a part number — the stock a "shorten to:" row is
+  // cut from. It is printed once, above a run of cut lengths, and can sit on the
+  // previous page.
+  let bulk   = carry.bulk   ?? null;
   // The title block exists only on a section's first parts page, before any data
   // row. A carried-in block means we resume mid-data.
   let titleClosed = carry.isFirst === false || block != null;
 
   const titleDescLines   = [];
   const titleRemarkLines = [];
-  const titleModelLines  = [];
-  const titleApplLines   = [];
+  // Model-column lines of the title block, wrap-joined before routing: a title
+  // that prints "PR:098,639," then "640,981" states ONE option slot, and routing
+  // the halves separately leaves the first with a dangling comma and reads the
+  // second as an unrelated token.
+  const titleModelToks   = [];
+  const titleApplDesc    = [];
 
   for (const row of rows) {
     const texts = row.items.map(it => it.str.trim()).filter(Boolean);
@@ -814,25 +921,44 @@ async function extractParts(pdf, pageNum, carry = {}) {
     //    testing texts[0] alone let "997" (a part number) pass as a position.
     if (pos && POS_RE.test(pos)) {
       titleClosed = true;
-      // No part number is fine: 84 rows are real positions that own a callout but
-      // list no orderable number (they were dropped before, orphaning callouts).
-      block = makeBlock(pos, fullPn, colour || null, desc, qty, remark, model, cols);
+      // A cut length owns a position and a callout, so it is a part in its own
+      // right rather than a variant of the bulk row — but the number and the
+      // description of the stock it comes from are printed only on that row, and
+      // without them it is unorderable and reads as a bare "shorten to:".
+      if (!fullPn && bulk && CUT_LENGTH_RE.test(desc)) {
+        block = makeBlock(pos, bulk.partNumber, bulk.colourCode, bulk.description,
+                          qty, appendText(desc, remark), model);
+      } else {
+        // No part number is fine: 84 rows are real positions that own a callout but
+        // list no orderable number (they were dropped before, orphaning callouts).
+        block = makeBlock(pos, fullPn, colour || null, desc, qty, remark, model);
+        if (fullPn) bulk = block;
+      }
       parts.push(block);
       curRow = block;
       continue;
     }
 
     // ── Dash position — a part that exists but is not shown in the diagram.
-    //    Only a part when it carries a part number; a bare "-" introduces an
-    //    annotation ("- primed", "- Gear wheel sets / see illustration: 303-000").
+    //    A bare "-" also introduces annotations ("- primed") and grouping headings
+    //    ("- Signs/notices" over the stickers that follow, "- Gear wheel sets" over
+    //    a see-illustration xref). The Qty column separates them: a line item says
+    //    how many are fitted, a heading never does. Testing the Model column too
+    //    would keep six headings that carry only a PR code ("- Brake disc | PR:450"
+    //    heading "Only / in pairs / Replace / Technical manual / Attention").
     if (pos === '-') {
       titleClosed = true;
       if (pn) {
-        block  = makeBlock('-', fullPn, colour || null, desc, qty, remark, model, cols);
+        block  = makeBlock('-', fullPn, colour || null, desc, qty, remark, model);
+        parts.push(block);
+        curRow = block;
+        bulk   = block;
+      } else if (qty && !isAnnot) {
+        block  = makeBlock('-', '', null, desc, qty, remark, model);
         parts.push(block);
         curRow = block;
       } else {
-        block = null; curRow = null;   // annotation — nothing may attach to it
+        block = null; curRow = null;   // annotation or heading — nothing may attach
       }
       continue;
     }
@@ -845,14 +971,12 @@ async function extractParts(pdf, pageNum, carry = {}) {
     }
 
     // ── Colour variant — a Part Number with no Pos. Becomes a child of the block.
+    //    It owns its Model text: a seat-belt colour row states the PR option that
+    //    selects that colour, and the parent often states nothing at all.
     if (pn && /[0-9A-Za-z]/.test(pn)) {
       titleClosed = true;
       if (block) {
-        curRow = {
-          pos: null, partNumber: fullPn, colourCode: colour || null,
-          description: desc, qty: '', remark, applicability: '',
-          rawColumns: rawColumns(cols),
-        };
+        curRow = makeChild(fullPn, colour || null, desc, remark, variantScope(model));
         block.children.push(curRow);
       }
       continue;
@@ -863,36 +987,65 @@ async function extractParts(pdf, pageNum, carry = {}) {
       if (isAnnot) { titleClosed = true; continue; } // notes/attention block — stop
       if (desc) {
         // A section-level model-year scope (20 sections) rather than title text
-        if (isApplicabilityText(desc)) titleApplLines.push(desc);
+        if (isApplicabilityText(desc)) titleApplDesc.push(desc);
         else                           titleDescLines.push(desc);
       }
       if (remark) titleRemarkLines.push(remark);
       if (model) {
-        // "PR:480" on the title row gates the WHOLE section (15 sections). It used
-        // to be swallowed by the row-level applicability sniff and lost entirely.
-        if (isApplicabilityModel(model)) titleApplLines.push(model);
-        else                             titleModelLines.push(model);
+        if (titleModelToks.length && titleModelToks[titleModelToks.length - 1].endsWith(','))
+          titleModelToks[titleModelToks.length - 1] += model;
+        else
+          titleModelToks.push(model);
       }
       continue;
     }
 
     // ── Continuation rows ──
-    // Cross-reference markers carry their target in the Remark column and
-    // occasionally a PR in Model; neither belongs to the part, so skip the row
-    // whole and stop taking description/remark for this block.
-    if (isAnnot) {
-      if (block) block.annotClosed = true;
-      continue;
-    }
 
     if (!block) continue;
 
-    // Model always extends the PARENT, even across intervening colour variants.
+    // The Model column is read BEFORE the Description column is even looked at,
+    // because the columns are independent: a marker in Description says nothing
+    // about the row's Model. 805-000 p363 prints one windscreen's "PR:440,568" on
+    // an "also use:" row and its sibling's on a plain row — the same gate, and
+    // skipping the row whole would keep one and drop the other. 904-000 p696
+    // (PR:268), 902-005 p667 (-"CN.") and 809-020 p487 (PR:XME) are the same
+    // shape: a Model continuation that happens to share a row with a marker.
+    //
+    // A Model-only continuation carries no part number of its own, so it can only
+    // be extending the parent — including a PR list wrapped across two rows, which
+    // must not be handed to whatever colour variant happens to be open.
     if (model) block.applicability = appendModelToken(block.applicability, model);
 
+    // Cross-reference markers carry their target in the Remark column; it belongs
+    // to the part they point AT, not this one, so take no more description or
+    // remark for this block.
+    if (isAnnot) { block.annotClosed = true; continue; }
+
+    // Heads the breakpoint rows below it and says nothing they do not; skipped
+    // rather than closed so those rows still reach the row they scope.
+    if (desc && SCOPE_LABEL_RE.test(desc)) continue;
+
+    if (desc && REMARK_LABEL_RE.test(desc)) {
+      if (!block.annotClosed && curRow)
+        curRow.remark = appendText(curRow.remark, appendText(desc, remark));
+      continue;
+    }
+
+    // The country this excludes is on the next row, so arm the block and read it
+    // there. Only the parent is armed: the marker is printed against the part.
+    if (desc && NOT_FOR_RE.test(desc)) { block.awaitNotFor = true; continue; }
+
     if (desc) {
+      if (block.awaitNotFor) {
+        block.awaitNotFor = false;
+        const code = MARKET_NAME_CODE[desc.trim().toUpperCase()];
+        if (code) { (curRow ?? block).applDesc.push(`-"${code}"`); continue; }
+        // Unmapped: fall through and keep it as description text rather than
+        // drop a constraint we cannot express.
+      }
       if (isApplicabilityText(desc)) {
-        block.applDesc.push(desc);           // scopes the block, not the variant
+        (curRow ?? block).applDesc.push(desc);   // scopes the row it is printed under
       } else if (!block.annotClosed && curRow) {
         curRow.description = appendText(curRow.description, desc);
       }
@@ -902,17 +1055,25 @@ async function extractParts(pdf, pageNum, carry = {}) {
     }
   }
 
+  // "PR:480" on the title row gates the WHOLE section (15 sections); the variant
+  // and code tokens beside it are the section's own scope. They are split apart
+  // here only because `model` is the display string the viewer prints verbatim —
+  // the typed facets are derived from the same tokens downstream.
+  const titleModelLines = titleModelToks.filter(t => !isApplicabilityModel(t));
+  const titleApplModel  = titleModelToks.filter(t =>  isApplicabilityModel(t));
+
   const titleRow = (titleDescLines.length || titleRemarkLines.length ||
-                    titleModelLines.length || titleApplLines.length)
+                    titleModelToks.length || titleApplDesc.length)
     ? {
         description:   titleDescLines.join(' '),
         remark:        titleRemarkLines.join(' '),
         model:         [...new Set(titleModelLines)].join(' '),
-        applicability: titleApplLines.join(' | '),
+        modelScope:    [...new Set(titleModelToks)].join(' '),
+        applicability: [...titleApplModel, ...titleApplDesc].join(' | '),
       }
     : null;
 
-  return { parts, titleRow, carry: { block, curRow, isFirst: false } };
+  return { parts, titleRow, carry: { block, curRow, bulk, isFirst: false } };
 }
 
 // ── Row and column utilities ──────────────────────────────────────────────────
@@ -960,20 +1121,13 @@ function colText(items) {
   return items?.map(it => it.str.trim()).filter(Boolean).join(' ') ?? '';
 }
 
-// Plain {column: [strings]} snapshot of a row — kept as the raw escape hatch.
-function rawColumns(cols) {
-  return Object.fromEntries(
-    Object.entries(cols).map(([k, v]) => [k, v.map(it => it.str.trim())])
-  );
-}
-
 // Extract every parts page of a section, in order. A block can span a page break
 // (its colour variants and year footer may continue overleaf), so the open block is
 // carried from page to page.
 // nextDiagramPage is the exclusive upper bound (first page of the next section).
 async function extractSectionParts(pdf, firstPartsPage, nextDiagramPage) {
   const out = [];
-  let carry = { block: null, curRow: null, isFirst: true };
+  let carry = { block: null, curRow: null, bulk: null, isFirst: true };
   for (let p = firstPartsPage; p < nextDiagramPage; p++) {
     const t = performance.now();
     let r = { parts: [], titleRow: null, carry: { ...carry, isFirst: false } };
@@ -1462,7 +1616,9 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
   // Columns added by the block-oriented parts rewrite — a DB ingested before it
   // won't have them, and a parts-only re-ingest must not require a full re-run.
   ensureColumns(db, 'part',    { parent_id: 'INTEGER', colour_code: 'TEXT' });
-  ensureColumns(db, 'section', { applicability: 'TEXT' });
+  ensureColumns(db, 'section', { applicability: 'TEXT', engine_code: 'TEXT',
+                                 gearbox_code: 'TEXT', body_line: 'TEXT',
+                                 body_style: 'TEXT' });
   db.exec('CREATE INDEX IF NOT EXISTS part_parent_idx ON part(parent_id)');
 
   post('status', { message: 'Parsing table of contents…' });
@@ -1474,6 +1630,7 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
     db.run(`DELETE FROM ${tbl} WHERE catalog_id=?`, [catalogId]);
   const vp = await parseVPages(pdf, sections[0].diagramPage);
   insertVPageData(db, catalogId, vp);
+  const codeIndex = buildCodeIndex(vp);
 
   let targets;
   if (sectionNums?.length) {
@@ -1546,7 +1703,7 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
       db.run('DELETE FROM part WHERE section_id=?', [secId]);
       for (let pi = 0; pi < partsResults.length; pi++) {
         const { parts, titleRow } = partsResults[pi];
-        if (pi === 0 && titleRow) applyTitleRow(db, secId, titleRow, sec.sectionTitle);
+        if (pi === 0 && titleRow) applyTitleRow(db, secId, titleRow, sec.sectionTitle, codeIndex);
         partCount += insertPartBlocks(db, partStmt, secId, catalogId, parts);
       }
     } finally {
@@ -1724,7 +1881,13 @@ function createSchema(db) {
       title_remark TEXT, title_model TEXT,
       -- Scope printed on the section's title row (e.g. "PR:480" gating the whole
       -- manual-gearbox section). AND-ed with each part's own applicability.
-      applicability TEXT
+      applicability TEXT,
+      -- title_model conflates engine, gearbox, model line and body style in one
+      -- free-text string, so nothing can filter on any of them. These hold the same
+      -- tokens typed and separated, each as a canonical OR-list ("G9750,G9788" =
+      -- either gearbox); title_model stays as printed because it is the display
+      -- string. NULL means the section does not constrain that facet.
+      engine_code TEXT, gearbox_code TEXT, body_line TEXT, body_style TEXT
     );
     -- parent_id: colour/trim variants of a part are CHILD rows. They stay orderable
     -- and searchable but occupy no position of their own and inherit the parent's
@@ -1733,7 +1896,7 @@ function createSchema(db) {
       id INTEGER PRIMARY KEY, section_id INTEGER, catalog_id TEXT,
       parent_id INTEGER REFERENCES part(id),
       position TEXT, part_number TEXT, colour_code TEXT, description TEXT,
-      quantity TEXT, unit TEXT, remarks TEXT, applicability TEXT, raw_columns TEXT
+      quantity TEXT, remarks TEXT, applicability TEXT
     );
     CREATE INDEX IF NOT EXISTS part_parent_idx ON part(parent_id);
     CREATE VIRTUAL TABLE IF NOT EXISTS part_fts USING fts4(
@@ -1817,35 +1980,51 @@ function insertSection(db, mgId, catalogId, num, title, partsPage, diagPage, img
 const PART_INSERT_SQL =
   `INSERT INTO part
      (section_id, catalog_id, parent_id, position, part_number, colour_code,
-      description, quantity, remarks, applicability, raw_columns)
-   VALUES (?,?,?,?,?,?,?,?,?,?,?)`;
+      description, quantity, remarks, applicability)
+   VALUES (?,?,?,?,?,?,?,?,?,?)`;
 
 // Write a section's blocks: each parent, then its colour variants as child rows.
-// Children carry no position and no applicability — they inherit the parent's.
+// Children carry no position; they inherit the parent's applicability unless the
+// PDF scoped them individually, in which case they carry the whole resolved scope.
 function insertPartBlocks(db, partStmt, secId, catalogId, parts) {
   let n = 0;
   for (const b of parts) {
     partStmt.run([secId, catalogId, null, b.pos, b.partNumber, b.colourCode,
-                  b.description, b.qty, b.remark, blockApplicability(b),
-                  JSON.stringify(b.rawColumns)]);
+                  b.description, b.qty, b.remark, blockApplicability(b)]);
     n++;
     if (!b.children.length) continue;
     const parentId = db.exec('SELECT last_insert_rowid()')[0].values[0][0];
     for (const c of b.children) {
       partStmt.run([secId, catalogId, parentId, null, c.partNumber, c.colourCode,
-                    c.description, c.qty, c.remark, c.applicability,
-                    JSON.stringify(c.rawColumns)]);
+                    c.description, c.qty, c.remark, childApplicability(c, b)]);
       n++;
     }
   }
   return n;
 }
 
-function applyTitleRow(db, secId, titleRow, fallbackTitle) {
+// The catalog's OWN engine/transmission tables decide what a code token means.
+// A hard-coded vocabulary would be wrong for the next model line, and guessing by
+// shape would promote "Z97.00" — which resolves to no V-page table at all — into a
+// constraint that rejects every vehicle.
+function buildCodeIndex(vp) {
+  return {
+    engines:   new Set((vp?.engineCodes ?? []).map(e => APPL.normalizeToken(e.ec))),
+    gearboxes: new Set((vp?.transmCodes ?? []).map(t => APPL.normalizeToken(t.tc))),
+  };
+}
+
+const orList = group => (group.any.length ? group.any.join(',') : null);
+
+function applyTitleRow(db, secId, titleRow, fallbackTitle, codeIndex) {
+  const scope = APPL.parse(titleRow.modelScope || '', { codeIndex });
   db.run(
-    'UPDATE section SET title=?, title_remark=?, title_model=?, applicability=? WHERE id=?',
+    `UPDATE section SET title=?, title_remark=?, title_model=?, applicability=?,
+       engine_code=?, gearbox_code=?, body_line=?, body_style=? WHERE id=?`,
     [titleRow.description || fallbackTitle, titleRow.remark || null,
-     titleRow.model || null, titleRow.applicability || null, secId]
+     titleRow.model || null, titleRow.applicability || null,
+     orList(scope.engines), orList(scope.gearboxes),
+     orList(scope.lines), orList(scope.bodies), secId]
   );
 }
 

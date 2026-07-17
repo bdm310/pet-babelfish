@@ -225,9 +225,61 @@
   <div id="filter-bar" x-show="filterPanelOpen">
     <span class="fl">MJ</span>
     <input type="number" x-model="vfYear" placeholder="2008" min="1990" max="2030" style="width:5rem">
+    <template x-if="lineOptions.length">
+      <span class="vin-box">
+        <span class="fl">Model</span>
+        <select x-model="vfLine" title="Model line — blank matches every line">
+          <option value="">any</option>
+          <template x-for="l in lineOptions" :key="l"><option :value="l" x-text="l"></option></template>
+        </select>
+      </span>
+    </template>
+    <template x-if="bodyOptions.length">
+      <span class="vin-box">
+        <span class="fl">Body</span>
+        <select x-model="vfBody" title="Body style — blank matches every body">
+          <option value="">any</option>
+          <template x-for="b in bodyOptions" :key="b"><option :value="b" x-text="b"></option></template>
+        </select>
+      </span>
+    </template>
+    <template x-if="engineOptions.length">
+      <span class="vin-box">
+        <span class="fl">Engine</span>
+        <select x-model="vfEngine" title="Engine code — blank matches every engine">
+          <option value="">any</option>
+          <template x-for="e in engineOptions" :key="e.code">
+            <option :value="e.code" x-text="e.label"></option>
+          </template>
+        </select>
+      </span>
+    </template>
+    <template x-if="gearboxOptions.length">
+      <span class="vin-box">
+        <span class="fl">Gearbox</span>
+        <select x-model="vfGearbox" title="Gearbox code — blank matches every gearbox">
+          <option value="">any</option>
+          <template x-for="g in gearboxOptions" :key="g.code">
+            <option :value="g.code" x-text="g.label"></option>
+          </template>
+        </select>
+      </span>
+    </template>
     <span class="fl">Market</span>
     <input type="text" :value="vfMarket" @input="vfMarket = $event.target.value.toUpperCase()"
-           placeholder="D" style="width:4rem">
+           list="vf-markets" placeholder="USA" style="width:4.5rem"
+           title="Your market's code. Only parts printed for a named market are filtered on it.">
+    <datalist id="vf-markets">
+      <template x-for="m in marketOptions" :key="m"><option :value="m"></option></template>
+    </datalist>
+    <span class="fl">Chassis</span>
+    <input type="text" :value="vfChassis" @input="vfChassis = $event.target.value.toUpperCase()"
+           placeholder="99-8S784090" style="width:8rem"
+           title="Chassis number — filled in by the VIN decoder. Only parts whose changeover is printed for your car's own number block are filtered on it.">
+    <span class="fl">Engine&nbsp;No</span>
+    <input type="text" :value="vfEngineNo" @input="vfEngineNo = $event.target.value.toUpperCase()"
+           placeholder="62807297" style="width:7rem"
+           title="Engine number, as stamped. Only parts whose changeover is printed for your engine's own number block are filtered on it.">
     <span class="fl">PR&nbsp;Codes</span>
     <div class="vf-chips">
       <template x-for="pr in vfPrCodes" :key="pr">
@@ -256,8 +308,8 @@
     </div>
     <template x-if="prUnknown.length">
       <span class="vf-pr-warn" @click="prUnknown = []"
-            :title="'Not in this catalog\'s option list — click to dismiss'">
-        ⚠ unknown: <span x-text="prUnknown.join(', ')"></span> ×
+            :title="'Kept and filtered on, but this catalog\'s option list does not describe them — check for a typo. Click to dismiss.'">
+        ⚠ not in option list: <span x-text="prUnknown.join(', ')"></span> ×
       </span>
     </template>
     <button style="background:none;border:none;color:var(--text4);cursor:pointer;font-family:monospace;font-size:0.78rem"
@@ -307,7 +359,9 @@
         <template x-if="searchMode">
           <span>
             Search: <strong x-text="query"></strong>
-            <span class="count" x-text="searchResults.length + ' results'"></span>
+            <span class="count" x-text="filterActive
+              ? (searchMatchCount + ' / ' + searchResults.length + ' results match')
+              : (searchResults.length + ' results')"></span>
             <button style="background:none;border:none;color:var(--text4);cursor:pointer;font-family:monospace;margin-left:0.5rem"
                     @click="clearSearch()">✕ clear</button>
           </span>
@@ -357,7 +411,8 @@
                 <tr><td colspan="5" class="parts-placeholder">No results.</td></tr>
               </template>
               <template x-for="(p, i) in searchResults" :key="i">
-                <tr class="search-result-row" @click="jumpToSection(p)" style="cursor:pointer">
+                <tr class="search-result-row" @click="jumpToSection(p)" style="cursor:pointer"
+                    :class="{'part-no-match': filterActive && !partMatchesVehicle(p.applicability, p._scope)}">
                   <td class="col-pos" x-text="p.position"></td>
                   <td class="col-sec"><span class="sec-badge" x-text="p.section_number"></span></td>
                   <td class="col-pn" x-text="p.part_number"></td>
@@ -408,7 +463,7 @@
                 <tr :class="{
                       'pos-active': row._basePos !== null && (hoveredPos === row._basePos || selectedPos === row._basePos),
                       'pos-subrow': !row._isHead,
-                      'part-no-match': filterActive && !partMatchesVehicle(row.part.applicability, currentSectionAppl),
+                      'part-no-match': filterActive && !partMatchesVehicle(row.part.applicability, currentSectionScope),
                       'part-ok': vehicleMode && partOk(row.part._key)
                     }"
                     :data-pos-num="row._basePos"
@@ -550,10 +605,44 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
   <script src="theme.js"></script>
+  <script src="appl.js"></script>
   <script src="vin.js"></script>
   <script src="garage.js"></script>
   <script>
     const SQLJS_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
+
+    // A section's whole scope, in the grammar. Its printed applicability holds the
+    // option and year gates; the typed columns hold the facets the title row states
+    // as bare tokens ("G9750,G9788"). All of them gate every part in the section, and
+    // APPL ANDs across facets, so one string of segments is their conjunction.
+    const sectionScope = (...cols) => cols.filter(Boolean).join(' | ');
+
+    // Nobody knows their car by its EC/TC code, so name it with what the catalog says
+    // about it. A transmission's `type_code` is speeds plus A(utomatik) or
+    // S(chaltgetriebe) — the reading the option-code derivation depends on too. An
+    // unfamiliar shape is left as printed rather than guessed at.
+    const gearboxLabel = (tc, type) => {
+      const m = /^(\d)([AS])$/.exec(String(type || '').toUpperCase());
+      return [tc, type, m && `${m[1]}-speed ${m[2] === 'A' ? 'automatic' : 'manual'}`]
+             .filter(Boolean).join(' — ');
+    };
+    const engineLabel = (ec, displacement, hp) =>
+      [ec, [displacement && displacement + ' l', hp && hp + ' hp'].filter(Boolean).join(', ')]
+      .filter(Boolean).join(' — ');
+
+    // FTS4 matches whole tokens, so "Headlight" misses every "Headlights" — the
+    // catalog pluralises freely and recall must not depend on the user guessing
+    // which form was printed. Each bare term becomes a prefix term.
+    // Left alone: a quoted phrase (the quotes are the user asking for exactly
+    // that), FTS's own operators, a wildcard already typed, and any term not
+    // ending in a word character — "*" after punctuation is a syntax error, and
+    // an error here silently drops the whole query to the LIKE fallback.
+    const FTS_OPERATORS = new Set(['AND', 'OR', 'NOT', 'NEAR']);
+    const ftsPrefixQuery = q =>
+      (String(q).match(/"[^"]*"?|\S+/g) || [])
+        .map(t => (t.startsWith('"') || FTS_OPERATORS.has(t) || !/\w$/.test(t))
+                    ? t : t + '*')
+        .join(' ');
 
     function viewerApp() {
       return {
@@ -584,12 +673,29 @@
         filterPanelOpen:  false,
         vfYear:           '',
         vfMarket:         '',
+        vfLine:           '',
+        vfBody:           '',
+        vfEngine:         '',
+        vfGearbox:        '',
+        vfChassis:        '',
+        vfEngineNo:       '',
         vfPrCodes:        [],
         prSearch:         '',
         prDropdownOpen:   false,
         allPrCodes:       [],
         prDropdownItems:  [],
-        prUnknown:        [],   // entered codes not found in this catalog's pr_code
+        prUnknown:        [],   // entered codes not in this catalog's pr_code
+
+        // Facet vocabularies, read from the open catalog — see loadFacetOptions.
+        engineOptions:    [],   // { code, label }
+        gearboxOptions:   [],
+        lineOptions:      [],   // plain strings
+        bodyOptions:      [],
+        marketOptions:    [],
+        _codeIndex:       null, // { engines, gearboxes } — tells APPL a code from a line
+        _vinRanges:       [],   // { from, to } — chassis blocks, for breakpoints
+        _engineNumRanges: [],   // { from, to } — engine-number blocks
+        _spec:            null, // vehicleSpec memo
 
         // VIN decode
         vinInput:         '',
@@ -612,13 +718,20 @@
           return !!this.activeVehicle && this.activeVehicle.catalogId === this.catalogId;
         },
 
-        get filterActive() { return !!(this.vfYear || this.vfMarket || this.vfPrCodes.length); },
+        // Every field the spec filter reads. One list so a new facet can't be added
+        // to the form and silently skipped by the filter, the watchers or the reset.
+        get _specValues() {
+          return [this.vfYear, this.vfMarket, this.vfLine, this.vfBody, this.vfEngine,
+                  this.vfGearbox, this.vfChassis, this.vfEngineNo];
+        },
+
+        get filterActive() { return !!(this._specValues.some(Boolean) || this.vfPrCodes.length); },
         get filterCriteriaCount() {
-          return (this.vfYear ? 1 : 0) + (this.vfMarket ? 1 : 0) + this.vfPrCodes.length;
+          return this._specValues.filter(Boolean).length + this.vfPrCodes.length;
         },
         get filterSectionCount() {
           if (!this.filterActive || !this.parts.length) return '0';
-          return String(this.parts.filter(p => this.partMatchesVehicle(p.applicability, this.currentSectionAppl)).length);
+          return String(this.parts.filter(p => this.partMatchesVehicle(p.applicability, this.currentSectionScope)).length);
         },
 
         // ── Init ────────────────────────────────────────────────────
@@ -630,9 +743,11 @@
           this.$watch('hoveredPos',  () => this.drawCallouts());
           this.$watch('selectedPos', () => this.drawCallouts());
           this.$watch('hideOk', () => { this._reflowParts(); this._recomputeOkSections(); });
-          // The spec filter decides which parts a section's Ok rollup counts.
-          for (const f of ['vfYear', 'vfMarket', 'vfPrCodes'])
-            this.$watch(f, () => this._recomputeOkSections());
+          // The spec filter decides which parts a section's Ok rollup counts, and
+          // which callouts belong on the car's diagram.
+          for (const f of ['vfYear', 'vfMarket', 'vfLine', 'vfBody', 'vfEngine', 'vfGearbox',
+                           'vfChassis', 'vfEngineNo', 'vfPrCodes'])
+            this.$watch(f, () => { this._recomputeOkSections(); this.drawCallouts(); });
           window.addEventListener('resize', () => requestAnimationFrame(() => this._positionCanvas()));
           this._startQueryBridge();
 
@@ -670,8 +785,14 @@
           const s = v.spec || {};
           this.vfYear     = s.vfYear || '';
           this.vfMarket   = s.vfMarket || '';
+          this.vfLine     = s.vfLine || '';
+          this.vfBody     = s.vfBody || '';
+          this.vfEngine   = s.vfEngine || '';
+          this.vfGearbox  = s.vfGearbox || '';
+          this.vfChassis  = s.vfChassis || '';
+          this.vfEngineNo = s.engineNo || '';   // the garage's own key for it
           this.vfPrCodes  = Array.isArray(s.vfPrCodes) ? [...s.vfPrCodes] : [];
-          this.prUnknown  = [];
+          this.prUnknown  = this._unknownPrCodes(this.vfPrCodes);
           if (this.filterActive) this.filterPanelOpen = true;
         },
 
@@ -734,7 +855,7 @@
             rows = this._query(
               `SELECT p.section_id, s.number, p.position, p.part_number,
                       COALESCE(NULLIF(p.applicability, ''), pp.applicability, '') AS appl,
-                      COALESCE(s.applicability, '') AS sec_appl
+                      s.applicability, s.engine_code, s.gearbox_code, s.body_line, s.body_style
                FROM part p JOIN section s ON p.section_id = s.id
                LEFT JOIN part pp ON pp.id = p.parent_id
                WHERE p.catalog_id=? ORDER BY p.section_id, p.rowid`,
@@ -742,16 +863,16 @@
             );
           } catch { return idx; }
           let curSec = null, occurrence = null, list = null;
-          for (const [sid, snum, position, part_number, applicability, sec_appl] of rows) {
+          for (const [sid, snum, position, part_number, applicability, ...scopeCols] of rows) {
             if (sid !== curSec) {
               curSec = sid; occurrence = this._occurrenceCounter(); list = [];
               idx.set(sid, list);
             }
             const n = occurrence(position, part_number);
             list.push({
-              key:     this._partKey(snum, position, part_number, n),
-              appl:    applicability || '',
-              secAppl: sec_appl || '',
+              key:      this._partKey(snum, position, part_number, n),
+              appl:     applicability || '',
+              secScope: sectionScope(...scopeCols),
             });
           }
           return idx;
@@ -761,7 +882,7 @@
           if (!this.hideOk || !this.vehicleMode) { this.okSectionIds = []; return; }
           const out = [];
           for (const [sid, list] of this._sectionPartIndex()) {
-            const targets = list.filter(e => this.partMatchesVehicle(e.appl, e.secAppl));
+            const targets = list.filter(e => this.partMatchesVehicle(e.appl, e.secScope));
             if (targets.length && targets.every(e => this.partOk(e.key))) out.push(sid);
           }
           this.okSectionIds = out;
@@ -796,12 +917,17 @@
         // collapsed position groups: the scope is the diagram, not the viewport.
         get sectionOkTargets() {
           if (!this.vehicleMode) return [];
-          return this.parts.filter(p => p._key && this.partMatchesVehicle(p.applicability, this.currentSectionAppl));
+          return this.parts.filter(p => p._key && this.partMatchesVehicle(p.applicability, this.currentSectionScope));
         },
 
-        // The open section's own scope, AND-ed into every part match in this section.
+        // The open section's printed scope — what the chips in the header show.
         get currentSectionAppl() {
           return (this.currentSection && this.currentSection.applicability) || '';
+        },
+
+        // The open section's full scope, AND-ed into every part match in this section.
+        get currentSectionScope() {
+          return (this.currentSection && this.currentSection.scope) || '';
         },
 
         get sectionOkState() {
@@ -942,6 +1068,7 @@
               );
             }
 
+            this.loadFacetOptions();   // first: every later parse reads the code index
             this._buildToc();
             this.loadPrCodes();
             this._recomputeOkSections();
@@ -981,6 +1108,7 @@
               this.catalogId = cat[0];
               this.catalogs  = [{ id: cat[0], label: cat[1] || cat[0] }];
             }
+            this.loadFacetOptions();
             this._buildToc();
             this.loadPrCodes();
             this.status = `${this.mainGroups.length} groups · ${this._scalar('SELECT COUNT(*) FROM section')} sections (file mode — no diagrams)`;
@@ -1036,13 +1164,15 @@
           );
           this.mainGroups = mgs.map(([id, number, title]) => {
             const sections = this._query(
-              `SELECT id, number, title, diagram_image, title_remark, title_model, applicability
+              `SELECT id, number, title, diagram_image, title_remark, title_model, applicability,
+                      engine_code, gearbox_code, body_line, body_style
                FROM section WHERE main_group_id=? ORDER BY number`,
               [id]
-            ).map(([sid, snum, stitle, dimg, tremark, tmodel, sappl]) => ({
+            ).map(([sid, snum, stitle, dimg, tremark, tmodel, sappl, sec, sgc, sbl, sbs]) => ({
               id: sid, number: snum, title: stitle, diagram_image: dimg,
               title_remark: tremark || '', title_model: tmodel || '',
               applicability: sappl || '',
+              scope: sectionScope(sappl, sec, sgc, sbl, sbs),
             }));
             return { id, number, title, open: false, sections };
           });
@@ -1105,39 +1235,54 @@
 
         // ── Search ───────────────────────────────────────────────────
 
+        // Both paths select the same scope the section list does, so a hit carries
+        // its vehicle match with it — search is a way into the catalog, not a way
+        // around the filter.
         search() {
           const q = this.query.trim();
           if (!q || !this.db) { this.searchMode = false; return; }
           this.searchMode = true;
 
+          const COLS =
+            `SELECT p.position, p.part_number, p.description, p.quantity, p.remarks,
+                    s.number, p.section_id,
+                    COALESCE(NULLIF(p.applicability,''), pp.applicability, '') AS appl,
+                    s.applicability, s.engine_code, s.gearbox_code, s.body_line, s.body_style`;
+          // Colour/trim variants are child rows whose scope lives on the parent block.
+          const JOINS =
+            `FROM part p
+             JOIN section s ON p.section_id = s.id
+             LEFT JOIN part pp ON pp.id = p.parent_id`;
+
           // Try FTS4 first, fall back to LIKE
+          let rows;
           try {
-            this.searchResults = this._query(
-              `SELECT p.position, p.part_number, p.description, p.quantity, p.remarks,
-                      s.number, p.section_id
-               FROM part p
-               JOIN part_fts ON part_fts.docid = p.id
-               JOIN section s ON p.section_id = s.id
-               WHERE part_fts MATCH ? AND p.catalog_id = ?
-               LIMIT 200`,
-              [q, this.catalogId]
-            ).map(([position, part_number, description, quantity, remarks, section_number, section_id]) => ({
-              position, part_number, description, quantity, remarks, section_number, section_id,
-            }));
+            rows = this._query(
+              `${COLS} ${JOINS} JOIN part_fts ON part_fts.docid = p.id
+               WHERE part_fts MATCH ? AND p.catalog_id = ? LIMIT 200`,
+              [ftsPrefixQuery(q), this.catalogId]
+            );
           } catch {
-            // FTS unavailable — fall back to LIKE
-            this.searchResults = this._query(
-              `SELECT p.position, p.part_number, p.description, p.quantity, p.remarks,
-                      s.number, p.section_id
-               FROM part p
-               JOIN section s ON p.section_id = s.id
-               WHERE p.catalog_id=? AND (p.part_number LIKE ? OR p.description LIKE ?)
-               LIMIT 200`,
+            rows = this._query(
+              `${COLS} ${JOINS}
+               WHERE p.catalog_id=? AND (p.part_number LIKE ? OR p.description LIKE ?) LIMIT 200`,
               [this.catalogId, `%${q}%`, `%${q}%`]
-            ).map(([position, part_number, description, quantity, remarks, section_number, section_id]) => ({
-              position, part_number, description, quantity, remarks, section_number, section_id,
-            }));
+            );
           }
+          // The scope travels with the row rather than the verdict: the filter can
+          // change while results are up, and re-running the query to redraw them
+          // would throw away the user's scroll position.
+          this.searchResults = rows.map(
+            ([position, part_number, description, quantity, remarks, section_number, section_id,
+              applicability, ...scopeCols]) => ({
+              position, part_number, description, quantity, remarks, section_number, section_id,
+              applicability: applicability || '', _scope: sectionScope(...scopeCols),
+            })
+          );
+        },
+
+        get searchMatchCount() {
+          return this.searchResults.filter(r => this.partMatchesVehicle(r.applicability, r._scope)).length;
         },
 
         clearSearch() {
@@ -1218,15 +1363,32 @@
           this.drawCallouts();
         },
 
+        // A callout stands for the parts at its position. It belongs on this car only
+        // if one of them does — a GT2-only callout has no business highlighting on a
+        // Turbo. A callout OCR read at a position the text never lists (90 of 5,000)
+        // answers to no part, so nothing is known against it and it stays.
+        get visibleCallouts() {
+          if (!this.filterActive) return this.callouts;
+          const byPos = new Map();
+          for (const p of this.parts) {
+            const n = this._posNum(p.position);
+            if (n === null) continue;
+            byPos.set(n, (byPos.get(n) || false) ||
+                         this.partMatchesVehicle(p.applicability, this.currentSectionScope));
+          }
+          return this.callouts.filter(c => byPos.get(c.number) !== false);
+        },
+
         drawCallouts() {
           const cvs = document.getElementById('callout-canvas');
           if (!cvs) return;
           const ctx = cvs.getContext('2d');
           ctx.clearRect(0, 0, cvs.width, cvs.height);
-          if (!this.callouts.length) return;
+          const callouts = this.visibleCallouts;
+          if (!callouts.length) return;
           const W = cvs.width, H = cvs.height;
           const PAD = 3;
-          for (const c of this.callouts) {
+          for (const c of callouts) {
             const x0 = c.x0 / 10000 * W - PAD, y0 = c.y0 / 10000 * H - PAD;
             const bw  = (c.x1 - c.x0) / 10000 * W + PAD * 2, bh = (c.y1 - c.y0) / 10000 * H + PAD * 2;
             const sel = c.number === this.hoveredPos || c.number === this.selectedPos;
@@ -1250,11 +1412,12 @@
 
         diagramClick(e) {
           const cvs = document.getElementById('callout-canvas');
-          if (!cvs || !this.callouts.length) return;
+          const callouts = this.visibleCallouts;
+          if (!cvs || !callouts.length) return;
           const r = cvs.getBoundingClientRect();
           const x = (e.clientX - r.left)  / r.width;
           const y = (e.clientY - r.top)   / r.height;
-          const hit = this.callouts.find(c =>
+          const hit = callouts.find(c =>
             x >= c.x0/10000 && x <= c.x1/10000 &&
             y >= c.y0/10000 && y <= c.y1/10000
           );
@@ -1362,6 +1525,69 @@
           } catch { this.allPrCodes = []; }
         },
 
+        // Every facet the user can set is offered from the catalog's own vocabulary:
+        // a fixed list would be wrong for the next model line, and a value no part
+        // carries can only hide the whole catalog. Codes get a readable label —
+        // "G9750" alone tells the owner of a 6-speed car nothing.
+        loadFacetOptions() {
+          this.engineOptions  = [];
+          this.gearboxOptions = [];
+          this.lineOptions    = [];
+          this.bodyOptions    = [];
+          this.marketOptions  = [];
+          this._vinRanges       = [];
+          this._engineNumRanges = [];
+          try {
+            this.engineOptions = this._query(
+              `SELECT ec, displacement_l, power_hp FROM engine_code WHERE catalog_id=? ORDER BY ec`,
+              [this.catalogId]
+            ).map(([ec, disp, hp]) => ({ code: ec, label: engineLabel(ec, disp, hp) }));
+            this.gearboxOptions = this._query(
+              `SELECT tc, type_code FROM transmission_code WHERE catalog_id=? ORDER BY tc`,
+              [this.catalogId]
+            ).map(([tc, type]) => ({ code: tc, label: gearboxLabel(tc, type) }));
+
+            // The typed section columns are OR-lists ("TURBO,GT2"); a section scoped
+            // to either offers both, not the pair.
+            const split = col => [...new Set(this._query(
+              `SELECT DISTINCT ${col} FROM section WHERE catalog_id=? AND COALESCE(${col},'')!=''`,
+              [this.catalogId]
+            ).flatMap(([v]) => v.split(',')).map(v => v.trim()).filter(Boolean))].sort();
+            this.lineOptions = split('body_line');
+            this.bodyOptions = split('body_style');
+
+            this._codeIndex = {
+              engines:   new Set(this.engineOptions.map(e => APPL.normalizeToken(e.code))),
+              gearboxes: new Set(this.gearboxOptions.map(g => APPL.normalizeToken(g.code))),
+            };
+
+            // The number blocks a chassis/engine breakpoint is read against. Both
+            // tables were write-only until now.
+            this._vinRanges = this._query(
+              `SELECT vin_from, vin_to FROM vin_range WHERE catalog_id=?`, [this.catalogId]
+            ).map(([from, to]) => ({ from, to }));
+            this._engineNumRanges = this._query(
+              `SELECT number_from, number_to FROM engine_number_range WHERE catalog_id=?`,
+              [this.catalogId]
+            ).map(([from, to]) => ({ from, to }));
+
+            // Market is free text, not a picker: the codes below are the ones the
+            // catalog gates parts ON, but a car's own market is usually not among
+            // them — a USA car must still be able to say "USA" to drop the parts
+            // printed only for '"ROK"'.
+            this.marketOptions = [...new Set(
+              this._query(
+                `SELECT applicability FROM part WHERE catalog_id=? AND applicability LIKE '%"%'
+                 UNION SELECT applicability FROM section WHERE catalog_id=? AND applicability LIKE '%"%'`,
+                [this.catalogId, this.catalogId]
+              ).flatMap(([a]) => {
+                const p = APPL.parse(a, { codeIndex: this._codeIndex });
+                return [...p.markets.any, ...p.markets.not];
+              })
+            )].sort();
+          } catch { this._codeIndex = null; }
+        },
+
         prDesc(code) {
           return (this.allPrCodes.find(p => p.code === code) || {}).description || '';
         },
@@ -1384,7 +1610,7 @@
 
         // Enter in the add box: commit typed/pasted codes. A single token prefers an
         // exact code match, then the top filtered suggestion; multiple tokens are a
-        // pasted option-sticker (Kardex) list. Unknown codes are surfaced, not added.
+        // pasted option-sticker (Kardex) list.
         commitPrEntry() {
           const raw = this.prSearch.trim();
           if (!raw) return;
@@ -1398,33 +1624,40 @@
           this.addPrCodesBulk(tokens);
         },
 
-        // Validate a list of entered codes against pr_code; add the known ones,
-        // collect the rest into prUnknown for display.
+        // Add every entered code, and say which ones this catalog's option list does
+        // not describe. Dropping them would be the wrong call twice over: the codes
+        // are the car's, not the catalog's, and PR codes and M-numbers are ONE
+        // vocabulary here — a sticker's M-numbers gate real parts (997 300 020 50,
+        // the 6-speed gearbox itself, is 'G9750+ PR:220'). An unlabelled code can
+        // only ever admit more parts, so carrying it is safe; swallowing it is not.
         addPrCodesBulk(tokens) {
-          const unknown = [];
           const toAdd = [];
           for (const t of tokens) {
-            const code = t.toUpperCase();
-            const match = this.allPrCodes.find(p => p.code.toUpperCase() === code);
-            if (match) {
-              if (!this.vfPrCodes.includes(match.code) && !toAdd.includes(match.code)) toAdd.push(match.code);
-            } else if (!unknown.includes(code)) {
-              unknown.push(code);
-            }
+            const code = (this.allPrCodes.find(p => p.code.toUpperCase() === t.toUpperCase()) || {}).code
+                         || t.toUpperCase();
+            if (!this.vfPrCodes.includes(code) && !toAdd.includes(code)) toAdd.push(code);
           }
           if (toAdd.length) this.vfPrCodes = [...this.vfPrCodes, ...toAdd];
-          this.prUnknown = unknown;
+          this.prUnknown = this._unknownPrCodes(this.vfPrCodes);
           this.prSearch = '';
           this.prDropdownOpen = false;
           this.prDropdownItems = [];
         },
 
+        _unknownPrCodes(codes) {
+          const known = new Set(this.allPrCodes.map(p => p.code.toUpperCase()));
+          return codes.filter(c => !known.has(String(c).toUpperCase()));
+        },
+
         removePrCode(code) {
           this.vfPrCodes = this.vfPrCodes.filter(p => p !== code);
+          this.prUnknown = this._unknownPrCodes(this.vfPrCodes);
         },
 
         clearVehicleFilter() {
           this.vfYear = ''; this.vfMarket = ''; this.vfPrCodes = [];
+          this.vfLine = ''; this.vfBody = ''; this.vfEngine = ''; this.vfGearbox = '';
+          this.vfChassis = ''; this.vfEngineNo = '';
           this.prSearch = ''; this.prDropdownOpen = false; this.prUnknown = [];
         },
 
@@ -1472,6 +1705,9 @@
           if (matches.length) await this.applyVinMatch(matches[0]);
         },
 
+        // Fill in what the VIN's own vin_range row says about the car. Only blank
+        // fields are touched — a decode must never quietly overwrite what the owner
+        // typed, and everything here is a prefill the owner can correct.
         async applyVinMatch(m) {
           if (m.catalogId && m.catalogId !== this.catalogId && !this.sqliteFileMode) {
             this.catalogId = m.catalogId;
@@ -1479,6 +1715,18 @@
           }
           this.filterPanelOpen = true;
           if (m.modelYear) this.vfYear = String(m.modelYear);
+          // Only this catalog's ranges: the body style read from what the remarks
+          // never name is only true within one catalog's own naming.
+          const remarks = (this._vinIndex || []).filter(r => r.catalogId === m.catalogId)
+                                                .map(r => r.remark);
+          const f = VIN.variantFacets(m.remark, remarks, this.lineOptions, this.bodyOptions);
+          if (!this.vfLine   && f.line)   this.vfLine   = f.line;
+          if (!this.vfBody   && f.body)   this.vfBody   = f.body;
+          if (!this.vfMarket && f.market) this.vfMarket = f.market;
+          // The VIN reconstructs the chassis number the breakpoints are printed
+          // against — the one facet here the decode knows exactly.
+          if (!this.vfChassis && this.vinResult && this.vinResult.chassis)
+            this.vfChassis = this.vinResult.chassis;
           this.vinResult = { ...this.vinResult, applied: m };
         },
 
@@ -1498,75 +1746,77 @@
         },
 
         // A part is admitted only if BOTH its own scope and its section's scope admit
-        // the car — 15 sections are gated by a PR code on their title row and 20 carry
-        // a section-level model-year scope. The two are evaluated separately and AND-ed
-        // rather than concatenated into one string: _parseApplConstraints takes mjFrom
-        // from the FIRST "MJ dddd>>" it sees, so a concatenation would pick whichever
-        // bound came first in the string instead of the narrower one. AND-ing the
-        // booleans is the actual intersection. 6 sections have both scopes at once.
-        partMatchesVehicle(applStr, sectionAppl) {
+        // the car — 15 sections are gated by a PR code on their title row, 20 carry a
+        // section-level model-year scope, and 57 more are typed to an engine, gearbox,
+        // model line or body style. The two are evaluated separately and AND-ed rather
+        // than concatenated: a part and its section each state their own year window,
+        // and OR-ing two windows into one alternative list would let the section's
+        // window satisfy a part printed for different years. AND-ing the booleans is
+        // the actual intersection.
+        partMatchesVehicle(applStr, sectionScope) {
           if (!this.filterActive) return true;
-          return this._matchesAppl(applStr) && this._matchesAppl(sectionAppl);
+          return this._matchesAppl(applStr) && this._matchesAppl(sectionScope);
         },
 
         _matchesAppl(applStr) {
           if (!applStr) return true;
-          const c = this._parseApplConstraints(applStr);
-          if (this.vfYear) {
-            const yr = +this.vfYear;
-            if (c.mjFrom !== null && yr < c.mjFrom) return false;
-            if (c.mjTo   !== null && yr > c.mjTo)   return false;
-          }
-          if (this.vfMarket && c.market && !VIN.applMarketAdmits(c.market, this.vfMarket)) return false;
-          if (this.vfPrCodes.length > 0) {
-            for (const g of c.prGroups) {
-              if (g.not.some(pr => this.vfPrCodes.includes(pr))) return false;
-              if (g.any.length && !g.any.some(pr => this.vfPrCodes.includes(pr))) return false;
-            }
-          }
-          return true;
+          return APPL.matches(APPL.parse(applStr, { codeIndex: this._codeIndex }), this.vehicleSpec);
         },
 
-        // Parse a whole applicability string into filter constraints. Each catalog
-        // applicability has at most one MJ year clause (verified across all catalogs),
-        // so ` | ` segments are facets — PR condition, market/year, chassis/engine
-        // breakpoint — of ONE rule, never alternative year ranges. So we gather every
-        // dimension across the entire string rather than OR-ing segments (which would
-        // let a PR- or breakpoint-only segment satisfy the filter vacuously).
+        // The car, in the facets the grammar speaks. A blank field is not a filter:
+        // APPL never rejects on a fact we do not know about the car.
         //
-        // Stored form is spaced: "D - MJ 2006>> - MJ 2008". FROM is the year suffixed
-        // with ">>"; TO is the last year NOT suffixed with ">>". Handles "MJ 2006>>",
-        // ">> - MJ 2007" (open start). Only `D` is a real market (baseline = all);
-        // "F >>"/"M >>" are chassis/engine serial breakpoints (Phase E), not markets,
-        // and carry no MJ so they're ignored here.
-        _parseApplConstraints(applStr) {
-          // Each PR: token is one option slot: OR within a token, AND across tokens.
-          // "PR:098,099" (left- AND right-hand drive) is satisfiable only as an OR;
-          // "PR:388,389" (bucket seat left/right) reads as an AND but those options
-          // always co-occur on a real car, so OR admits the same set. A leading "-"
-          // negates: "PR:098,-422" = lhd and NOT the 19-inch central-lock wheel.
-          const prGroups = [];
-          for (const m of applStr.matchAll(/PR:([\w,-]+)/gi)) {
-            const any = [], not = [];
-            for (const raw of m[1].split(',')) {
-              const code = raw.trim();
-              if (!code || code === '-') continue;
-              if (code.startsWith('-')) not.push(code.slice(1).toUpperCase());
-              else                      any.push(code.toUpperCase());
-            }
-            if (any.length || not.length) prGroups.push({ any, not });
-          }
+        // Rebuilt only when the spec changes. A full catalog pass calls this 24,000
+        // times, and reading vfPrCodes — a reactive array — into a fresh Set on each
+        // one costs an order of magnitude more than every parse and match together.
+        // The codes are replaced wholesale on every edit, never mutated in place, so
+        // the array's identity is a sound cache key.
+        get vehicleSpec() {
+          const codes = this.vfPrCodes;
+          const s = this._spec;
+          if (s && s._codes === codes && s.year === this.vfYear && s.market === this.vfMarket &&
+              s.line === this.vfLine && s.body === this.vfBody &&
+              s.engine === this.vfEngine && s.gearbox === this.vfGearbox &&
+              s.chassis === this.vfChassis && s.engineNum === this.vfEngineNo) return s;
+          return (this._spec = {
+            line:    this.vfLine,
+            body:    this.vfBody,
+            engine:  this.vfEngine,
+            gearbox: this.vfGearbox,
+            // A breakpoint only speaks about cars in its own number block, so the
+            // car's block travels with it. Resolved from the catalog's own tables:
+            // the same serial names a different car in each block, and comparing
+            // across them is how "up to 780473" comes to hide a 784090 USA car
+            // that the changeover never touched.
+            chassis:        this.vfChassis,
+            chassisBlock:   this._numberBlock(this._vinRanges, this.vfChassis),
+            engineNum:      this.vfEngineNo,
+            engineNumBlock: this._numberBlock(this._engineNumRanges, this.vfEngineNo),
+            // The market the year segment leads with ("D - MJ 2008>>") is only ever
+            // D or absent, so it says nothing and APPL does not enforce it. This is
+            // the QUOTED market code ('"ROK"', '-"CN."'), which genuinely splits
+            // parts — 601-005 lists a Korea and a non-Korea version of one part.
+            market:  this.vfMarket,
+            year:    this.vfYear,
+            _codes:  codes,
+            prCodes: new Set(codes),
+          });
+        },
 
-          let mjFrom = null, mjTo = null;
-          const fm = applStr.match(/MJ\s*(\d{4})\s*>>/i);
-          if (fm) mjFrom = +fm[1];
-          const toMs = [...applStr.matchAll(/MJ\s*(\d{4})(?!\s*>>)/gi)];
-          if (toMs.length) mjTo = +toMs[toMs.length - 1][1];
-
-          const mkm = applStr.match(/([A-Z])\s*(?:>>\s*)?(?:-\s*)?MJ\s*\d{4}/i);
-          const market = mkm ? mkm[1].toUpperCase() : null;
-
-          return { prGroups, mjFrom, mjTo, market };
+        // The row of a number table whose span contains this serial — the block the
+        // catalog itself put the car in. Ranges are keyed on the prefix as well as
+        // the number: a MY2008 chassis and a MY2009 one can share a serial.
+        _numberBlock(rows, value) {
+          if (!value || !rows || !rows.length) return null;
+          const k = APPL.serialKey(value);
+          if (!k) return null;
+          return rows.find(r => {
+            const lo = APPL.serialKey(r.from);
+            if (!lo || lo.prefix !== k.prefix) return false;
+            const hi  = APPL.serialKey(r.to);
+            const top = (hi && hi.prefix === k.prefix) ? hi.serial : lo.serial;
+            return k.serial >= lo.serial && k.serial <= top;
+          }) || null;
         },
 
         // ── SQL helpers ───────────────────────────────────────────────

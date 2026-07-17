@@ -52,23 +52,6 @@
     CN: 'China', KOR: 'South Korea', ROW: 'Rest of world',
   };
 
-  // The `applicability` "market" column. In every catalog we ingest this is
-  // effectively always `D` — a market-agnostic BASELINE (not Germany-specific),
-  // so it applies to all markets. Real per-part market/production carve-outs are
-  // encoded as chassis/engine serial breakpoints ("F >>" = from chassis number,
-  // "M >>" = from engine number), handled in Phase E — those letters are NOT
-  // markets and must not be filtered as such.
-  const APPL_MARKETS = { D: { label: 'all markets', matchesAll: true } };
-
-  // Does an applicability market letter admit the user's requested market?
-  // Unknown/baseline letters admit everything (we never over-filter parts).
-  function applMarketAdmits(letter, wanted) {
-    if (!wanted) return true;
-    const spec = APPL_MARKETS[String(letter || '').toUpperCase()];
-    if (!spec || spec.matchesAll) return true;
-    return (spec.markets || []).includes(String(wanted).toUpperCase());
-  }
-
   // Parse a vin_range remark's market group, e.g.
   //   "997 Coupe (USA,CDN,MEX,BR)"      → { variant:'997 Coupe', markets:['USA',…] }
   //   "997 Cabrio S (rest of the world)" → { markets:['ROW'] }
@@ -87,6 +70,46 @@
     const markets = inner.split(/[,\s]+/).map(x => x.toUpperCase())
                          .filter(x => MARKET_NAMES[x]);
     return { variant, markets, marketLabel: markets.join(', ') };
+  }
+
+  // What the matched vin_range row says about the car itself, expressed in the
+  // catalog's OWN facet vocabulary (`lineOptions`/`bodyOptions` come from the
+  // sections' typed scope columns). A token we cannot place is dropped: gating a
+  // car behind a facet value no part carries would hide the whole catalog.
+  //
+  // `allRemarks` is every vin_range remark in the catalog — the body style is
+  // often stated only by omission (see below), which needs the whole set to read.
+  function variantFacets(remark, allRemarks, lineOptions, bodyOptions) {
+    const set    = opts => new Set((opts || []).map(o => String(o).toUpperCase()));
+    const tokens = v => String(v || '').toUpperCase().split(/[\s/]+/).filter(Boolean);
+    const lines  = set(lineOptions), bodies = set(bodyOptions);
+    const pm     = parseMarket(remark);
+    const toks   = tokens(pm.variant);
+    const last   = (ts, vocab) => ts.filter(t => vocab.has(t)).pop() || '';
+
+    // The family is named first and narrowed after — "997 Turbo GT2" is a GT2 —
+    // so the LAST token the catalog knows as a line is the specific one.
+    const line = last(toks, lines);
+
+    // A remark naming no body means the body the catalog never names: it prints
+    // "997 Turbo Cabrio" and plain "997 Turbo", never "997 Turbo Coupe". Only
+    // readable when exactly one body style is left unnamed by every range, else
+    // the silence carries no information and the field stays open.
+    let body = last(toks, bodies);
+    if (!body) {
+      const named = new Set();
+      for (const r of allRemarks || [])
+        for (const t of tokens(parseMarket(r).variant)) if (bodies.has(t)) named.add(t);
+      const unnamed = [...bodies].filter(b => !named.has(b));
+      if (named.size && unnamed.length === 1) body = unnamed[0];
+    }
+
+    // A range serving several markets says the car is in ONE of them, not which,
+    // so only a single-market range identifies the car. "rest of the world" is a
+    // catch-all, not a code any part is gated on.
+    const market = (pm.markets.length === 1 && pm.markets[0] !== 'ROW') ? pm.markets[0] : '';
+
+    return { line, body, market };
   }
 
   // Split a compact chassis number into { prefix, serial } where serial is the
@@ -115,8 +138,8 @@
     return out;
   }
 
-  const VIN = { decodeVin, chassisKey, matchChassis, parseMarket, applMarketAdmits,
-                YEAR_CODE, FAMILY, MARKET_NAMES, APPL_MARKETS };
+  const VIN = { decodeVin, chassisKey, matchChassis, parseMarket, variantFacets,
+                YEAR_CODE, FAMILY, MARKET_NAMES };
   if (typeof module !== 'undefined' && module.exports) module.exports = VIN;
   else root.VIN = VIN;
 })(typeof self !== 'undefined' ? self : this);

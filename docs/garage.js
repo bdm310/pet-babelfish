@@ -2,10 +2,12 @@
 // (catalog DBs are regenerated on re-ingest). One JSON file in OPFS root.
 //
 // A vehicle bundles an identity (nickname / VIN / decoded fields) with a saved
-// spec filter { vfYear, vfMarket, vfPrCodes } so "Open in viewer" restores the
-// exact parts view, plus `partMeta` — the owner's per-part ok/notes marks (see
-// setPartMeta). Reserved field (savedParts) is carried through untouched for
-// later phases. Exposed as window.Garage.
+// spec filter { vfYear, vfMarket, vfLine, vfBody, vfEngine, vfGearbox, engineNo,
+// vfPrCodes } so "Open in viewer" restores the exact parts view, plus `partMeta` —
+// the owner's per-part ok/notes marks (see setPartMeta). Every spec field is one
+// facet of the catalog's applicability grammar; a blank one does not filter.
+// Reserved field (savedParts) is carried through untouched for later phases.
+// Exposed as window.Garage.
 (function (root) {
   'use strict';
 
