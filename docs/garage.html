@@ -109,7 +109,7 @@
           <select x-model="form.catalogId" @change="onCatalogChange()" style="flex:1">
             <option value="">— select catalog —</option>
             <template x-for="c in catalogs" :key="c.id">
-              <option :value="c.id" x-text="c.label"></option>
+              <option :value="c.id" x-text="c.label" :selected="c.id === form.catalogId"></option>
             </template>
           </select>
         </div>
@@ -131,12 +131,12 @@
           <label>Model</label>
           <select x-model="form.vfLine" style="width:9rem">
             <option value="">any line</option>
-            <template x-for="l in opts.lines" :key="l"><option :value="l" x-text="l"></option></template>
+            <template x-for="l in opts.lines" :key="l"><option :value="l" x-text="l" :selected="l === form.vfLine"></option></template>
           </select>
           <label style="width:auto">Body</label>
           <select x-model="form.vfBody" style="width:9rem">
             <option value="">any body</option>
-            <template x-for="b in opts.bodies" :key="b"><option :value="b" x-text="b"></option></template>
+            <template x-for="b in opts.bodies" :key="b"><option :value="b" x-text="b" :selected="b === form.vfBody"></option></template>
           </select>
           <span class="hint">left blank, a facet does not filter</span>
         </div>
@@ -146,7 +146,7 @@
           <select x-model="form.vfEngine" style="flex:1;min-width:12rem">
             <option value="">any engine</option>
             <template x-for="e in opts.engines" :key="e.code">
-              <option :value="e.code" x-text="e.label"></option>
+              <option :value="e.code" x-text="e.label" :selected="e.code === form.vfEngine"></option>
             </template>
           </select>
           <label style="width:auto">Engine no.</label>
@@ -169,7 +169,7 @@
           <select x-model="form.vfGearbox" style="flex:1;min-width:12rem">
             <option value="">any gearbox</option>
             <template x-for="g in opts.gearboxes" :key="g.code">
-              <option :value="g.code" x-text="g.label"></option>
+              <option :value="g.code" x-text="g.label" :selected="g.code === form.vfGearbox"></option>
             </template>
           </select>
           <span class="hint" x-show="!form.vfGearbox">the transmission serial ranges cannot tell these apart — pick or leave open</span>
@@ -416,10 +416,14 @@
             for (const [code, desc] of q('SELECT code, description FROM pr_code'))
               this.prCodes[String(code).toUpperCase()] = desc;
 
-            this.opts.engines = q('SELECT ec, displacement_l, power_hp FROM engine_code ORDER BY ec')
-              .map(([ec, disp, hp]) => ({ code: ec, label: engineLabel(ec, disp, hp) }));
-            this.opts.gearboxes = q('SELECT tc, type_code FROM transmission_code ORDER BY tc')
-              .map(([tc, type]) => ({ code: tc, label: gearboxLabel(tc, type) }));
+            // A code appears once per date range; the x-for is keyed on the code,
+            // and a duplicate key makes Alpine drop the whole option list.
+            const uniq = list => { const seen = new Set();
+              return list.filter(o => !seen.has(o.code) && seen.add(o.code)); };
+            this.opts.engines = uniq(q('SELECT ec, displacement_l, power_hp FROM engine_code ORDER BY ec')
+              .map(([ec, disp, hp]) => ({ code: ec, label: engineLabel(ec, disp, hp) })));
+            this.opts.gearboxes = uniq(q('SELECT tc, type_code FROM transmission_code ORDER BY tc')
+              .map(([tc, type]) => ({ code: tc, label: gearboxLabel(tc, type) })));
 
             // The typed section columns are OR-lists ("TURBO,GT2"); a section scoped
             // to either offers both, not the pair.

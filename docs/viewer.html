@@ -228,7 +228,7 @@
         <span class="fl">Model</span>
         <select x-model="vfLine" title="Model line — blank matches every line">
           <option value="">any</option>
-          <template x-for="l in lineOptions" :key="l"><option :value="l" x-text="l"></option></template>
+          <template x-for="l in lineOptions" :key="l"><option :value="l" x-text="l" :selected="l === vfLine"></option></template>
         </select>
       </span>
     </template>
@@ -237,7 +237,7 @@
         <span class="fl">Body</span>
         <select x-model="vfBody" title="Body style — blank matches every body">
           <option value="">any</option>
-          <template x-for="b in bodyOptions" :key="b"><option :value="b" x-text="b"></option></template>
+          <template x-for="b in bodyOptions" :key="b"><option :value="b" x-text="b" :selected="b === vfBody"></option></template>
         </select>
       </span>
     </template>
@@ -247,7 +247,7 @@
         <select x-model="vfEngine" title="Engine code — blank matches every engine">
           <option value="">any</option>
           <template x-for="e in engineOptions" :key="e.code">
-            <option :value="e.code" x-text="e.label"></option>
+            <option :value="e.code" x-text="e.label" :selected="e.code === vfEngine"></option>
           </template>
         </select>
       </span>
@@ -258,7 +258,7 @@
         <select x-model="vfGearbox" title="Gearbox code — blank matches every gearbox">
           <option value="">any</option>
           <template x-for="g in gearboxOptions" :key="g.code">
-            <option :value="g.code" x-text="g.label"></option>
+            <option :value="g.code" x-text="g.label" :selected="g.code === vfGearbox"></option>
           </template>
         </select>
       </span>
@@ -1568,14 +1568,18 @@
           this._vinRanges       = [];
           this._engineNumRanges = [];
           try {
-            this.engineOptions = this._query(
+            // A code appears once per date range; the x-for is keyed on the code,
+            // and a duplicate key makes Alpine drop the whole option list.
+            const uniq = list => { const seen = new Set();
+              return list.filter(o => !seen.has(o.code) && seen.add(o.code)); };
+            this.engineOptions = uniq(this._query(
               `SELECT ec, displacement_l, power_hp FROM engine_code WHERE catalog_id=? ORDER BY ec`,
               [this.catalogId]
-            ).map(([ec, disp, hp]) => ({ code: ec, label: engineLabel(ec, disp, hp) }));
-            this.gearboxOptions = this._query(
+            ).map(([ec, disp, hp]) => ({ code: ec, label: engineLabel(ec, disp, hp) })));
+            this.gearboxOptions = uniq(this._query(
               `SELECT tc, type_code FROM transmission_code WHERE catalog_id=? ORDER BY tc`,
               [this.catalogId]
-            ).map(([tc, type]) => ({ code: tc, label: gearboxLabel(tc, type) }));
+            ).map(([tc, type]) => ({ code: tc, label: gearboxLabel(tc, type) })));
 
             // The typed section columns are OR-lists ("TURBO,GT2"); a section scoped
             // to either offers both, not the pair.
