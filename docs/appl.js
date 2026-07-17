@@ -64,8 +64,10 @@
   // Segments led by these letters are serial-number breakpoints, not markets:
   // F = Fahrgestell (chassis), M = Motor (engine). Reading either as a market
   // would filter every part behind a breakpoint out of a German-market car.
-  const CHASSIS_SEG = /^F\s/;
-  const ENGINE_SEG  = /^M\s/;
+  // The letter is normally followed by a space, but the catalog prints one glued
+  // form ("F>>998S4794076", 501-001 p226) — same segment, lost its whitespace.
+  const CHASSIS_SEG = /^F(?:\s|>>)/;
+  const ENGINE_SEG  = /^M(?:\s|>>)/;
 
   // A serial as the parts pages print it — "99-8S780 473", "628 01460". The space
   // is column padding, not structure: the catalog's own V-page tables write the
@@ -82,7 +84,7 @@
   // "F 99-8S782 392>> 99-9S760 152" (between) are one form: the '>>' names the
   // open side, so splitting on it puts the lower bound left and the upper right.
   function parseBreakpoint(seg) {
-    const body  = seg.replace(/^[FM]\s+/, '');
+    const body  = seg.replace(/^[FM]\s*/, '');
     const parts = body.split('>>');
     if (parts.length < 2) return null;
     const from = serialKey(parts[0]);

@@ -725,12 +725,19 @@ function parseTransmissionNumbersPage(rows, transmNumbers) {
 // parent's PR gate from every such row.
 
 // Cross-reference / sub-assembly markers. Their bodies are printed back at the
-// Description origin, so once one appears it closes description+remark
-// accumulation for the block (applicability continuations still route normally).
-// "comprising:" lists a kit's contents, "We take back:" names the core a part is
-// exchanged against, "Group:" and "use if required:" point at a technical manual
-// or an alternative number — none of them describe the part they sit under.
+// Description origin, so once one appears it closes DESCRIPTION accumulation for
+// the block (applicability continuations still route normally). "comprising:"
+// lists a kit's contents, "We take back:" names the core a part is exchanged
+// against, "Group:" and "use if required:" point at a technical manual or an
+// alternative number — none of them describe the part they sit under, so the
+// marker and everything after it accumulate into the row's REMARK instead.
 const ANNOT_RE = /^(?:with:|without:|also use:|use if required:|only in conj\. with:|see illustration|comprising:|we take back:|group:)/i;
+
+// The one Description-column line printed after an advisory that still belongs
+// to the PART, not the advisory: it must reach the description even once an
+// annotation has closed it ("also use: … / D - MJ 2008>> / Discontinued part",
+// 601-005 p245).
+const FLAG_RE = /^Discontinued part$/i;
 
 // "Valid up to:" / "Valid from:" head the F/M breakpoint rows printed beneath
 // them. The direction is already carried by where each clause puts its '>>', so
@@ -770,7 +777,10 @@ const COLOUR_CODE_X = 130;
 // "D - MJ 2008>>", "D >> - MJ 2007", "F 99-7S780 790>>", "M >> 816 14410".
 // The leading 1-3 letter market/breakpoint token is what makes this safe: real
 // description text such as "Identification: >> >>" or "M 12 X 1,5" cannot match.
+// One breakpoint prints glued ("F>>998S4794076", 501-001 p226) — the digit right
+// after the '>>' keeps that arm as safe as the spaced one.
 function isApplicabilityText(t) {
+  if (/^[FM]>>\s*\d/.test(t)) return true;
   return /^[A-Z]{1,3}\s/.test(t) && (/\bMJ\b/.test(t) || t.includes('>>'));
 }
 
@@ -779,9 +789,11 @@ function isApplicabilityModel(t) {
   return /^PR:/.test(t) || /\bMJ\b/.test(t) || t.includes('>>');
 }
 
-// A colour variant's Model text, kept only if the whole value parses as scope.
-// No code index here: extraction runs before any DB handle exists, and a variant
-// never carries an engine/gearbox code — shape alone settles every value we see.
+// A colour variant's Model text is its scope only if the whole value parses as
+// scope. No code index here: extraction runs before any DB handle exists, and a
+// variant never carries an engine/gearbox code — shape alone settles every value
+// we see. A value that is NOT scope (the paints section prints the paint code
+// there — "A 1", "9 S", 004-000 p24) is kept in the remark instead of dropped.
 function variantScope(model) {
   return model && APPL.isScope(model) ? model : '';
 }
@@ -795,6 +807,7 @@ function appendModelToken(acc, tok) {
 }
 
 function appendText(acc, tok) {
+  if (!tok) return acc;
   return acc ? acc + ' ' + tok : tok;
 }
 
@@ -828,9 +841,9 @@ function blockApplicability(b) {
 // Which kind of breakpoint a segment states, if any. "PR:XMJ" is an option code,
 // not a year — only a MJ followed by a year is one.
 function segmentKind(seg) {
-  if (/\bMJ\s*\d{4}/.test(seg)) return 'year';
-  if (/^F\s/.test(seg))         return 'chassis';
-  if (/^M\s/.test(seg))         return 'engineNum';
+  if (/\bMJ\s*\d{4}/.test(seg))    return 'year';
+  if (/^F(?:\s|>>)/.test(seg))     return 'chassis';
+  if (/^M(?:\s|>>)/.test(seg))     return 'engineNum';
   return 'facet';
 }
 
@@ -892,6 +905,18 @@ async function extractParts(pdf, pageNum, carry = {}) {
   // second as an unrelated token.
   const titleModelToks   = [];
   const titleApplDesc    = [];
+  // Whether the title's Model column gates the SECTION. Once it has started,
+  // later rows are just the wrapped column (601-005 p245 continues "CABRIO",
+  // "PR:482,483" under a first-line "COUPE"; 105-004 p65 continues "PR:101"
+  // under "9770+"). A column that STARTS beside the third-or-later title line
+  // scopes individual sub-items instead: "Tool / jack / Fire extinguishers GT2"
+  // (001-000 p18) gates the fire extinguishers alone, and taking GT2 as a
+  // section facet hides the toolbox and jack from every non-GT2 car; 809-000
+  // p444 prints one Model label per breakpoint line the same way. Line two is
+  // still the section: "Body / Sound proofing 1 | COUPE" (807-015 p438) is one
+  // wrapped title whose facet is load-bearing. Display keeps the tokens either
+  // way; only the facet/scope derivation drops them.
+  let titleModelIsScope  = true;
 
   for (const row of rows) {
     const texts = row.items.map(it => it.str.trim()).filter(Boolean);
@@ -985,7 +1010,11 @@ async function extractParts(pdf, pageNum, carry = {}) {
     if (pn && /[0-9A-Za-z]/.test(pn)) {
       titleClosed = true;
       if (block) {
-        curRow = makeChild(fullPn, colour || null, desc, remark, variantScope(model));
+        const scope = variantScope(model);
+        curRow = makeChild(fullPn, colour || null, desc, remark, scope);
+        // Model text that is not scope (the paint code of 004-000) survives in
+        // the remark rather than vanishing.
+        if (model && !scope) curRow.remark = appendText(curRow.remark, model);
         block.children.push(curRow);
       }
       continue;
@@ -1001,6 +1030,7 @@ async function extractParts(pdf, pageNum, carry = {}) {
       }
       if (remark) titleRemarkLines.push(remark);
       if (model) {
+        if (!titleModelToks.length) titleModelIsScope = titleDescLines.length <= 2;
         if (titleModelToks.length && titleModelToks[titleModelToks.length - 1].endsWith(','))
           titleModelToks[titleModelToks.length - 1] += model;
         else
@@ -1026,10 +1056,15 @@ async function extractParts(pdf, pageNum, carry = {}) {
     // must not be handed to whatever colour variant happens to be open.
     if (model) block.applicability = appendModelToken(block.applicability, model);
 
-    // Cross-reference markers carry their target in the Remark column; it belongs
-    // to the part they point AT, not this one, so take no more description or
-    // remark for this block.
-    if (isAnnot) { block.annotClosed = true; continue; }
+    // Cross-reference markers carry their target in the Remark column; the pair
+    // is an annotation on the row it is printed under, so it lands in that row's
+    // remark — and closes description accumulation, because the annotation's own
+    // continuation lines print back at the Description origin.
+    if (isAnnot) {
+      block.annotClosed = true;
+      if (curRow) curRow.remark = appendText(curRow.remark, appendText(desc, remark));
+      continue;
+    }
 
     // Heads the breakpoint rows below it and says nothing they do not; skipped
     // rather than closed so those rows still reach the row they scope.
@@ -1055,11 +1090,17 @@ async function extractParts(pdf, pageNum, carry = {}) {
       }
       if (isApplicabilityText(desc)) {
         (curRow ?? block).applDesc.push(desc);   // scopes the row it is printed under
-      } else if (!block.annotClosed && curRow) {
-        curRow.description = appendText(curRow.description, desc);
+      } else if (curRow) {
+        // Once an annotation is open, Description-column text is the annotation's
+        // continuation and joins the remark — except the discontinued flag, which
+        // is the part's own and keeps its place in the description.
+        if (!block.annotClosed || FLAG_RE.test(desc))
+          curRow.description = appendText(curRow.description, desc);
+        else
+          curRow.remark = appendText(curRow.remark, desc);
       }
     }
-    if (remark && !block.annotClosed && curRow) {
+    if (remark && curRow) {
       curRow.remark = appendText(curRow.remark, remark);
     }
   }
@@ -1067,9 +1108,11 @@ async function extractParts(pdf, pageNum, carry = {}) {
   // "PR:480" on the title row gates the WHOLE section (15 sections); the variant
   // and code tokens beside it are the section's own scope. They are split apart
   // here only because `model` is the display string the viewer prints verbatim —
-  // the typed facets are derived from the same tokens downstream.
+  // the typed facets are derived from the same tokens downstream. A sub-title's
+  // Model entry (titleModelIsScope=false) stays display-only.
+  const titleScopeToks  = titleModelIsScope ? titleModelToks : [];
   const titleModelLines = titleModelToks.filter(t => !isApplicabilityModel(t));
-  const titleApplModel  = titleModelToks.filter(t =>  isApplicabilityModel(t));
+  const titleApplModel  = titleScopeToks.filter(t =>  isApplicabilityModel(t));
 
   const titleRow = (titleDescLines.length || titleRemarkLines.length ||
                     titleModelToks.length || titleApplDesc.length)
@@ -1077,7 +1120,7 @@ async function extractParts(pdf, pageNum, carry = {}) {
         description:   titleDescLines.join(' '),
         remark:        titleRemarkLines.join(' '),
         model:         [...new Set(titleModelLines)].join(' '),
-        modelScope:    [...new Set(titleModelToks)].join(' '),
+        modelScope:    [...new Set(titleScopeToks)].join(' '),
         applicability: [...titleApplModel, ...titleApplDesc].join(' | '),
       }
     : null;
