@@ -83,7 +83,8 @@ try:
         page = ctx.pages[0] if ctx.pages else ctx.new_page()
         page.goto(f'{base_url}/index.html', wait_until='load')
 
-        # Step 1: list all file paths in OPFS (just strings, small)
+        # Step 1: list all file paths in OPFS (just strings, small).
+        # Diagrams live in section.diagram_blob, so the DB is the whole catalog.
         file_list = page.evaluate(
             """async () => {
                 const root  = await navigator.storage.getDirectory();
@@ -93,12 +94,6 @@ try:
                     try { await catHandle.getFileHandle('catalog.sqlite'); }
                     catch { continue; }
                     paths.push(catId + '/catalog.sqlite');
-                    try {
-                        const imgDir = await catHandle.getDirectoryHandle('images');
-                        for await (const [name, fh] of imgDir.entries()) {
-                            if (fh.kind === 'file') paths.push(catId + '/images/' + name);
-                        }
-                    } catch { /* no images dir */ }
                 }
                 return paths;
             }"""
@@ -136,11 +131,7 @@ try:
                 zip_path,
             )
             exports[zip_path] = base64.b64decode(b64)
-            size_kb = len(exports[zip_path]) / 1024
-            if zip_path.endswith('catalog.sqlite'):
-                print(f"  ✓ {zip_path}: {size_kb:.0f} KB")
-            else:
-                print(f"  + {zip_path} ({size_kb:.0f} KB)")
+            print(f"  ✓ {zip_path}: {len(exports[zip_path]) / 1024:.0f} KB")
 
         ctx.close()
 
@@ -154,7 +145,9 @@ if not exports:
 
 # ── Write zip ─────────────────────────────────────────────────────────────────
 
-with zipfile.ZipFile(out, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+# Stored, not deflated: most of each DB is WebP diagram blobs, which deflate
+# shrinks by ~2% while costing seconds.
+with zipfile.ZipFile(out, 'w', compression=zipfile.ZIP_STORED) as zf:
     for zip_path, data in exports.items():
         zf.writestr(zip_path, data)
 

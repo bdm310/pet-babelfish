@@ -32,8 +32,10 @@ importScripts(
 );
 
 // The applicability grammar, shared verbatim with the viewer so a part's scope
-// means the same thing when written as it does when read.
+// means the same thing when written as it does when read. The schema is shared
+// for the same reason: the viewer checks a DB against the definition that wrote it.
 importScripts(new URL('./appl.js', self.location.href).href);
+importScripts(new URL('./schema.js', self.location.href).href);
 
 // Prevent pdf.min.js from spawning a nested worker — it should use the
 // already-running pdf.worker.min.js indirectly via the fake worker path.
@@ -104,7 +106,7 @@ async function ingest(buffer, catalogId) {
   t = performance.now();
   const SQL = await initSqlJs({ locateFile: () => SQLJS_WASM });
   const db  = new SQL.Database();
-  createSchema(db);
+  SCHEMA.create(db);
   TIMING.dbInit = performance.now() - t;
 
   post('status', { message: 'Initialising OCR…' });
@@ -123,7 +125,6 @@ async function ingest(buffer, catalogId) {
   t = performance.now();
   const opfsRoot  = await navigator.storage.getDirectory();
   const catalogDir = await opfsRoot.getDirectoryHandle(catalogId, { create: true });
-  const imagesDir  = await catalogDir.getDirectoryHandle('images', { create: true });
   TIMING.opfsSetup = performance.now() - t;
 
   post('status', { message: 'Parsing table of contents…' });
@@ -169,10 +170,10 @@ async function ingest(buffer, catalogId) {
 
       const tDiag = performance.now();
       const [diagramResult, partsResults] = await Promise.all([
-        renderDiagram(pdf, sec.diagramPage, sec.sectionNum, imagesDir, catalogId, tWorker)
+        renderDiagram(pdf, sec.diagramPage, tWorker)
           .catch(e => {
             post('status', { message: `Diagram render skipped for ${sec.sectionNum}: ${e.message}` });
-            return { imgPath: null, callouts: [] };
+            return { imgBytes: null, callouts: [] };
           }),
         extractSectionParts(pdf, firstPartsPage, nextDiagramPage),
       ]);
@@ -192,14 +193,14 @@ async function ingest(buffer, catalogId) {
   // ── Phase 2: sequential — insert collected results into the database ──────────
   for (let i = 0; i < sections.length; i++) {
     const { sec, diagramResult, partsResults } = sectionResults[i];
-    const { imgPath, callouts } = diagramResult;
+    const { imgBytes, callouts } = diagramResult;
     const firstPartsPage = sec.diagramPage + 1;
 
     t = performance.now();
     const mgId  = ensureMainGroup(db, mgCache, catalogId, sec.mainGroupNum, sec.mainGroupTitle);
     const secId = insertSection(
       db, mgId, catalogId, sec.sectionNum, sec.sectionTitle,
-      firstPartsPage, sec.diagramPage, imgPath
+      firstPartsPage, sec.diagramPage, imgBytes
     );
     for (const c of callouts) {
       calloutStmt.run([secId, c.number, c.x0, c.y0, c.x1, c.y1, c.confidence]);
@@ -255,7 +256,7 @@ async function ingest(buffer, catalogId) {
     `  V-page parse       : ${fmt(T.vPageParse)} [${pct(T.vPageParse)}]\n` +
     `  renderDiagram()    : ${fmt(T.renderDiagram)} [${pct(T.renderDiagram)}] ${perSec(T.renderDiagram)}\n` +
     `    page render+oplist : ${fmt(T.render)} ${perDiag(T.render)}\n` +
-    `    PNG convert+save   : ${fmt(T.convertSavePng)} ${perDiag(T.convertSavePng)}\n` +
+    `    WebP encode        : ${fmt(T.convertDiagram)} ${perDiag(T.convertDiagram)}\n` +
     `    ocrDiagram() total : ${fmt(T.totalOcr)} ${perDiag(T.totalOcr)}\n` +
     `      binarize+upscale   : ${fmt(T.binarizeUpscale)}\n` +
     `      findBlobs (BFS)    : ${fmt(T.findBlobs)}\n` +
@@ -1566,7 +1567,6 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
   let catalogDir;
   try { catalogDir = await opfsRoot.getDirectoryHandle(catalogId); }
   catch { throw new Error(`No existing catalog "${catalogId}" — run a full ingest first.`); }
-  const imagesDir = partsOnly ? null : await catalogDir.getDirectoryHandle('images', { create: true });
 
   let db;
   try {
@@ -1574,52 +1574,6 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
     const file = await fh.getFile();
     db = new SQL.Database(new Uint8Array(await file.arrayBuffer()));
   } catch { throw new Error(`catalog.sqlite not found for "${catalogId}" — run a full ingest first.`); }
-
-  // Migrate schema: add any tables that didn't exist in previously-ingested DBs
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS pr_code (
-      id INTEGER PRIMARY KEY, catalog_id TEXT,
-      code TEXT NOT NULL, description TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS sales_type (
-      id INTEGER PRIMARY KEY, catalog_id TEXT,
-      sales_term TEXT NOT NULL, description TEXT NOT NULL,
-      mount_from TEXT, mount_to TEXT, remark TEXT
-    );
-    CREATE TABLE IF NOT EXISTS vin_range (
-      id INTEGER PRIMARY KEY, catalog_id TEXT,
-      model_year INTEGER, start_date TEXT,
-      vin_from TEXT, vin_to TEXT, remark TEXT
-    );
-    CREATE TABLE IF NOT EXISTS engine_code (
-      id INTEGER PRIMARY KEY, catalog_id TEXT,
-      ec TEXT NOT NULL, displacement_l TEXT,
-      power_kw INTEGER, power_hp INTEGER, cylinders INTEGER,
-      mount_from TEXT, mount_to TEXT, remark TEXT
-    );
-    CREATE TABLE IF NOT EXISTS transmission_code (
-      id INTEGER PRIMARY KEY, catalog_id TEXT,
-      tc TEXT NOT NULL, type_code TEXT,
-      mount_from TEXT, mount_to TEXT, remark TEXT
-    );
-    CREATE TABLE IF NOT EXISTS engine_number_range (
-      id INTEGER PRIMARY KEY, catalog_id TEXT,
-      number_from TEXT, number_to TEXT,
-      model_year INTEGER, vehicle_type TEXT, engine_type TEXT
-    );
-    CREATE TABLE IF NOT EXISTS transmission_number_range (
-      id INTEGER PRIMARY KEY, catalog_id TEXT,
-      number_from TEXT, number_to TEXT,
-      model_year INTEGER, vehicle_type TEXT, gearbox_type TEXT
-    );
-  `);
-  // Columns added by the block-oriented parts rewrite — a DB ingested before it
-  // won't have them, and a parts-only re-ingest must not require a full re-run.
-  ensureColumns(db, 'part',    { parent_id: 'INTEGER', colour_code: 'TEXT' });
-  ensureColumns(db, 'section', { applicability: 'TEXT', engine_code: 'TEXT',
-                                 gearbox_code: 'TEXT', body_line: 'TEXT',
-                                 body_style: 'TEXT' });
-  db.exec('CREATE INDEX IF NOT EXISTS part_parent_idx ON part(parent_id)');
 
   post('status', { message: 'Parsing table of contents…' });
   const outline       = await pdf.getOutline();
@@ -1671,11 +1625,11 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
 
       const [diagramResult, partsResults] = await Promise.all([
         partsOnly
-          ? Promise.resolve({ imgPath: null, callouts: null })
-          : renderDiagram(pdf, sec.diagramPage, sec.sectionNum, imagesDir, catalogId, tWorker)
+          ? Promise.resolve({ imgBytes: null, callouts: null })
+          : renderDiagram(pdf, sec.diagramPage, tWorker)
               .catch(e => {
                 post('status', { message: `Diagram render skipped for ${sec.sectionNum}: ${e.message}` });
-                return { imgPath: null, callouts: [] };
+                return { imgBytes: null, callouts: [] };
               }),
         extractSectionParts(pdf, firstPartsPage, nextDiagramPage),
       ]);
@@ -1691,8 +1645,8 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
         continue;
       }
 
-      if (diagramResult.imgPath)
-        db.run('UPDATE section SET diagram_image=? WHERE id=?', [diagramResult.imgPath, secId]);
+      if (diagramResult.imgBytes)
+        db.run('UPDATE section SET diagram_blob=? WHERE id=?', [diagramResult.imgBytes, secId]);
 
       if (diagramResult.callouts !== null) {
         db.run('DELETE FROM callout WHERE section_id=?', [secId]);
@@ -1736,19 +1690,19 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
 const TIMING = {
   // ── ingest phases ──────────────────────────────────────────────────────────
   pdfLoad:         0,  // pdfjsLib.getDocument
-  dbInit:          0,  // initSqlJs + createSchema
+  dbInit:          0,  // initSqlJs + SCHEMA.create
   tesseractInit:   0,  // initTesseract
   opfsSetup:       0,  // navigator.storage.getDirectory + handle setup
   tocParse:        0,  // pdf.getOutline + parseOutline
   vPageParse:      0,  // parseVPages() — PR codes, sales types, VIN ranges
-  renderDiagram:   0,  // renderDiagram() wall time (includes OCR and PNG save)
+  renderDiagram:   0,  // renderDiagram() wall time (includes OCR and WebP encode)
   extractParts:    0,  // extractParts() across all pages of all sections
   dbInserts:       0,  // calloutStmt.run + partStmt.run + insertSection
   ftsBuild:        0,  // FTS index rebuild
   dbSave:          0,  // db.export + writeOpfsFile
   // ── OCR internals (subset of renderDiagram) ────────────────────────────────
   render:          0,  // page.getOperatorList + page.render
-  convertSavePng:  0,  // canvas.convertToBlob + writeOpfsFile
+  convertDiagram:  0,  // canvas.convertToBlob → WebP bytes for section.diagram_blob
   binarizeUpscale: 0,  // binarize + upscale
   findBlobs:       0,  // connected-component labeling
   renderBlobs:     0,  // renderBlobCanvas × N candidates
@@ -1765,7 +1719,7 @@ const TIMING = {
 
 // ── Diagram rendering ─────────────────────────────────────────────────────────
 
-async function renderDiagram(pdf, pageNum, sectionNum, imagesDir, catalogId, tWorker) {
+async function renderDiagram(pdf, pageNum, tWorker) {
   const page   = await pdf.getPage(pageNum);
   const vp     = page.getViewport({ scale: DIAGRAM_SCALE });
   const canvas = new OffscreenCanvas(Math.round(vp.width), Math.round(vp.height));
@@ -1816,11 +1770,9 @@ async function renderDiagram(pdf, pageNum, sectionNum, imagesDir, catalogId, tWo
   // Save native image (or 2× render fallback) binarized to WebP for display.
   // ocrCanvas is native when available — no upscaling wasted on the stored file.
   t = performance.now();
-  const blob = await binarize(ocrCanvas, OCR_BIN_THRESH).convertToBlob({ type: 'image/webp' });
-  const name = `${sectionNum}.webp`;
-  await writeOpfsFile(imagesDir, name, await blob.arrayBuffer());
-  const imgPath = `${catalogId}/images/${name}`;
-  TIMING.convertSavePng += performance.now() - t;
+  const blob     = await binarize(ocrCanvas, OCR_BIN_THRESH).convertToBlob({ type: 'image/webp' });
+  const imgBytes = new Uint8Array(await blob.arrayBuffer());
+  TIMING.convertDiagram += performance.now() - t;
 
   let callouts = [];
   if (tWorker) {
@@ -1831,7 +1783,7 @@ async function renderDiagram(pdf, pageNum, sectionNum, imagesDir, catalogId, tWo
     }
   }
 
-  return { imgPath, callouts };
+  return { imgBytes, callouts };
 }
 
 // ── OPFS helper ───────────────────────────────────────────────────────────────
@@ -1867,95 +1819,6 @@ function insertVPageData(db, catalogId, { prCodes, salesTypes, vinRanges, engine
     transmNums, t => [catalogId, t.numberFrom, t.numberTo, t.modelYear, t.vehicleType, t.gearboxType]);
 }
 
-function createSchema(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS catalog (
-      id TEXT PRIMARY KEY, model TEXT, page_count INTEGER, ingested_at TEXT
-    );
-    CREATE TABLE IF NOT EXISTS main_group (
-      id INTEGER PRIMARY KEY, catalog_id TEXT, number TEXT, title TEXT
-    );
-    CREATE TABLE IF NOT EXISTS section (
-      id INTEGER PRIMARY KEY, main_group_id INTEGER, catalog_id TEXT,
-      number TEXT, title TEXT, parts_page INTEGER, diagram_page INTEGER, diagram_image TEXT,
-      title_remark TEXT, title_model TEXT,
-      -- Scope printed on the section's title row (e.g. "PR:480" gating the whole
-      -- manual-gearbox section). AND-ed with each part's own applicability.
-      applicability TEXT,
-      -- title_model conflates engine, gearbox, model line and body style in one
-      -- free-text string, so nothing can filter on any of them. These hold the same
-      -- tokens typed and separated, each as a canonical OR-list ("G9750,G9788" =
-      -- either gearbox); title_model stays as printed because it is the display
-      -- string. NULL means the section does not constrain that facet.
-      engine_code TEXT, gearbox_code TEXT, body_line TEXT, body_style TEXT
-    );
-    -- parent_id: colour/trim variants of a part are CHILD rows. They stay orderable
-    -- and searchable but occupy no position of their own and inherit the parent's
-    -- applicability, quantity and remark.
-    CREATE TABLE IF NOT EXISTS part (
-      id INTEGER PRIMARY KEY, section_id INTEGER, catalog_id TEXT,
-      parent_id INTEGER REFERENCES part(id),
-      position TEXT, part_number TEXT, colour_code TEXT, description TEXT,
-      quantity TEXT, remarks TEXT, applicability TEXT
-    );
-    CREATE INDEX IF NOT EXISTS part_parent_idx ON part(parent_id);
-    CREATE VIRTUAL TABLE IF NOT EXISTS part_fts USING fts4(
-      content="part",
-      part_number, description
-    );
-    CREATE TABLE IF NOT EXISTS callout (
-      id INTEGER PRIMARY KEY, section_id INTEGER,
-      number TEXT, x0 INTEGER, y0 INTEGER, x1 INTEGER, y1 INTEGER,
-      confidence INTEGER
-    );
-    CREATE TABLE IF NOT EXISTS pr_code (
-      id INTEGER PRIMARY KEY, catalog_id TEXT,
-      code TEXT NOT NULL, description TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS sales_type (
-      id INTEGER PRIMARY KEY, catalog_id TEXT,
-      sales_term TEXT NOT NULL, description TEXT NOT NULL,
-      mount_from TEXT, mount_to TEXT, remark TEXT
-    );
-    CREATE TABLE IF NOT EXISTS vin_range (
-      id INTEGER PRIMARY KEY, catalog_id TEXT,
-      model_year INTEGER, start_date TEXT,
-      vin_from TEXT, vin_to TEXT, remark TEXT
-    );
-    CREATE TABLE IF NOT EXISTS engine_code (
-      id INTEGER PRIMARY KEY, catalog_id TEXT,
-      ec TEXT NOT NULL, displacement_l TEXT,
-      power_kw INTEGER, power_hp INTEGER, cylinders INTEGER,
-      mount_from TEXT, mount_to TEXT, remark TEXT
-    );
-    CREATE TABLE IF NOT EXISTS transmission_code (
-      id INTEGER PRIMARY KEY, catalog_id TEXT,
-      tc TEXT NOT NULL, type_code TEXT,
-      mount_from TEXT, mount_to TEXT, remark TEXT
-    );
-    CREATE TABLE IF NOT EXISTS engine_number_range (
-      id INTEGER PRIMARY KEY, catalog_id TEXT,
-      number_from TEXT, number_to TEXT,
-      model_year INTEGER, vehicle_type TEXT, engine_type TEXT
-    );
-    CREATE TABLE IF NOT EXISTS transmission_number_range (
-      id INTEGER PRIMARY KEY, catalog_id TEXT,
-      number_from TEXT, number_to TEXT,
-      model_year INTEGER, vehicle_type TEXT, gearbox_type TEXT
-    );
-  `);
-}
-
-// Idempotently add columns missing from an already-ingested DB. SQLite has no
-// "ADD COLUMN IF NOT EXISTS", so check PRAGMA table_info first.
-function ensureColumns(db, table, cols) {
-  const have = new Set(
-    (db.exec(`PRAGMA table_info(${table})`)[0]?.values ?? []).map(r => r[1])
-  );
-  for (const [name, type] of Object.entries(cols)) {
-    if (!have.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
-  }
-}
 
 function ensureMainGroup(db, cache, catalogId, number, title) {
   const key = `${catalogId}\x00${number}`;
@@ -1967,12 +1830,12 @@ function ensureMainGroup(db, cache, catalogId, number, title) {
   return id;
 }
 
-function insertSection(db, mgId, catalogId, num, title, partsPage, diagPage, imgPath) {
+function insertSection(db, mgId, catalogId, num, title, partsPage, diagPage, imgBytes) {
   db.run(
     `INSERT INTO section
-       (main_group_id, catalog_id, number, title, parts_page, diagram_page, diagram_image)
+       (main_group_id, catalog_id, number, title, parts_page, diagram_page, diagram_blob)
      VALUES (?,?,?,?,?,?,?)`,
-    [mgId, catalogId, num, title, partsPage, diagPage, imgPath]
+    [mgId, catalogId, num, title, partsPage, diagPage, imgBytes]
   );
   return db.exec('SELECT last_insert_rowid()')[0].values[0][0];
 }

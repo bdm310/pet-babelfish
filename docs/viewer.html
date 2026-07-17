@@ -607,6 +607,7 @@
   <script src="theme.js"></script>
   <script src="appl.js"></script>
   <script src="vin.js"></script>
+  <script src="schema.js"></script>
   <script src="garage.js"></script>
   <script>
     const SQLJS_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
@@ -1053,8 +1054,8 @@
             this.db    = new this.SQL.Database(new Uint8Array(buf));
 
             if (!this._schemaCurrent()) {
-              this.status = `"${this.catalogId}" was ingested with an older schema — re-ingest it ` +
-                            `(tools/ingest.py --parts-only) to pick up option codes and part variants.`;
+              this.status = `"${this.catalogId}" doesn't match the current schema — ` +
+                            `re-ingest it with tools/ingest.py.`;
               this.db = null;
               return;
             }
@@ -1082,7 +1083,8 @@
 
         // ── File-mode loader ─────────────────────────────────────────
         // Fetches a SQLite file from a URL and loads it directly (no OPFS).
-        // Diagrams are unavailable in this mode (images live in OPFS).
+        // Diagrams work here too — they ride in section.diagram_blob, so the file
+        // is the whole catalog.
         // Usage: viewer.html?sqlite=http://localhost:8080/my-catalog.sqlite
 
         async loadFromUrl(url) {
@@ -1099,7 +1101,7 @@
             const buf  = await resp.arrayBuffer();
             this.db    = new this.SQL.Database(new Uint8Array(buf));
             if (!this._schemaCurrent()) {
-              this.status = 'This database was built with an older schema — re-ingest the catalog.';
+              this.status = "This database doesn't match the current schema — re-ingest the catalog.";
               this.db = null;
               return;
             }
@@ -1163,13 +1165,16 @@
             [this.catalogId]
           );
           this.mainGroups = mgs.map(([id, number, title]) => {
+            // diagram_blob is deliberately not selected — it would pull every
+            // section's WebP into memory to build a list of titles. Only its
+            // presence matters here; selectSection() reads the bytes by id.
             const sections = this._query(
-              `SELECT id, number, title, diagram_image, title_remark, title_model, applicability,
-                      engine_code, gearbox_code, body_line, body_style
+              `SELECT id, number, title, diagram_blob IS NOT NULL, title_remark, title_model,
+                      applicability, engine_code, gearbox_code, body_line, body_style
                FROM section WHERE main_group_id=? ORDER BY number`,
               [id]
-            ).map(([sid, snum, stitle, dimg, tremark, tmodel, sappl, sec, sgc, sbl, sbs]) => ({
-              id: sid, number: snum, title: stitle, diagram_image: dimg,
+            ).map(([sid, snum, stitle, hasDiag, tremark, tmodel, sappl, sec, sgc, sbl, sbs]) => ({
+              id: sid, number: snum, title: stitle, has_diagram: !!hasDiag,
               title_remark: tremark || '', title_model: tmodel || '',
               applicability: sappl || '',
               scope: sectionScope(sappl, sec, sgc, sbl, sbs),
@@ -1220,17 +1225,12 @@
           this.hoveredPos  = null;
           this.selectedPos = null;
 
-          // Load diagram (OPFS only; not available in file mode)
+          // Load diagram. It travels inside the DB, so this works in file mode too.
           this._setDiagram(null);
-          if (sec.diagram_image && !this.sqliteFileMode) {
-            try {
-              const url = await this._opfsUrl(sec.diagram_image);
-              this._setDiagram(url);
-            } catch (e) {
-              console.warn('Diagram unavailable:', sec.diagram_image);
-            }
+          if (sec.has_diagram) {
+            const bytes = this._scalar('SELECT diagram_blob FROM section WHERE id=?', [sec.id]);
+            if (bytes) this._setDiagram(URL.createObjectURL(new Blob([bytes], { type: 'image/webp' })));
           }
-
         },
 
         // ── Search ───────────────────────────────────────────────────
@@ -1431,16 +1431,6 @@
           }
           const row = document.querySelector(`tr[data-pos-num="${CSS.escape(hit.number)}"]`);
           if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        },
-
-        // ── OPFS helpers ─────────────────────────────────────────────
-
-        async _opfsUrl(path) {
-          const parts = path.split('/');
-          let handle  = await navigator.storage.getDirectory();
-          for (const seg of parts.slice(0, -1)) handle = await handle.getDirectoryHandle(seg);
-          const file = await (await handle.getFileHandle(parts.at(-1))).getFile();
-          return URL.createObjectURL(file);
         },
 
         _setDiagram(url) {
@@ -1821,16 +1811,10 @@
 
         // ── SQL helpers ───────────────────────────────────────────────
 
-        // Colour variants (part.parent_id) and section-level option gating
-        // (section.applicability) arrived together. A catalog ingested before them
-        // would throw "no such column" deep inside _buildToc, so check up front and
-        // say what to do about it. Re-ingest is required for correctness anyway.
+        // A DB that doesn't match the schema throws "no such column" deep inside
+        // _buildToc, so check up front and say what to do about it instead.
         _schemaCurrent() {
-          const has = (table, col) =>
-            this._query(`PRAGMA table_info(${table})`).some(r => r[1] === col);
-          try {
-            return has('part', 'parent_id') && has('section', 'applicability');
-          } catch { return false; }
+          return SCHEMA.matches(this.SQL, this.db);
         },
 
         _query(sql, params = []) {

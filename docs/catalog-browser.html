@@ -183,22 +183,16 @@
             let catalogCount = 0;
             for await (const [catId, catHandle] of root.entries()) {
               if (catHandle.kind !== 'directory') continue;
-              try { await catHandle.getFileHandle('catalog.sqlite'); } catch { continue; }
-              // catalog.sqlite
-              const sqlFh = await catHandle.getFileHandle('catalog.sqlite');
+              let sqlFh;
+              try { sqlFh = await catHandle.getFileHandle('catalog.sqlite'); } catch { continue; }
+              // Diagrams live in section.diagram_blob, so the DB is the whole catalog.
               files[`${catId}/catalog.sqlite`] = new Uint8Array(await (await sqlFh.getFile()).arrayBuffer());
-              // images/
-              try {
-                const imgDir = await catHandle.getDirectoryHandle('images');
-                for await (const [imgName, imgFh] of imgDir.entries()) {
-                  if (imgFh.kind !== 'file') continue;
-                  files[`${catId}/images/${imgName}`] = new Uint8Array(await (await imgFh.getFile()).arrayBuffer());
-                }
-              } catch { /* no images dir */ }
               catalogCount++;
             }
             if (!catalogCount) { this.status = 'No catalogs found'; return; }
-            const zip  = fflate.zipSync(files);
+            // level 0: most of the DB is now WebP, which deflate shrinks by ~2% while
+            // costing seconds. The catalog data that does compress is the small part.
+            const zip  = fflate.zipSync(files, { level: 0 });
             const blob = new Blob([zip], { type: 'application/zip' });
             const url  = URL.createObjectURL(blob);
             Object.assign(document.createElement('a'), { href: url, download: 'catalogs.zip' }).click();
@@ -224,22 +218,23 @@
             const buf      = new Uint8Array(await file.arrayBuffer());
             const unzipped = fflate.unzipSync(buf);
             const root     = await navigator.storage.getDirectory();
-            const catalogs = new Set();
+
+            // A zip is one <catalogId>/catalog.sqlite per catalog, and nothing else.
+            let imported = 0;
             for (const [zipPath, data] of Object.entries(unzipped)) {
-              // zipPath is e.g. "997tt/catalog.sqlite" or "997tt/images/101-010.png"
-              const segments = zipPath.split('/');
-              const catId    = segments[0];
-              let dir = await root.getDirectoryHandle(catId, { create: true });
-              for (const seg of segments.slice(1, -1))
-                dir = await dir.getDirectoryHandle(seg, { create: true });
-              const fh = await dir.getFileHandle(segments.at(-1), { create: true });
-              const w  = await fh.createWritable();
+              const segs = zipPath.split('/');
+              if (segs.length !== 2 || segs[1] !== 'catalog.sqlite') continue;
+              const dir = await root.getDirectoryHandle(segs[0], { create: true });
+              const fh  = await dir.getFileHandle('catalog.sqlite', { create: true });
+              const w   = await fh.createWritable();
               await w.write(data);
               await w.close();
-              catalogs.add(catId);
+              imported++;
             }
+            if (!imported) throw new Error('no catalog.sqlite found in zip');
+
             await this.listCatalogs();
-            this.status = `Imported ${catalogs.size} catalog(s)`;
+            this.status = `Imported ${imported} catalog(s)`;
           } catch (e) {
             this.status = 'Import failed: ' + e.message;
           }
@@ -359,7 +354,13 @@
           this.loading = true;
           this.status  = 'Querying…';
           try {
-            const res = this.db.exec(`SELECT * FROM ${this.tableName} LIMIT 10000`);
+            // Summarise BLOB columns in SQL rather than selecting them — SELECT *
+            // on section would haul every diagram into memory to render a table.
+            const cols = this.db.exec(`PRAGMA table_info(${this.tableName})`)[0].values;
+            const sel  = cols.map(([, name, type]) =>
+              /BLOB/i.test(type) ? `'<'||length("${name}")||' bytes>' AS "${name}"` : `"${name}"`
+            ).join(', ');
+            const res = this.db.exec(`SELECT ${sel} FROM ${this.tableName} LIMIT 10000`);
             if (!res.length) { this.status = '0 rows'; this.loading = false; return; }
             this.columns      = res[0].columns;
             this.rows         = res[0].values;
