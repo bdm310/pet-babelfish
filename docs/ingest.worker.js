@@ -145,12 +145,7 @@ async function ingest(buffer, catalogId) {
   const mgCache   = new Map(); // `catalogId\0number` → rowid
   let   partCount = 0;
 
-  const partStmt = db.prepare(
-    `INSERT INTO part
-       (section_id, catalog_id, position, part_number, description,
-        quantity, remarks, applicability, raw_columns)
-     VALUES (?,?,?,?,?,?,?,?,?)`
-  );
+  const partStmt = db.prepare(PART_INSERT_SQL);
 
   const calloutStmt = db.prepare(
     'INSERT INTO callout (section_id, number, x0, y0, x1, y1, confidence) VALUES (?,?,?,?,?,?,?)'
@@ -208,20 +203,8 @@ async function ingest(buffer, catalogId) {
     for (let pi = 0; pi < partsResults.length; pi++) {
       const { parts, titleRow } = partsResults[pi];
       t = performance.now();
-      if (pi === 0 && titleRow) {
-        const tr = titleRow;
-        db.run(
-          'UPDATE section SET title=?, title_remark=?, title_model=? WHERE id=?',
-          [tr.description || sec.sectionTitle, tr.remark || null, tr.model || null, secId]
-        );
-      }
-      for (const part of parts) {
-        partStmt.run([
-          secId, catalogId, part.pos, part.partNumber, part.description,
-          part.qty, part.remark, part.applicability, JSON.stringify(part.rawColumns),
-        ]);
-        partCount++;
-      }
+      if (pi === 0 && titleRow) applyTitleRow(db, secId, titleRow, sec.sectionTitle);
+      partCount += insertPartBlocks(db, partStmt, secId, catalogId, parts);
       TIMING.dbInserts += performance.now() - t;
     }
 
@@ -343,6 +326,8 @@ async function parseVPages(pdf, firstDiagramPage) {
   const transmCodes  = [];
   const engineNums   = [];
   const transmNums   = [];
+  // Carries the open PR entry across page breaks — see parsePRCodesPage.
+  const prState      = { current: null };
 
   for (let pageNum = 1; pageNum < firstDiagramPage; pageNum++) {
     const page    = await pdf.getPage(pageNum);
@@ -355,7 +340,7 @@ async function parseVPages(pdf, firstDiagramPage) {
     const rows     = rowObjs.map(r => r.items.map(it => it.str.trim()).filter(Boolean));
     const pageText = rows.map(r => r.join(' ')).join('\n');
 
-    if      (pageText.includes('Optional Equipment'))        parsePRCodesPage(rows, prCodes);
+    if      (pageText.includes('Optional Equipment'))        parsePRCodesPage(rows, prCodes, prState);
     else if (pageText.includes('Model Overview Sales Type')) parseSalesTypesPage(rows, salesTypes);
     else if (pageText.includes('Model Overview EC'))         parseEngineCodesPage(rows, engineCodes);
     else if (pageText.includes('Model Overview TC'))         parseTransmissionCodesPage(rows, transmCodes);
@@ -365,13 +350,19 @@ async function parseVPages(pdf, firstDiagramPage) {
     else if (pageText.includes('Gearbox type'))              parseTransmissionNumbersPage(rows, transmNums);
   }
 
+  if (prState.current) prCodes.push(prState.current);
+
   return { prCodes, salesTypes, vinRanges, engineCodes, transmCodes, engineNums, transmNums };
 }
 
-function parsePRCodesPage(rows, prCodes) {
+// `state.current` is the open entry and is owned by the caller, because a description
+// can wrap past a page break — 567 is "Windscreen tinted, upper part darker coloured",
+// and "darker coloured" lands after the repeated header on the next page. A per-page
+// `current` is null there, so the tail was silently dropped. The caller flushes the
+// last open entry once every page has been read.
+function parsePRCodesPage(rows, prCodes, state) {
   const CODE_RE = /^\d{3}$|^[A-Z][A-Z0-9]{2,3}$/;
   let inData  = false;
-  let current = null;
 
   for (const texts of rows) {
     if (!texts.length) continue;
@@ -392,14 +383,12 @@ function parsePRCodesPage(rows, prCodes) {
     if (texts[0] === '*') continue;
 
     if (CODE_RE.test(texts[0])) {
-      if (current) prCodes.push(current);
-      current = { code: texts[0], description: texts.slice(1).join(' ') };
-    } else if (current) {
-      current.description = (current.description + ' ' + texts.join(' ')).trim();
+      if (state.current) prCodes.push(state.current);
+      state.current = { code: texts[0], description: texts.slice(1).join(' ') };
+    } else if (state.current) {
+      state.current.description = (state.current.description + ' ' + texts.join(' ')).trim();
     }
   }
-
-  if (current) prCodes.push(current);
 }
 
 function parseSalesTypesPage(rows, salesTypes) {
@@ -617,6 +606,19 @@ function parseTransmissionCodesPage(rows, transmCodes) {
   }
 }
 
+// A serial range prints as "627 00501>18000" or "A9750 1 002001>999999": the value
+// after ">" is only the final segment and inherits every leading block segment from
+// the start value. Taken literally, "18000" is a different series than "627 00501"
+// and no range comparison against it can work. 627/628/629 are the year-coded engine
+// blocks, so the end of that range is "627 18000".
+function expandRangeEnd(from, to) {
+  if (!to) return null;
+  const f = from.trim().split(/\s+/);
+  const t = to.trim().split(/\s+/);
+  if (t.length >= f.length) return t.join(' ');
+  return [...f.slice(0, f.length - t.length), ...t].join(' ');
+}
+
 function parseEngineNumbersPage(rows, engineNumbers) {
   let inData = false;
   for (const texts of rows) {
@@ -631,9 +633,10 @@ function parseEngineNumbersPage(rows, engineNumbers) {
     if (yearIdx < 1) continue;
     const numberRaw = texts.slice(0, yearIdx).join(' ');
     const gtMatch   = numberRaw.match(/^(.+?)\s*>\s*(.+)$/);
+    const numberFrom = (gtMatch ? gtMatch[1] : numberRaw).trim();
     engineNumbers.push({
-      numberFrom:  (gtMatch ? gtMatch[1] : numberRaw).trim(),
-      numberTo:    gtMatch ? gtMatch[2].trim() : null,
+      numberFrom,
+      numberTo:    gtMatch ? expandRangeEnd(numberFrom, gtMatch[2]) : null,
       modelYear:   parseInt(texts[yearIdx]),
       vehicleType: texts.slice(yearIdx + 1, -1).join(' '),
       engineType:  texts.at(-1),
@@ -654,9 +657,10 @@ function parseTransmissionNumbersPage(rows, transmNumbers) {
     if (yearIdx < 1) continue;
     const numberRaw = texts.slice(0, yearIdx).join(' ');
     const gtMatch   = numberRaw.match(/^(.+?)\s*>\s*(.+)$/);
+    const numberFrom = (gtMatch ? gtMatch[1] : numberRaw).trim();
     transmNumbers.push({
-      numberFrom:  (gtMatch ? gtMatch[1] : numberRaw).trim(),
-      numberTo:    gtMatch ? gtMatch[2].trim() : null,
+      numberFrom,
+      numberTo:    gtMatch ? expandRangeEnd(numberFrom, gtMatch[2]) : null,
       modelYear:   parseInt(texts[yearIdx]),
       vehicleType: texts.slice(yearIdx + 1, -1).join(' '),
       gearboxType: texts.at(-1),
@@ -665,9 +669,90 @@ function parseTransmissionNumbersPage(rows, transmNumbers) {
 }
 
 // ── Parts extraction ──────────────────────────────────────────────────────────
+//
+// The PDF is BLOCK-oriented, not row-oriented. A part is a header row followed by
+// continuation rows that extend each column INDEPENDENTLY — and one continuation
+// row can carry several columns at once. Column origins are constant across all
+// parts pages (Pos=14, Part Number=57, Description=162, Remark=346, Qty=445,
+// Model=488) but are still calibrated per page from the header row.
+//
+//   [33]1 [57]997 555 201 05 [162]Door panel trim [346]left [405]lhd [445]1 [488]TURBO/COUPE
+//                                                                         [488]PR:098,490,  <- Model wrap
+//                            [162]Leather                                 [488]981          <- Description AND Model
+//   [57]997 555 201 05 [138]FSA [162]black/grey                                             <- colour variant (child row)
+//                            [162]D >> - MJ 2007                                           <- year footer, scopes the BLOCK
+//
+// Rows are routed BY COLUMN, never by sniffing the whole row:
+//   Pos / Qty   — header row only. Accumulating them would corrupt values that
+//                 are currently exact.
+//   Model       — always extends the PARENT block's applicability, even when a
+//                 colour variant intervenes.
+//   Description — applicability-shaped text ("D - MJ 2008>>", "F >> 99-9S770 428")
+//                 extends the parent's applicability; anything else extends the
+//                 CURRENT row's description (the parent, or the last variant).
+//   Remark      — extends the current row's remark.
+//
+// A colour variant (Part Number but no Pos) becomes a CHILD of the open block: it
+// stays orderable and searchable but occupies no position of its own.
 
-async function extractParts(pdf, pageNum, initialLastPos = '') {
-  if (pageNum < 1 || pageNum > pdf.numPages) return { parts: [], titleRow: null, lastPos: initialLastPos };
+// Cross-reference / sub-assembly markers. Their bodies are printed back at the
+// Description origin, so once one appears it closes description+remark
+// accumulation for the block (applicability continuations still route normally).
+const ANNOT_RE = /^(?:with:|without:|also use:|only in conj\. with:|see illustration)/i;
+
+// A Pos value: plain "5", or "(5)" when the part differs from the illustration.
+const POS_RE = /^(?:\d{1,3}|\(\d{1,3}\))$/;
+
+// Part-Number sub-column: the colour/trim code ("FSA") sits at x≈132/138, right of
+// the part number groups (57/78/100/121) but left of the Description origin (162).
+const COLOUR_CODE_X = 130;
+
+// A Description-column continuation that SCOPES the block instead of describing it:
+// "D - MJ 2008>>", "D >> - MJ 2007", "F 99-7S780 790>>", "M >> 816 14410".
+// The leading 1-3 letter market/breakpoint token is what makes this safe: real
+// description text such as "Identification: >> >>" or "M 12 X 1,5" cannot match.
+function isApplicabilityText(t) {
+  return /^[A-Z]{1,3}\s/.test(t) && (/\bMJ\b/.test(t) || t.includes('>>'));
+}
+
+// A Model-column value that is a scope rather than a variant/engine token.
+function isApplicabilityModel(t) {
+  return /^PR:/.test(t) || /\bMJ\b/.test(t) || t.includes('>>');
+}
+
+// Model-column tokens are space-joined, EXCEPT a wrapped PR list: "PR:098,490,"
+// followed by "981" must become the single token "PR:098,490,981". Two separate
+// tokens would be read as two option slots and AND-ed, wrongly rejecting the part.
+function appendModelToken(acc, tok) {
+  if (!acc) return tok;
+  return acc.endsWith(',') ? acc + tok : acc + ' ' + tok;
+}
+
+function appendText(acc, tok) {
+  return acc ? acc + ' ' + tok : tok;
+}
+
+function makeBlock(pos, partNumber, colourCode, description, qty, remark, model, cols) {
+  return {
+    pos, partNumber, colourCode,
+    description, qty, remark,
+    applicability: model,   // Model column of the header row — the biggest single
+    applDesc:      [],      // fix: this never used to reach the DB at all.
+    annotClosed:   false,
+    children:      [],
+    rawColumns:    rawColumns(cols),
+  };
+}
+
+// Final applicability string. Segments are joined by ' | '; the viewer parses PR
+// tokens and MJ years out of the whole string, so segment order is not load-bearing.
+function blockApplicability(b) {
+  return [b.applicability, ...b.applDesc].filter(Boolean).join(' | ');
+}
+
+async function extractParts(pdf, pageNum, carry = {}) {
+  if (pageNum < 1 || pageNum > pdf.numPages)
+    return { parts: [], titleRow: null, carry: { ...carry, isFirst: false } };
 
   const page    = await pdf.getPage(pageNum);
   const vp      = page.getViewport({ scale: 1 });
@@ -677,22 +762,20 @@ async function extractParts(pdf, pageNum, initialLastPos = '') {
   const items = content.items.filter(it => it.str?.trim());
   const rows  = groupIntoRows(items, vp.height);
 
-  let colOrigins  = null;
-  const parts     = [];
-  let current     = null;
-  let seenPart    = false;
-  let lastPos     = initialLastPos;
-  // Rows before the first part row that have no Pos/Part Number — the diagram title block.
-  // Multiple description, remark, and model lines are each collected separately so they can
-  // be joined independently.
+  let colOrigins = null;
+  const parts    = [];
+  // A block can span a page break: its colour variants and even its year footer
+  // may be printed at the top of the next page.
+  let block  = carry.block  ?? null;  // open parent block
+  let curRow = carry.curRow ?? null;  // parent, or its last colour variant
+  // The title block exists only on a section's first parts page, before any data
+  // row. A carried-in block means we resume mid-data.
+  let titleClosed = carry.isFirst === false || block != null;
+
   const titleDescLines   = [];
   const titleRemarkLines = [];
   const titleModelLines  = [];
-
-  function flush() {
-    if (current?.partNumber) parts.push(current);
-    current = null;
-  }
+  const titleApplLines   = [];
 
   for (const row of rows) {
     const texts = row.items.map(it => it.str.trim()).filter(Boolean);
@@ -704,114 +787,132 @@ async function extractParts(pdf, pageNum, initialLastPos = '') {
     // Model filter line — "Model: 997T07  Model life 2007>>2009"
     if (texts.some(t => t === 'Model:' || t.startsWith('Model:'))) continue;
 
+    // Page footer — "19.07.2018   - 2   Kat P30". Its columns land in Description
+    // and Model, so it must be dropped before any accumulation.
+    if (/^\d{2}\.\d{2}\.\d{4}/.test(texts[0])) continue;
+
     // Column header row — sets column origins for all subsequent rows on this page
-    if (!colOrigins && texts.filter(t => COL_HEADER_SET.has(t)).length >= 4) {
-      colOrigins = calibrateCols(row.items);
+    if (!colOrigins) {
+      if (texts.filter(t => COL_HEADER_SET.has(t)).length >= 4)
+        colOrigins = calibrateCols(row.items);
+      continue; // haven't reached the header yet
+    }
+
+    const cols     = assignColumns(row.items, colOrigins);
+    const pos      = colText(cols['Pos']);
+    const pnItems  = cols['Part Number'];
+    const pn       = colText(pnItems.filter(it => it.transform[4] <  COLOUR_CODE_X));
+    const colour   = colText(pnItems.filter(it => it.transform[4] >= COLOUR_CODE_X));
+    const desc     = colText(cols['Description']);
+    const remark   = colText(cols['Remark']);
+    const qty      = colText(cols['Qty']);
+    const model    = colText(cols['Model']);
+    const isAnnot  = !!desc && ANNOT_RE.test(desc);
+    const fullPn   = colour ? (pn ? pn + ' ' + colour : colour) : pn;
+
+    // ── Part header row. The Pos token must actually live in the Pos column —
+    //    testing texts[0] alone let "997" (a part number) pass as a position.
+    if (pos && POS_RE.test(pos)) {
+      titleClosed = true;
+      // No part number is fine: 84 rows are real positions that own a callout but
+      // list no orderable number (they were dropped before, orphaning callouts).
+      block = makeBlock(pos, fullPn, colour || null, desc, qty, remark, model, cols);
+      parts.push(block);
+      curRow = block;
       continue;
     }
 
-    if (!colOrigins) continue; // haven't reached the header yet
-
-    // Part row — checked FIRST because part rows often contain "PR:" codes in
-    // the Model column, which would otherwise trigger the applicability heuristic.
-    // Case 1: plain number "5"
-    // Case 2: parenthesized "(5)" — part may differ from illustration
-    if ((/^\d{1,3}$/.test(texts[0]) || /^\(\d{1,3}\)$/.test(texts[0])) && row.items.length >= 5) {
-      seenPart = true;
-      flush();
-      const cols = assignColumns(row.items, colOrigins);
-      const pos = joinCol(cols['Pos']);
-      if (pos) lastPos = pos;
-      current = {
-        pos:          pos || lastPos,
-        partNumber:   joinCol(cols['Part Number']),
-        description:  joinCol(cols['Description']),
-        qty:          joinCol(cols['Qty']),
-        remark:       joinCol(cols['Remark']),
-        applicability: '',
-        rawColumns:   cols,
-      };
-      continue;
-    }
-
-    // Case 3: dash position — part exists but is not shown in diagram.
-    // Distinguished from sub-part inclusion lines by column assignment: if the
-    // dash lands in the Pos column with a valid Part Number, it's case 3.
-    // Sub-part dashes appear in the Part Number zone and fall through to be skipped.
-    if (texts[0] === '-') {
-      if (row.items.length >= 4) {
-        const cols = assignColumns(row.items, colOrigins);
-        if (joinCol(cols['Pos']) === '-' && joinCol(cols['Part Number'])) {
-          seenPart = true;
-          flush();
-          // Don't update lastPos — '-' shouldn't propagate to continuation rows
-          current = {
-            pos:           '-',
-            partNumber:    joinCol(cols['Part Number']),
-            description:   joinCol(cols['Description']),
-            qty:           joinCol(cols['Qty']),
-            remark:        joinCol(cols['Remark']),
-            applicability: '',
-            rawColumns:    cols,
-          };
-          continue;
-        }
-      }
-      // Sub-part inclusion line — not separately orderable, skip
-      continue;
-    }
-
-    // Applicability continuation — PR option codes or model-year ranges.
-    // Only reached after part-row and sub-part checks.
-    if (isApplicabilityRow(texts)) {
-      if (current) {
-        const token = texts.join(' ');
-        current.applicability = current.applicability
-          ? current.applicability + ' | ' + token
-          : token;
+    // ── Dash position — a part that exists but is not shown in the diagram.
+    //    Only a part when it carries a part number; a bare "-" introduces an
+    //    annotation ("- primed", "- Gear wheel sets / see illustration: 303-000").
+    if (pos === '-') {
+      titleClosed = true;
+      if (pn) {
+        block  = makeBlock('-', fullPn, colour || null, desc, qty, remark, model, cols);
+        parts.push(block);
+        curRow = block;
+      } else {
+        block = null; curRow = null;   // annotation — nothing may attach to it
       }
       continue;
     }
 
-    // Diagram title block: rows before the first part that have no Pos/Part Number.
-    // Multiple description, remark, and model lines each get accumulated separately.
-    if (!seenPart) {
-      const cols = assignColumns(row.items, colOrigins);
-      const pos  = joinCol(cols['Pos']);
-      const pn   = joinCol(cols['Part Number']);
-      const desc = joinCol(cols['Description']);
-      const rem  = joinCol(cols['Remark']);
-      const mod  = joinCol(cols['Model']);
-      if (!pos && !pn && (desc || rem || mod)) {
-        if (desc) titleDescLines.push(desc);
-        if (rem)  titleRemarkLines.push(rem);
-        if (mod)  titleModelLines.push(mod);
-        continue;
-      }
+    // ── Any other Pos token is annotation (the A..G legend on 801-000)
+    if (pos) {
+      titleClosed = true;
+      block = null; curRow = null;
+      continue;
     }
 
-    // Group headers, notes, attention blocks — skip
+    // ── Colour variant — a Part Number with no Pos. Becomes a child of the block.
+    if (pn && /[0-9A-Za-z]/.test(pn)) {
+      titleClosed = true;
+      if (block) {
+        curRow = {
+          pos: null, partNumber: fullPn, colourCode: colour || null,
+          description: desc, qty: '', remark, applicability: '',
+          rawColumns: rawColumns(cols),
+        };
+        block.children.push(curRow);
+      }
+      continue;
+    }
+
+    // ── Diagram title block: rows before the first data row of the section ──
+    if (!titleClosed) {
+      if (isAnnot) { titleClosed = true; continue; } // notes/attention block — stop
+      if (desc) {
+        // A section-level model-year scope (20 sections) rather than title text
+        if (isApplicabilityText(desc)) titleApplLines.push(desc);
+        else                           titleDescLines.push(desc);
+      }
+      if (remark) titleRemarkLines.push(remark);
+      if (model) {
+        // "PR:480" on the title row gates the WHOLE section (15 sections). It used
+        // to be swallowed by the row-level applicability sniff and lost entirely.
+        if (isApplicabilityModel(model)) titleApplLines.push(model);
+        else                             titleModelLines.push(model);
+      }
+      continue;
+    }
+
+    // ── Continuation rows ──
+    // Cross-reference markers carry their target in the Remark column and
+    // occasionally a PR in Model; neither belongs to the part, so skip the row
+    // whole and stop taking description/remark for this block.
+    if (isAnnot) {
+      if (block) block.annotClosed = true;
+      continue;
+    }
+
+    if (!block) continue;
+
+    // Model always extends the PARENT, even across intervening colour variants.
+    if (model) block.applicability = appendModelToken(block.applicability, model);
+
+    if (desc) {
+      if (isApplicabilityText(desc)) {
+        block.applDesc.push(desc);           // scopes the block, not the variant
+      } else if (!block.annotClosed && curRow) {
+        curRow.description = appendText(curRow.description, desc);
+      }
+    }
+    if (remark && !block.annotClosed && curRow) {
+      curRow.remark = appendText(curRow.remark, remark);
+    }
   }
 
-  flush();
-
-  const titleRow = (titleDescLines.length || titleRemarkLines.length || titleModelLines.length)
+  const titleRow = (titleDescLines.length || titleRemarkLines.length ||
+                    titleModelLines.length || titleApplLines.length)
     ? {
-        description: titleDescLines.join(' '),
-        remark:      titleRemarkLines.join(' '),
-        model:       [...new Set(titleModelLines)].join(' '),
+        description:   titleDescLines.join(' '),
+        remark:        titleRemarkLines.join(' '),
+        model:         [...new Set(titleModelLines)].join(' '),
+        applicability: titleApplLines.join(' | '),
       }
     : null;
 
-  return { parts, titleRow, lastPos };
-}
-
-function isApplicabilityRow(texts) {
-  return texts.some(t =>
-    /^PR:/.test(t) ||      // option code: PR:480
-    t.includes('>>') ||    // range separator: MJ2007>>MJ2009
-    /MJ\d{4}/.test(t)      // model-year token: MJ2007
-  );
+  return { parts, titleRow, carry: { block, curRow, isFirst: false } };
 }
 
 // ── Row and column utilities ──────────────────────────────────────────────────
@@ -839,7 +940,9 @@ function calibrateCols(headerItems) {
     .sort((a, b) => a.x - b.x);
 }
 
-// Assign each item to the rightmost column whose x-origin is ≤ item.x (+5pt tolerance)
+// Assign each item to the rightmost column whose x-origin is ≤ item.x (+5pt tolerance).
+// Returns the ITEMS (not strings) so callers can still see x — the Part Number column
+// has a sub-column (the colour/trim code) that only x can separate.
 function assignColumns(items, colOrigins) {
   const cols = Object.fromEntries(colOrigins.map(c => [c.name, []]));
   for (const it of items) {
@@ -848,34 +951,42 @@ function assignColumns(items, colOrigins) {
     for (const c of colOrigins) {
       if (c.x <= x + 5) col = c.name;
     }
-    cols[col].push(it.str.trim());
+    cols[col].push(it);
   }
   return cols;
 }
 
-function joinCol(arr) { return arr?.join(' ') ?? ''; }
+function colText(items) {
+  return items?.map(it => it.str.trim()).filter(Boolean).join(' ') ?? '';
+}
 
-// Fetch all parts pages for a section in parallel, then trim at the first empty page.
+// Plain {column: [strings]} snapshot of a row — kept as the raw escape hatch.
+function rawColumns(cols) {
+  return Object.fromEntries(
+    Object.entries(cols).map(([k, v]) => [k, v.map(it => it.str.trim())])
+  );
+}
+
+// Extract every parts page of a section, in order. A block can span a page break
+// (its colour variants and year footer may continue overleaf), so the open block is
+// carried from page to page.
 // nextDiagramPage is the exclusive upper bound (first page of the next section).
 async function extractSectionParts(pdf, firstPartsPage, nextDiagramPage) {
-  const pageNums = [];
-  for (let p = firstPartsPage; p < nextDiagramPage; p++) pageNums.push(p);
-  if (!pageNums.length) return [];
-
   const out = [];
-  let carryLastPos = '';
-  for (const p of pageNums) {
+  let carry = { block: null, curRow: null, isFirst: true };
+  for (let p = firstPartsPage; p < nextDiagramPage; p++) {
     const t = performance.now();
-    let r = { parts: [], titleRow: null, lastPos: carryLastPos };
+    let r = { parts: [], titleRow: null, carry: { ...carry, isFirst: false } };
     try {
-      r = await extractParts(pdf, p, carryLastPos);
+      r = await extractParts(pdf, p, carry);
     } catch (e) {
       post('status', { message: `Parts extraction skipped p${p}: ${e.message}` });
     }
     TIMING.extractParts += performance.now() - t;
     TIMING.partsPagesCount++;
-    carryLastPos = r.lastPos;
-    if (!r.parts.length) break;
+    // Bounded by the section's page range — never break on an empty page, or a
+    // notes-only page mid-run would silently drop every page after it.
+    carry = r.carry;
     out.push(r);
   }
   return out;
@@ -1348,6 +1459,11 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
       model_year INTEGER, vehicle_type TEXT, gearbox_type TEXT
     );
   `);
+  // Columns added by the block-oriented parts rewrite — a DB ingested before it
+  // won't have them, and a parts-only re-ingest must not require a full re-run.
+  ensureColumns(db, 'part',    { parent_id: 'INTEGER', colour_code: 'TEXT' });
+  ensureColumns(db, 'section', { applicability: 'TEXT' });
+  db.exec('CREATE INDEX IF NOT EXISTS part_parent_idx ON part(parent_id)');
 
   post('status', { message: 'Parsing table of contents…' });
   const outline       = await pdf.getOutline();
@@ -1384,12 +1500,7 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
   const calloutStmt = db.prepare(
     'INSERT INTO callout (section_id, number, x0, y0, x1, y1, confidence) VALUES (?,?,?,?,?,?,?)'
   );
-  const partStmt = db.prepare(
-    `INSERT INTO part
-       (section_id, catalog_id, position, part_number, description,
-        quantity, remarks, applicability, raw_columns)
-     VALUES (?,?,?,?,?,?,?,?,?)`
-  );
+  const partStmt = db.prepare(PART_INSERT_SQL);
 
   const sectionIndexMap = new Map(sections.map((s, i) => [s.sectionNum, i]));
   let doneCount = 0, partCount = 0;
@@ -1435,14 +1546,8 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
       db.run('DELETE FROM part WHERE section_id=?', [secId]);
       for (let pi = 0; pi < partsResults.length; pi++) {
         const { parts, titleRow } = partsResults[pi];
-        if (pi === 0 && titleRow)
-          db.run('UPDATE section SET title=?, title_remark=?, title_model=? WHERE id=?',
-            [titleRow.description || sec.sectionTitle, titleRow.remark || null, titleRow.model || null, secId]);
-        for (const part of parts) {
-          partStmt.run([secId, catalogId, part.pos, part.partNumber, part.description,
-            part.qty, part.remark, part.applicability, JSON.stringify(part.rawColumns)]);
-          partCount++;
-        }
+        if (pi === 0 && titleRow) applyTitleRow(db, secId, titleRow, sec.sectionTitle);
+        partCount += insertPartBlocks(db, partStmt, secId, catalogId, parts);
       }
     } finally {
       if (tWorker) pool.release(tWorker);
@@ -1616,13 +1721,21 @@ function createSchema(db) {
     CREATE TABLE IF NOT EXISTS section (
       id INTEGER PRIMARY KEY, main_group_id INTEGER, catalog_id TEXT,
       number TEXT, title TEXT, parts_page INTEGER, diagram_page INTEGER, diagram_image TEXT,
-      title_remark TEXT, title_model TEXT
+      title_remark TEXT, title_model TEXT,
+      -- Scope printed on the section's title row (e.g. "PR:480" gating the whole
+      -- manual-gearbox section). AND-ed with each part's own applicability.
+      applicability TEXT
     );
+    -- parent_id: colour/trim variants of a part are CHILD rows. They stay orderable
+    -- and searchable but occupy no position of their own and inherit the parent's
+    -- applicability, quantity and remark.
     CREATE TABLE IF NOT EXISTS part (
       id INTEGER PRIMARY KEY, section_id INTEGER, catalog_id TEXT,
-      position TEXT, part_number TEXT, description TEXT,
+      parent_id INTEGER REFERENCES part(id),
+      position TEXT, part_number TEXT, colour_code TEXT, description TEXT,
       quantity TEXT, unit TEXT, remarks TEXT, applicability TEXT, raw_columns TEXT
     );
+    CREATE INDEX IF NOT EXISTS part_parent_idx ON part(parent_id);
     CREATE VIRTUAL TABLE IF NOT EXISTS part_fts USING fts4(
       content="part",
       part_number, description
@@ -1670,6 +1783,17 @@ function createSchema(db) {
   `);
 }
 
+// Idempotently add columns missing from an already-ingested DB. SQLite has no
+// "ADD COLUMN IF NOT EXISTS", so check PRAGMA table_info first.
+function ensureColumns(db, table, cols) {
+  const have = new Set(
+    (db.exec(`PRAGMA table_info(${table})`)[0]?.values ?? []).map(r => r[1])
+  );
+  for (const [name, type] of Object.entries(cols)) {
+    if (!have.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+  }
+}
+
 function ensureMainGroup(db, cache, catalogId, number, title) {
   const key = `${catalogId}\x00${number}`;
   if (cache.has(key)) return cache.get(key);
@@ -1688,6 +1812,41 @@ function insertSection(db, mgId, catalogId, num, title, partsPage, diagPage, img
     [mgId, catalogId, num, title, partsPage, diagPage, imgPath]
   );
   return db.exec('SELECT last_insert_rowid()')[0].values[0][0];
+}
+
+const PART_INSERT_SQL =
+  `INSERT INTO part
+     (section_id, catalog_id, parent_id, position, part_number, colour_code,
+      description, quantity, remarks, applicability, raw_columns)
+   VALUES (?,?,?,?,?,?,?,?,?,?,?)`;
+
+// Write a section's blocks: each parent, then its colour variants as child rows.
+// Children carry no position and no applicability — they inherit the parent's.
+function insertPartBlocks(db, partStmt, secId, catalogId, parts) {
+  let n = 0;
+  for (const b of parts) {
+    partStmt.run([secId, catalogId, null, b.pos, b.partNumber, b.colourCode,
+                  b.description, b.qty, b.remark, blockApplicability(b),
+                  JSON.stringify(b.rawColumns)]);
+    n++;
+    if (!b.children.length) continue;
+    const parentId = db.exec('SELECT last_insert_rowid()')[0].values[0][0];
+    for (const c of b.children) {
+      partStmt.run([secId, catalogId, parentId, null, c.partNumber, c.colourCode,
+                    c.description, c.qty, c.remark, c.applicability,
+                    JSON.stringify(c.rawColumns)]);
+      n++;
+    }
+  }
+  return n;
+}
+
+function applyTitleRow(db, secId, titleRow, fallbackTitle) {
+  db.run(
+    'UPDATE section SET title=?, title_remark=?, title_model=?, applicability=? WHERE id=?',
+    [titleRow.description || fallbackTitle, titleRow.remark || null,
+     titleRow.model || null, titleRow.applicability || null, secId]
+  );
 }
 
 // ── Single-page OCR for spike/debug use ──────────────────────────────────────

@@ -119,8 +119,11 @@ Tables: `catalog`, `main_group`, `section`, `part`, `callout`, `pr_code`, `sales
 **Parts catalog (core)**
 - **catalog**: one row per ingested PDF (`id`, `model`, `page_count`, `ingested_at`)
 - **main_group**: top-level groups 0-9 (Engine, Gearbox, Body, etc.)
-- **section**: numbered like `103-010`; has `parts_page`, `diagram_page`, `diagram_image` path, `title_model` (engine/variant code), `title_remark` (left/right)
-- **part**: `position` is either plain `1`/`2` or parenthesized `(1)`/`(5)` (the latter are diagram callout refs); `applicability` encodes PR option codes + market + model year range, e.g. `(complete) PR:480 | D - MJ 2008>> - MJ 2008`
+- **section**: numbered like `103-010`; has `parts_page`, `diagram_page`, `diagram_image` path, `title_model` (engine/variant code), `title_remark` (left/right), `applicability` (section-level scope printed on the title row — gates every part in the section, e.g. `701-000` = `PR:480`)
+- **part**: `position` is either plain `1`/`2` or parenthesized `(1)`/`(5)` (the latter are diagram callout refs); `applicability` encodes PR option codes + variant token + market + model year range, e.g. `TURBO/COUPE PR:098,490,981 | D >> - MJ 2007`
+  - `parent_id` — colour/trim variants are **child rows** of their parent block. They carry no `position` and no `applicability` of their own: they inherit the parent's (the viewer resolves this via `COALESCE(NULLIF(p.applicability,''), pp.applicability)`). Top-level parts are `parent_id IS NULL`.
+  - `colour_code` — the trim code on a variant row (`FSA`), also retained as a suffix on `part_number`.
+  - A part is a **block**: a header row plus continuation rows that extend each column independently. `extractParts()` is block-oriented; a row-oriented read of this PDF is wrong. See AUDIT.md.
 - **callout**: OCR-extracted bounding boxes (pixel coords at 2× scale) per section diagram; links to parts via matching `number` against the stripped position value within the same `section_id`
 
 **V-pages (model/option info, parsed from intro pages)**
