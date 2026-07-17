@@ -133,6 +133,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
   <script src="theme.js"></script>
+  <script src="catalogs.js"></script>
   <script>
     const SQLJS_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
     const PAGE_SIZE  = 200;
@@ -307,14 +308,7 @@
         },
 
         async listCatalogs() {
-          const root  = await navigator.storage.getDirectory();
-          const found = [];
-          for await (const [name, handle] of root.entries()) {
-            if (handle.kind !== 'directory') continue;
-            try { await handle.getFileHandle('catalog.sqlite'); found.push({ id: name, label: name }); }
-            catch { /* not a catalog */ }
-          }
-          this.catalogs = found;
+          this.catalogs = await CATALOGS.list(this.SQL);
         },
 
         async onCatalogChange() {

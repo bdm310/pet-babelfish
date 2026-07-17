@@ -216,7 +216,7 @@
     <template x-if="vehicleMode">
       <button class="btn-filter" :class="{on: hideOk}" @click="hideOk = !hideOk"
               title="Hide parts marked Ok, and sections where every part is marked Ok">
-        Hide Ok<template x-if="hideOk && okSectionIds.length"><span class="f-badge" x-text="okSectionIds.length"></span></template>
+        Hide Ok<template x-if="hideOk && okSectionIds.size"><span class="f-badge" x-text="okSectionIds.size"></span></template>
       </button>
     </template>
     <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
@@ -316,6 +316,11 @@
             x-show="filterActive" @click="clearVehicleFilter()">✕ clear</button>
     <template x-if="filterActive && currentSection && !searchMode">
       <span class="fl" x-text="filterSectionCount + ' of ' + parts.length + ' match'"></span>
+    </template>
+    <!-- The sidebar silently loses these, so say so — a section that has gone
+         missing should be traceable to the filter rather than look like bad data. -->
+    <template x-if="emptySectionIds.size">
+      <span class="fl" x-text="emptySectionIds.size + ' sections hidden — no parts on this car'"></span>
     </template>
   </div>
 
@@ -608,6 +613,7 @@
   <script src="appl.js"></script>
   <script src="vin.js"></script>
   <script src="schema.js"></script>
+  <script src="catalogs.js"></script>
   <script src="garage.js"></script>
   <script>
     const SQLJS_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
@@ -710,8 +716,12 @@
 
         // hide-Ok filter (vehicle mode only)
         hideOk:           false,
-        okSectionIds:     [],   // sections whose every in-scope part is marked Ok
-        _sectionParts:    null,  // sectionId -> [{ key, appl }]; built lazily, see _sectionPartIndex
+
+        // Sidebar rollups — sections the sidebar drops. See _recomputeSectionRollups.
+        okSectionIds:     new Set(),   // every in-scope part marked Ok (hide-Ok only)
+        emptySectionIds:  new Set(),   // the spec filter admits none of its parts
+        _sectionParts:    null,  // sectionId -> [{ key, appl, scope }]; see _sectionPartIndex
+        _rollupTimer:     null,
 
         // Ok/Notes are per-vehicle, so only offer them while actually viewing the
         // open vehicle's own catalog (the catalog picker can move off it).
@@ -743,12 +753,13 @@
           this.status = '';
           this.$watch('hoveredPos',  () => this.drawCallouts());
           this.$watch('selectedPos', () => this.drawCallouts());
-          this.$watch('hideOk', () => { this._reflowParts(); this._recomputeOkSections(); });
-          // The spec filter decides which parts a section's Ok rollup counts, and
-          // which callouts belong on the car's diagram.
+          this.$watch('hideOk', () => { this._reflowParts(); this._scheduleRollups(); });
+          // The spec filter decides which sections the sidebar lists at all, which
+          // parts a section's Ok rollup counts, and which callouts belong on the
+          // car's diagram.
           for (const f of ['vfYear', 'vfMarket', 'vfLine', 'vfBody', 'vfEngine', 'vfGearbox',
                            'vfChassis', 'vfEngineNo', 'vfPrCodes'])
-            this.$watch(f, () => { this._recomputeOkSections(); this.drawCallouts(); });
+            this.$watch(f, () => { this._scheduleRollups(); this.drawCallouts(); });
           window.addEventListener('resize', () => requestAnimationFrame(() => this._positionCanvas()));
           this._startQueryBridge();
 
@@ -801,7 +812,7 @@
           this.activeVehicle = null;
           this.partMeta      = {};
           this.hideOk        = false;
-          this.okSectionIds  = [];
+          this.okSectionIds  = new Set();
           this.clearVehicleFilter();
           this._reflowParts();
         },
@@ -811,7 +822,7 @@
         // in-scope part is marked from the sidebar — the "what's left to do" view.
         // Scope matches the diagram mark-all (sectionOkTargets): the spec filter
         // decides which parts count, so a section of parts that aren't on this car
-        // is not "done" and stays listed.
+        // is not "done" and stays listed — the spec filter drops it instead.
 
         get _visibleParts() {
           if (!this.hideOk || !this.vehicleMode) return this.parts;
@@ -822,12 +833,14 @@
           return this.parts.length - this._visibleParts.length;
         },
 
-        // The open section always stays listed even once fully marked — otherwise
-        // ticking its last part would yank the sidebar out from under the user.
+        // The open section always stays listed even once fully marked or filtered
+        // out — otherwise ticking its last part, or a keystroke in the filter, would
+        // yank the sidebar out from under the user.
         visibleSections(mg) {
-          if (!this.hideOk || !this.okSectionIds.length) return mg.sections;
+          const ok = this.okSectionIds, empty = this.emptySectionIds;
+          if (!ok.size && !empty.size) return mg.sections;
           const cur = this.currentSection && this.currentSection.id;
-          return mg.sections.filter(s => s.id === cur || !this.okSectionIds.includes(s.id));
+          return mg.sections.filter(s => s.id === cur || !(ok.has(s.id) || empty.has(s.id)));
         },
 
         // Rebuild the table from the parts the filter admits. Position groups are
@@ -844,13 +857,20 @@
         },
 
         // Every section's parts keyed as selectSection keys them (same occurrence
-        // counter, same rowid order), so Ok state can be rolled up section-wide
-        // without loading each one. Built once per catalog, on demand.
+        // counter, same rowid order), so the sidebar rollups can be taken over the
+        // whole catalog without loading each section. Built once per catalog, on
+        // demand — it is a fact about the catalog, not about the car, so it survives
+        // every filter edit.
+        //
+        // Scopes are parsed here rather than at match time: the rollups re-run on
+        // every filter keystroke, and re-parsing 24,000 scopes on each pass is the
+        // whole cost of the pass. A section's own scope is parsed once, not once per
+        // part in it.
         _sectionPartIndex() {
           if (this._sectionParts) return this._sectionParts;
           const idx = new Map();
           this._sectionParts = idx;
-          if (!this.db || !this.vehicleMode) return idx;
+          if (!this.db) return idx;
           let rows = [];
           try {
             rows = this._query(
@@ -863,38 +883,70 @@
               [this.catalogId]
             );
           } catch { return idx; }
-          let curSec = null, occurrence = null, list = null;
+          const parse = s => s ? APPL.parse(s, { codeIndex: this._codeIndex }) : null;
+          let curSec = null, occurrence = null, list = null, scope = null;
           for (const [sid, snum, position, part_number, applicability, ...scopeCols] of rows) {
             if (sid !== curSec) {
               curSec = sid; occurrence = this._occurrenceCounter(); list = [];
+              scope = parse(sectionScope(...scopeCols));
               idx.set(sid, list);
             }
             const n = occurrence(position, part_number);
             list.push({
-              key:      this._partKey(snum, position, part_number, n),
-              appl:     applicability || '',
-              secScope: sectionScope(...scopeCols),
+              key:   this._partKey(snum, position, part_number, n),
+              appl:  parse(applicability),
+              scope,
             });
           }
           return idx;
         },
 
-        _recomputeOkSections() {
-          if (!this.hideOk || !this.vehicleMode) { this.okSectionIds = []; return; }
-          const out = [];
-          for (const [sid, list] of this._sectionPartIndex()) {
-            const targets = list.filter(e => this.partMatchesVehicle(e.appl, e.secScope));
-            if (targets.length && targets.every(e => this.partOk(e.key))) out.push(sid);
-          }
-          this.okSectionIds = out;
+        // partMatchesVehicle's rule, on the scopes _sectionPartIndex parsed once.
+        _entryMatches(e) {
+          if (!this.filterActive) return true;
+          return (!e.appl  || APPL.matches(e.appl,  this.vehicleSpec))
+              && (!e.scope || APPL.matches(e.scope, this.vehicleSpec));
         },
 
-        // Marks change what the filter hides — refresh both views. No-op when the
-        // filter is off, so an unfiltered table never rebuilds on a checkbox click.
+        // Both sidebar rollups, in one pass over the catalog. A section is dropped
+        // when the spec filter admits none of its parts — every row would render
+        // greyed out, so the diagram has nothing on this car — and, under Hide Ok,
+        // when every part it does admit is marked.
+        //
+        // A section the ingest found no parts in is in neither list: nothing was
+        // filtered out of it, so hiding it would just be hiding a gap in the data.
+        _recomputeSectionRollups() {
+          clearTimeout(this._rollupTimer);
+          const rollOk = this.hideOk && this.vehicleMode;
+          const ok = new Set(), empty = new Set();
+          if (this.filterActive || rollOk) {
+            for (const [sid, list] of this._sectionPartIndex()) {
+              const targets = list.filter(e => this._entryMatches(e));
+              // With no spec filter every part is a target, so a list that exists at
+              // all has one: `empty` only ever fills while the filter is on.
+              if (!targets.length) empty.add(sid);
+              else if (rollOk && targets.every(e => this.partOk(e.key))) ok.add(sid);
+            }
+          }
+          this.okSectionIds    = ok;
+          this.emptySectionIds = empty;
+        },
+
+        // Spec edits land one field at a time — restoring a garage vehicle sets nine
+        // in a row, and the year box fires per keystroke — and each rollup is a full
+        // catalog pass, so coalesce them into one.
+        _scheduleRollups() {
+          clearTimeout(this._rollupTimer);
+          this._rollupTimer = setTimeout(() => this._recomputeSectionRollups(), 0);
+        },
+
+        // Marks change what the filter hides — refresh both views. The sidebar
+        // rollup is Hide-Ok's alone to change here: a mark cannot alter which parts
+        // the spec filter admits, so with Hide Ok off nothing rebuilds on a click.
         _afterMarkChange() {
           if (!this.hideOk) return;
           this._reflowParts();
-          this._recomputeOkSections();
+          this._scheduleRollups();
         },
 
         // ── Per-part ok / notes (active vehicle only) ────────────────
@@ -1022,22 +1074,7 @@
         // ── Catalog list ─────────────────────────────────────────────
 
         async listCatalogs() {
-          const root = await navigator.storage.getDirectory();
-          const found = [];
-          for await (const [name, handle] of root.entries()) {
-            if (handle.kind !== 'directory') continue;
-            try {
-              await handle.getFileHandle('catalog.sqlite');
-              found.push({ id: name, label: name });
-            } catch { /* not a catalog dir */ }
-          }
-          this.catalogs = found;
-        },
-
-        // "Porsche 911 Turbo/GT2 - 997T07". Either half may be missing on an odd
-        // catalog, so drop the dash rather than print a dangling one.
-        _catalogLabel(title, model, fallback) {
-          return [title, model].filter(Boolean).join(' - ') || fallback || this.catalogId;
+          this.catalogs = await CATALOGS.list(this.SQL);
         },
 
         // ── Load catalog ─────────────────────────────────────────────
@@ -1066,19 +1103,10 @@
               return;
             }
 
-            // Update catalog label with the title/model from DB
-            const cat = this._one('SELECT title, model FROM catalog WHERE id=?', [this.catalogId]);
-            if (cat) {
-              const label = this._catalogLabel(cat[0], cat[1]);
-              this.catalogs = this.catalogs.map(c =>
-                c.id === this.catalogId ? { ...c, label } : c
-              );
-            }
-
             this.loadFacetOptions();   // first: every later parse reads the code index
             this._buildToc();
             this.loadPrCodes();
-            this._recomputeOkSections();
+            this._recomputeSectionRollups();
             this.status = `${this.mainGroups.length} groups, ${this._scalar('SELECT COUNT(*) FROM section')} sections`;
           } catch (e) {
             this.status = 'Error: ' + e.message;
@@ -1100,6 +1128,7 @@
           this.mainGroups    = [];
           this.currentSection = null;
           this.parts         = [];
+          this._sectionParts = null;   // per-catalog; rebuilt on demand
           this._setDiagram(null);
           try {
             const resp = await fetch(url);
@@ -1114,11 +1143,12 @@
             const cat  = this._one('SELECT id, title, model FROM catalog LIMIT 1');
             if (cat) {
               this.catalogId = cat[0];
-              this.catalogs  = [{ id: cat[0], label: this._catalogLabel(cat[1], cat[2], cat[0]) }];
+              this.catalogs  = [{ id: cat[0], label: CATALOGS.label(cat[1], cat[2], cat[0]) }];
             }
             this.loadFacetOptions();
             this._buildToc();
             this.loadPrCodes();
+            this._recomputeSectionRollups();
             this.status = `${this.mainGroups.length} groups · ${this._scalar('SELECT COUNT(*) FROM section')} sections (file mode — no diagrams)`;
           } catch (e) {
             this.status = 'Error: ' + e.message;

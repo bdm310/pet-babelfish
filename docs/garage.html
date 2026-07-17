@@ -111,7 +111,7 @@
           <select x-model="form.catalogId" @change="onCatalogChange()" style="flex:1">
             <option value="">— select catalog —</option>
             <template x-for="c in catalogs" :key="c.id">
-              <option :value="c.id" x-text="c.id"></option>
+              <option :value="c.id" x-text="c.label"></option>
             </template>
           </select>
         </div>
@@ -220,7 +220,7 @@
           <span class="sub" x-text="vehicleSubtitle(v)"></span>
           <template x-if="v.vin"><span class="vin" x-text="v.vin"></span></template>
           <div class="badges">
-            <span class="badge cat" x-text="v.catalogId || 'no catalog'"></span>
+            <span class="badge cat" x-text="v.catalogId ? catalogLabel(v.catalogId) : 'no catalog'"></span>
             <template x-if="v.spec && v.spec.vfYear"><span class="badge" x-text="'MJ ' + v.spec.vfYear"></span></template>
             <template x-for="f in specBadges(v)" :key="f"><span class="badge" x-text="f"></span></template>
             <template x-if="v.spec && v.spec.vfPrCodes && v.spec.vfPrCodes.length">
@@ -242,6 +242,7 @@
   <script src="theme.js"></script>
   <script src="appl.js"></script>
   <script src="vin.js"></script>
+  <script src="catalogs.js"></script>
   <script src="garage.js"></script>
   <script>
     const SQLJS_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
@@ -287,18 +288,16 @@
 
         async refresh() { this.vehicles = await Garage.list(); },
 
-        // ── OPFS catalog discovery (mirrors viewer) ────────────────
+        // ── OPFS catalog discovery ─────────────────────────────────
         async listCatalogs() {
-          const found = [];
-          try {
-            const rootDir = await navigator.storage.getDirectory();
-            for await (const [name, handle] of rootDir.entries()) {
-              if (handle.kind !== 'directory') continue;
-              try { await handle.getFileHandle('catalog.sqlite'); found.push({ id: name }); }
-              catch { /* not a catalog dir */ }
-            }
-          } catch {}
-          this.catalogs = found;
+          this.catalogs = await CATALOGS.list(this.SQL);
+        },
+
+        // A vehicle stores the catalog id; the card should still show the name.
+        // An id with no catalog behind it any more is shown as-is rather than
+        // silently blanked — it is why the vehicle won't open.
+        catalogLabel(id) {
+          return this.catalogs.find(c => c.id === id)?.label || id;
         },
 
         async _openCatalogDb(id) {
@@ -378,7 +377,7 @@
           if (m.modelYear) this.form.vfYear = String(m.modelYear);
           if (!this.form.nickname) this.form.nickname = [fam, pm.variant].filter(Boolean).join(' ');
           const extra = matches.length > 1 ? ` (+${matches.length - 1})` : '';
-          this.vinMsg = `${fam} · ${my} · ${pm.variant || m.remark || ''}${pm.marketLabel ? ' · ' + pm.marketLabel : ''}${extra} → ${m.catalogId}`;
+          this.vinMsg = `${fam} · ${my} · ${pm.variant || m.remark || ''}${pm.marketLabel ? ' · ' + pm.marketLabel : ''}${extra} → ${this.catalogLabel(m.catalogId)}`;
           this.vinOk  = true;
           await this.onCatalogChange();   // the facet vocabularies the remark is read against
 
