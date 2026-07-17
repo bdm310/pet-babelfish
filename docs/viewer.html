@@ -162,6 +162,9 @@
     .vf-pr-warn { cursor: pointer; font-size: 0.68rem; padding: 0.1rem 0.3rem; border-radius: 2px;
                   background: var(--warn-bg, rgba(200,120,0,0.15)); border: 1px solid var(--warn-bd, rgba(200,120,0,0.4));
                   color: var(--warn, #c87800); white-space: nowrap; }
+    /* Search results only — a section's table drops filtered parts outright. Search
+       is a way into the catalog, so a hit the filter rejects still has to be there
+       to click through to. */
     tr.part-no-match td { opacity: 0.25; }
     tr.part-no-match:hover td { opacity: 0.45; }
     .btn-filter { background: none; border: 1px solid var(--border3); color: var(--text3);
@@ -471,7 +474,6 @@
                 <tr :class="{
                       'pos-active': row._basePos !== null && (hoveredPos === row._basePos || selectedPos === row._basePos),
                       'pos-subrow': !row._isHead,
-                      'part-no-match': filterActive && !partMatchesVehicle(row.part.applicability, currentSectionScope),
                       'part-ok': vehicleMode && partOk(row.part._key)
                     }"
                     :data-pos-num="row._basePos"
@@ -479,13 +481,13 @@
                     @mouseenter="hoveredPos = row._basePos"
                     @mouseleave="hoveredPos = null">
                   <td class="col-pos"
-                      :title="row.part.position === '-' ? 'Not shown in diagram' : /^\(/.test(row.part.position) ? 'May differ from illustration' : ''">
+                      :title="row._posText === '-' ? 'Not shown in diagram' : /^\(/.test(row._posText) ? 'May differ from illustration' : ''">
                     <span class="pos-expand"
                           :style="row._hasMore ? '' : 'visibility:hidden'"
                           @click.stop="row._hasMore && toggleGroup(row._gi)"
                           x-text="row._expanded ? '▼' : '▶'"></span>
-                    <span :class="{'pos-paren': /^\(/.test(row.part.position), 'pos-none': row.part.position === '-'}"
-                          x-text="row.part.position"></span>
+                    <span :class="{'pos-paren': /^\(/.test(row._posText), 'pos-none': row._posText === '-'}"
+                          x-text="row._posText"></span>
                   </td>
                   <td class="col-pn">
                     <a class="pn-link" target="_blank" rel="noopener" @click.stop
@@ -530,7 +532,10 @@
         <template x-if="!searchMode && currentSection && parts.length === 0">
           <div class="parts-placeholder">No parts extracted for this section.</div>
         </template>
-        <template x-if="!searchMode && currentSection && parts.length > 0 && displayRows.length === 0">
+        <template x-if="!searchMode && currentSection && parts.length > 0 && displayRows.length === 0 && emptyReason === 'spec'">
+          <div class="parts-placeholder">No part in this section is on this vehicle.</div>
+        </template>
+        <template x-if="!searchMode && currentSection && parts.length > 0 && displayRows.length === 0 && emptyReason === 'ok'">
           <div class="parts-placeholder">
             Every part here is marked Ok.
             <a href="#" style="color:var(--accent)" @click.prevent="hideOk = false">show them</a>
@@ -757,13 +762,15 @@
           this.status = '';
           this.$watch('hoveredPos',  () => this.drawCallouts());
           this.$watch('selectedPos', () => this.drawCallouts());
-          this.$watch('hideOk', () => { this._reflowParts(); this._scheduleRollups(); });
-          // The spec filter decides which sections the sidebar lists at all, which
-          // parts a section's Ok rollup counts, and which callouts belong on the
-          // car's diagram.
+          this.$watch('hideOk', () => { this._rebuildDisplayRows(); this._scheduleRollups(); });
+          // The spec filter decides which parts the open section lists, which
+          // sections the sidebar lists at all, which parts a section's Ok rollup
+          // counts, and which callouts belong on the car's diagram.
           for (const f of ['vfYear', 'vfMarket', 'vfLine', 'vfBody', 'vfEngine', 'vfGearbox',
                            'vfChassis', 'vfEngineNo', 'vfPrCodes'])
-            this.$watch(f, () => { this._scheduleRollups(); this.drawCallouts(); });
+            this.$watch(f, () => {
+              this._rebuildDisplayRows(); this._scheduleRollups(); this.drawCallouts();
+            });
           window.addEventListener('resize', () => requestAnimationFrame(() => this._positionCanvas()));
           this._startQueryBridge();
 
@@ -818,23 +825,40 @@
           this.hideOk        = false;
           this.okSectionIds  = new Set();
           this.clearVehicleFilter();
-          this._reflowParts();
+          this._rebuildDisplayRows();
         },
 
-        // ── Hide-Ok filter ───────────────────────────────────────────
-        // Drops parts already marked Ok from the table, and sections whose every
-        // in-scope part is marked from the sidebar — the "what's left to do" view.
-        // Scope matches the diagram mark-all (sectionOkTargets): the spec filter
-        // decides which parts count, so a section of parts that aren't on this car
-        // is not "done" and stays listed — the spec filter drops it instead.
+        // ── What the table lists ─────────────────────────────────────
+        // Two filters drop rows, and either alone can empty the table. The spec
+        // filter drops parts that aren't on this car. Hide Ok drops parts already
+        // marked, and sections whose every in-scope part is marked from the sidebar
+        // — the "what's left to do" view. Hide-Ok's scope matches the diagram
+        // mark-all (sectionOkTargets): the spec filter decides which parts count, so
+        // a section of parts that aren't on this car is not "done" and stays listed
+        // — the spec filter drops it instead.
 
-        get _visibleParts() {
-          if (!this.hideOk || !this.vehicleMode) return this.parts;
-          return this.parts.filter(p => !this.partOk(p._key));
+        _partVisible(p) {
+          if (this.filterActive && !this.partMatchesVehicle(p.applicability, this.currentSectionScope))
+            return false;
+          return !(this.hideOk && this.vehicleMode && this.partOk(p._key));
         },
 
+        // Rows Hide Ok alone accounts for. A part the spec filter already dropped is
+        // not on this car, so counting it here would overstate what the toggle holds
+        // back — and the header's "n / m match" already speaks for the spec filter.
         get hiddenOkCount() {
-          return this.parts.length - this._visibleParts.length;
+          if (!this.hideOk || !this.vehicleMode) return 0;
+          return this.parts.filter(p => this.partOk(p._key) &&
+            (!this.filterActive ||
+             this.partMatchesVehicle(p.applicability, this.currentSectionScope))).length;
+        },
+
+        // Which filter emptied the table. Both can be on; the spec filter is named
+        // first because it is the one with nothing to show, not merely hiding.
+        get emptyReason() {
+          if (this.filterActive && !this.parts.some(p =>
+                this.partMatchesVehicle(p.applicability, this.currentSectionScope))) return 'spec';
+          return 'ok';
         },
 
         // The open section always stays listed even once fully marked or filtered
@@ -845,19 +869,6 @@
           if (!ok.size && !empty.size) return mg.sections;
           const cur = this.currentSection && this.currentSection.id;
           return mg.sections.filter(s => s.id === cur || !(ok.has(s.id) || empty.has(s.id)));
-        },
-
-        // Rebuild the table from the parts the filter admits. Position groups are
-        // rebuilt from scratch (a hidden head row promotes the next part to head),
-        // so carry expand state across on basePos.
-        _reflowParts() {
-          const expanded = new Set(
-            this.posGroups.filter(g => g.expanded && g.basePos !== null).map(g => g.basePos));
-          this.posGroups = this._buildPosGroups(this._visibleParts);
-          if (expanded.size)
-            for (const g of this.posGroups)
-              if (g.basePos !== null && expanded.has(g.basePos)) g.expanded = true;
-          this._rebuildDisplayRows();
         },
 
         // Every section's parts keyed as selectSection keys them (same occurrence
@@ -913,9 +924,9 @@
         },
 
         // Both sidebar rollups, in one pass over the catalog. A section is dropped
-        // when the spec filter admits none of its parts — every row would render
-        // greyed out, so the diagram has nothing on this car — and, under Hide Ok,
-        // when every part it does admit is marked.
+        // when the spec filter admits none of its parts — its table would render
+        // empty, so the diagram has nothing on this car — and, under Hide Ok, when
+        // every part it does admit is marked.
         //
         // A section the ingest found no parts in is in neither list: nothing was
         // filtered out of it, so hiding it would just be hiding a gap in the data.
@@ -949,7 +960,7 @@
         // the spec filter admits, so with Hide Ok off nothing rebuilds on a click.
         _afterMarkChange() {
           if (!this.hideOk) return;
-          this._reflowParts();
+          this._rebuildDisplayRows();
           this._scheduleRollups();
         },
 
@@ -1254,8 +1265,8 @@
               applicability: applicability || '',
             };
           });
-          this.posGroups = [];   // fresh section: nothing to carry expand state from
-          this._reflowParts();
+          this.posGroups = this._buildPosGroups(this.parts);
+          this._rebuildDisplayRows();
 
           // Load callouts
           this.callouts = this._query(
@@ -1489,9 +1500,13 @@
         // ── Position grouping ────────────────────────────────────────
         // Groups collapse to their head row with a ▶ expander. Two things join a
         // group: a shared position number, and a colour/trim variant joining its
-        // parent block (variants carry no position of their own). A variant whose
-        // parent the filter hid falls back to position grouping — but variants
-        // inherit the parent's applicability, so the filter hides both together.
+        // parent block (variants carry no position of their own).
+        //
+        // Built from every part in the section, never the filtered subset: grouping
+        // is a fact about the catalog, not about the car. So a variant stays with its
+        // block even when the filter drops the parent row — a variant that carries
+        // its own scope can outlive its parent — and expand state survives a filter
+        // edit for free. _rebuildDisplayRows() does the dropping.
         _buildPosGroups(parts) {
           const groups = [];
           const byBase = new Map();
@@ -1509,31 +1524,38 @@
             } else {
               gi = groups.length;
               if (base !== null) byBase.set(base, gi);
-              groups.push({ basePos: base, parts: [p], expanded: false });
+              groups.push({ basePos: base, posLabel: p.position, parts: [p], expanded: false });
             }
             byId.set(p._rowid, gi);
           }
           return groups;
         },
 
-        // Rebuild flat display list from posGroups. Call after any expand/collapse.
+        // Rebuild the flat display list from posGroups. A filtered part is dropped
+        // outright, not greyed, so a group's head is its first *surviving* part and a
+        // group the filter empties disappears with its parts. Call after any
+        // expand/collapse or filter change.
         _rebuildDisplayRows() {
           const rows = [];
           for (let gi = 0; gi < this.posGroups.length; gi++) {
             const g = this.posGroups[gi];
-            for (let pi = 0; pi < g.parts.length; pi++) {
-              if (pi === 0 || g.expanded) {
-                rows.push({
-                  part:      g.parts[pi],
-                  _rowid:    g.parts[pi]._rowid,
-                  _gi:       gi,
-                  _pi:       pi,
-                  _isHead:   pi === 0,
-                  _hasMore:  pi === 0 && g.parts.length > 1,
-                  _expanded: g.expanded,
-                  _basePos:  g.basePos,
-                });
-              }
+            const shown = g.parts.filter(p => this._partVisible(p));
+            for (let pi = 0; pi < shown.length; pi++) {
+              if (pi > 0 && !g.expanded) break;
+              rows.push({
+                part:      shown[pi],
+                _rowid:    shown[pi]._rowid,
+                _gi:       gi,
+                _pi:       pi,
+                _isHead:   pi === 0,
+                _hasMore:  pi === 0 && shown.length > 1,
+                _expanded: g.expanded,
+                _basePos:  g.basePos,
+                // A promoted head is a colour/trim variant, which carries no position
+                // of its own. It still sits at its block's callout, so show the
+                // block's number rather than heading the group with a blank cell.
+                _posText:  pi === 0 ? (shown[pi].position || g.posLabel) : shown[pi].position,
+              });
             }
           }
           this.displayRows = rows;
