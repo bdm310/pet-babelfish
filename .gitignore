@@ -13,3 +13,5 @@ tools/*.sqlite
 verify-output/
 
 pet-source-pdf/
+css-export/
+catalogs.zip

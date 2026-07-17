@@ -141,6 +141,29 @@
           <span class="hint">left blank, a facet does not filter</span>
         </div>
 
+        <div class="row" x-show="opts.drive.length || opts.trim.length">
+          <template x-if="opts.drive.length">
+            <span style="display:contents">
+              <label>Drive</label>
+              <select x-model="form.vfDrive" style="width:9rem">
+                <option value="">any</option>
+                <template x-for="d in opts.drive" :key="d"><option :value="d" x-text="d === '4' ? 'AWD (4)' : 'RWD (2)'" :selected="d === form.vfDrive"></option></template>
+              </select>
+            </span>
+          </template>
+          <template x-if="opts.trim.length">
+            <span style="display:contents">
+              <label style="width:auto">Trim</label>
+              <select x-model="form.vfTrim" style="width:9rem">
+                <option value="">any</option>
+                <option value="BASE" :selected="form.vfTrim === 'BASE'">base</option>
+                <template x-for="tr in opts.trim" :key="tr"><option :value="tr" x-text="tr" :selected="tr === form.vfTrim"></option></template>
+              </select>
+            </span>
+          </template>
+          <span class="hint">drive 2=RWD/4=AWD; trim S/GTS/RS</span>
+        </div>
+
         <div class="row" x-show="opts.engines.length">
           <label>Engine</label>
           <select x-model="form.vfEngine" style="flex:1;min-width:12rem">
@@ -317,7 +340,7 @@
         // ── Form lifecycle ─────────────────────────────────────────
         blankForm() {
           return { id: null, nickname: '', vin: '', catalogId: '',
-                   vfYear: '', vfMarket: '', vfLine: '', vfBody: '',
+                   vfYear: '', vfMarket: '', vfLine: '', vfBody: '', vfDrive: '', vfTrim: '',
                    vfEngine: '', vfGearbox: '', engineNo: '', vfChassis: '', prText: '' };
         },
         newVehicle() {
@@ -335,6 +358,7 @@
             catalogId: v.catalogId || '', decoded: v.decoded || null,
             vfYear: s.vfYear || '', vfMarket: s.vfMarket || '',
             vfLine: s.vfLine || '', vfBody: s.vfBody || '',
+            vfDrive: s.vfDrive || '', vfTrim: s.vfTrim || '',
             vfEngine: s.vfEngine || '', vfGearbox: s.vfGearbox || '',
             engineNo: s.engineNo || '', vfChassis: s.vfChassis || '',
             prText: (s.vfPrCodes || []).join(' '),
@@ -406,7 +430,7 @@
         // value no part carries could only hide the whole catalog.
         async onCatalogChange() {
           this.prCodes = {};
-          this.opts = { engines: [], gearboxes: [], lines: [], bodies: [], markets: [] };
+          this.opts = { engines: [], gearboxes: [], lines: [], bodies: [], drive: [], trim: [], markets: [] };
           this._engineNums = []; this._transmCodes = [];
           if (!this.form.catalogId || !this.SQL) { this.refreshPrPreview(); return; }
           let db = null;
@@ -432,6 +456,10 @@
                 .flatMap(([v]) => v.split(',')).map(v => v.trim()).filter(Boolean))].sort();
             this.opts.lines  = split('body_line');
             this.opts.bodies = split('body_style');
+            // Drive is the universal 2/4 axis; trim is derived from the catalog's own
+            // decomposed section columns (S/GTS/RS/RS 4.0). Only offered when present.
+            this.opts.drive  = split('drive_code');
+            this.opts.trim   = split('trim_code');
 
             this.opts.markets = [...new Set(
               q(`SELECT applicability FROM part WHERE applicability LIKE '%"%'
@@ -546,6 +574,8 @@
               vfMarket: (this.form.vfMarket || '').toUpperCase(),
               vfLine: this.form.vfLine || '',
               vfBody: this.form.vfBody || '',
+              vfDrive: this.form.vfDrive || '',
+              vfTrim: this.form.vfTrim || '',
               vfEngine: this.form.vfEngine || '',
               vfGearbox: this.form.vfGearbox || '',
               // Kept so the code can be re-derived if the catalog is re-ingested —
@@ -577,7 +607,8 @@
         // ── Display helpers ────────────────────────────────────────
         specBadges(v) {
           const s = v.spec || {};
-          return [s.vfLine, s.vfBody, s.vfEngine, s.vfGearbox, s.vfMarket].filter(Boolean);
+          return [s.vfLine, s.vfBody, s.vfDrive && s.vfDrive + 'WD', s.vfTrim,
+                  s.vfEngine, s.vfGearbox, s.vfMarket].filter(Boolean);
         },
 
         vehicleSubtitle(v) {

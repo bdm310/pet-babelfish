@@ -244,6 +244,27 @@
         </select>
       </span>
     </template>
+    <template x-if="driveOptions.length">
+      <span class="vin-box">
+        <span class="fl">Drive</span>
+        <select x-model="vfDrive" title="Drive — 2 = rear-wheel, 4 = all-wheel; blank matches either">
+          <option value="">any</option>
+          <template x-for="d in driveOptions" :key="d">
+            <option :value="d" x-text="d === '4' ? 'AWD (4)' : 'RWD (2)'" :selected="d === vfDrive"></option>
+          </template>
+        </select>
+      </span>
+    </template>
+    <template x-if="trimOptions.length">
+      <span class="vin-box">
+        <span class="fl">Trim</span>
+        <select x-model="vfTrim" title="Trim level — blank matches every trim; 'base' hides S/GTS/RS-only parts">
+          <option value="">any</option>
+          <option value="BASE" :selected="vfTrim === 'BASE'">base</option>
+          <template x-for="tr in trimOptions" :key="tr"><option :value="tr" x-text="tr" :selected="tr === vfTrim"></option></template>
+        </select>
+      </span>
+    </template>
     <template x-if="engineOptions.length">
       <span class="vin-box">
         <span class="fl">Engine</span>
@@ -690,6 +711,8 @@
         vfMarket:         '',
         vfLine:           '',
         vfBody:           '',
+        vfDrive:          '',
+        vfTrim:           '',
         vfEngine:         '',
         vfGearbox:        '',
         vfChassis:        '',
@@ -707,10 +730,15 @@
         gearboxOptions:   [],
         lineOptions:      [],   // plain strings
         bodyOptions:      [],
+        driveOptions:     [],   // '2'/'4' — offered when the catalog has AWD variants
+        trimOptions:      [],   // 'S'/'GTS'/'RS'/'RS 4.0'
         marketOptions:    [],
-        _codeIndex:       null, // { engines, gearboxes } — tells APPL a code from a line
+        _index:           null, // full APPL.buildIndex opts (codeIndex, prCodes, lines, dialect, yearPivot)
+        dialect:          'modern',
+        yearPivot:        null,
         _vinRanges:       [],   // { from, to } — chassis blocks, for breakpoints
         _engineNumRanges: [],   // { from, to } — engine-number blocks
+        _transmissRanges: [],   // { from, to } — transmission-number blocks (356/PDK serials)
         _spec:            null, // vehicleSpec memo
 
         // VIN decode
@@ -741,8 +769,8 @@
         // Every field the spec filter reads. One list so a new facet can't be added
         // to the form and silently skipped by the filter, the watchers or the reset.
         get _specValues() {
-          return [this.vfYear, this.vfMarket, this.vfLine, this.vfBody, this.vfEngine,
-                  this.vfGearbox, this.vfChassis, this.vfEngineNo];
+          return [this.vfYear, this.vfMarket, this.vfLine, this.vfBody, this.vfDrive,
+                  this.vfTrim, this.vfEngine, this.vfGearbox, this.vfChassis, this.vfEngineNo];
         },
 
         get filterActive() { return !!(this._specValues.some(Boolean) || this.vfPrCodes.length); },
@@ -766,8 +794,8 @@
           // The spec filter decides which parts the open section lists, which
           // sections the sidebar lists at all, which parts a section's Ok rollup
           // counts, and which callouts belong on the car's diagram.
-          for (const f of ['vfYear', 'vfMarket', 'vfLine', 'vfBody', 'vfEngine', 'vfGearbox',
-                           'vfChassis', 'vfEngineNo', 'vfPrCodes'])
+          for (const f of ['vfYear', 'vfMarket', 'vfLine', 'vfBody', 'vfDrive', 'vfTrim',
+                           'vfEngine', 'vfGearbox', 'vfChassis', 'vfEngineNo', 'vfPrCodes'])
             this.$watch(f, () => {
               this._rebuildDisplayRows(); this._scheduleRollups(); this.drawCallouts();
             });
@@ -810,6 +838,8 @@
           this.vfMarket   = s.vfMarket || '';
           this.vfLine     = s.vfLine || '';
           this.vfBody     = s.vfBody || '';
+          this.vfDrive    = s.vfDrive || '';
+          this.vfTrim     = s.vfTrim || '';
           this.vfEngine   = s.vfEngine || '';
           this.vfGearbox  = s.vfGearbox || '';
           this.vfChassis  = s.vfChassis || '';
@@ -891,14 +921,15 @@
             rows = this._query(
               `SELECT p.section_id, s.number, p.position, p.part_number,
                       COALESCE(NULLIF(p.applicability, ''), pp.applicability, '') AS appl,
-                      s.applicability, s.engine_code, s.gearbox_code, s.body_line, s.body_style
+                      s.applicability, s.engine_code, s.gearbox_code, s.body_line, s.body_style,
+                      s.drive_code, s.trim_code
                FROM part p JOIN section s ON p.section_id = s.id
                LEFT JOIN part pp ON pp.id = p.parent_id
                WHERE p.catalog_id=? ORDER BY p.section_id, p.rowid`,
               [this.catalogId]
             );
           } catch { return idx; }
-          const parse = s => s ? APPL.parse(s, { codeIndex: this._codeIndex }) : null;
+          const parse = s => s ? APPL.parse(s, this._index) : null;
           let curSec = null, occurrence = null, list = null, scope = null;
           for (const [sid, snum, position, part_number, applicability, ...scopeCols] of rows) {
             if (sid !== curSec) {
@@ -1221,14 +1252,14 @@
             // presence matters here; selectSection() reads the bytes by id.
             const sections = this._query(
               `SELECT id, number, title, diagram_blob IS NOT NULL, title_remark, title_model,
-                      applicability, engine_code, gearbox_code, body_line, body_style
+                      applicability, engine_code, gearbox_code, body_line, body_style, drive_code, trim_code
                FROM section WHERE main_group_id=? ORDER BY number`,
               [id]
-            ).map(([sid, snum, stitle, hasDiag, tremark, tmodel, sappl, sec, sgc, sbl, sbs]) => ({
+            ).map(([sid, snum, stitle, hasDiag, tremark, tmodel, sappl, sec, sgc, sbl, sbs, sdc, stc]) => ({
               id: sid, number: snum, title: stitle, has_diagram: !!hasDiag,
               title_remark: tremark || '', title_model: tmodel || '',
               applicability: sappl || '',
-              scope: sectionScope(sappl, sec, sgc, sbl, sbs),
+              scope: sectionScope(sappl, sec, sgc, sbl, sbs, sdc, stc),
             }));
             return { id, number, title, open: false, sections };
           });
@@ -1298,7 +1329,8 @@
             `SELECT p.position, p.part_number, p.description, p.quantity, p.remarks,
                     s.number, p.section_id,
                     COALESCE(NULLIF(p.applicability,''), pp.applicability, '') AS appl,
-                    s.applicability, s.engine_code, s.gearbox_code, s.body_line, s.body_style`;
+                    s.applicability, s.engine_code, s.gearbox_code, s.body_line, s.body_style,
+                    s.drive_code, s.trim_code`;
           // Colour/trim variants are child rows whose scope lives on the parent block.
           const JOINS =
             `FROM part p
@@ -1611,19 +1643,43 @@
             ).flatMap(([v]) => v.split(',')).map(v => v.trim()).filter(Boolean))].sort();
             this.lineOptions = split('body_line');
             this.bodyOptions = split('body_style');
+            this.driveOptions = split('drive_code');
+            this.trimOptions  = split('trim_code');
 
-            this._codeIndex = {
-              engines:   new Set(this.engineOptions.map(e => APPL.normalizeToken(e.code))),
-              gearboxes: new Set(this.gearboxOptions.map(g => APPL.normalizeToken(g.code))),
-            };
+            // The full parser dictionary — the same APPL.buildIndex the ingest worker
+            // used, rebuilt here from the catalog's own tables so the viewer decodes a
+            // part's scope exactly as ingest typed the sections. dialect and year_pivot
+            // were detected once at ingest and stored on the catalog row; they gate the
+            // old-dialect forms (bare option codes, parenthesised markets, 2-digit
+            // years) so the modern dialect is untouched.
+            const meta = this._one('SELECT dialect, year_pivot FROM catalog LIMIT 1') || [];
+            this.dialect   = meta[0] || 'modern';
+            this.yearPivot = meta[1] || null;
+            this._index = APPL.buildIndex({
+              engineCodes: this.engineOptions.map(e => ({ ec: e.code })),
+              transmCodes: this.gearboxOptions.map(g => ({ tc: g.code })),
+              prCodes:     this._query('SELECT code FROM pr_code WHERE catalog_id=?', [this.catalogId]).map(([code]) => ({ code })),
+              salesTypes:  this._query('SELECT description FROM sales_type WHERE catalog_id=?', [this.catalogId]).map(([description]) => ({ description })),
+              vinRanges:   this._query('SELECT remark FROM vin_range WHERE catalog_id=?', [this.catalogId]).map(([remark]) => ({ remark })),
+              vehicleTypes: this._query(
+                `SELECT vehicle_type FROM engine_number_range WHERE catalog_id=?
+                 UNION SELECT vehicle_type FROM transmission_number_range WHERE catalog_id=?`,
+                [this.catalogId, this.catalogId]).map(([v]) => v).filter(Boolean),
+              dialect:     this.dialect,
+              yearPivot:   this.yearPivot,
+            });
 
-            // The number blocks a chassis/engine breakpoint is read against. Both
-            // tables were write-only until now.
+            // The number blocks a chassis/engine/transmission breakpoint is read
+            // against. Each table was write-only until the viewer resolved a car.
             this._vinRanges = this._query(
               `SELECT vin_from, vin_to FROM vin_range WHERE catalog_id=?`, [this.catalogId]
             ).map(([from, to]) => ({ from, to }));
             this._engineNumRanges = this._query(
               `SELECT number_from, number_to FROM engine_number_range WHERE catalog_id=?`,
+              [this.catalogId]
+            ).map(([from, to]) => ({ from, to }));
+            this._transmissRanges = this._query(
+              `SELECT number_from, number_to FROM transmission_number_range WHERE catalog_id=?`,
               [this.catalogId]
             ).map(([from, to]) => ({ from, to }));
 
@@ -1637,11 +1693,11 @@
                  UNION SELECT applicability FROM section WHERE catalog_id=? AND applicability LIKE '%"%'`,
                 [this.catalogId, this.catalogId]
               ).flatMap(([a]) => {
-                const p = APPL.parse(a, { codeIndex: this._codeIndex });
+                const p = APPL.parse(a, this._index);
                 return [...p.markets.any, ...p.markets.not];
               })
             )].sort();
-          } catch { this._codeIndex = null; }
+          } catch { this._index = null; }
         },
 
         // The selected codes with the catalog's labels, in the option list's own
@@ -1721,7 +1777,8 @@
 
         clearVehicleFilter() {
           this.vfYear = ''; this.vfMarket = ''; this.vfPrCodes = [];
-          this.vfLine = ''; this.vfBody = ''; this.vfEngine = ''; this.vfGearbox = '';
+          this.vfLine = ''; this.vfBody = ''; this.vfDrive = ''; this.vfTrim = '';
+          this.vfEngine = ''; this.vfGearbox = '';
           this.vfChassis = ''; this.vfEngineNo = '';
           this.prSearch = ''; this.prDropdownOpen = false; this.prUnknown = [];
         },
@@ -1825,7 +1882,7 @@
 
         _matchesAppl(applStr) {
           if (!applStr) return true;
-          return APPL.matches(APPL.parse(applStr, { codeIndex: this._codeIndex }), this.vehicleSpec);
+          return APPL.matches(APPL.parse(applStr, this._index), this.vehicleSpec);
         },
 
         // The car, in the facets the grammar speaks. A blank field is not a filter:
@@ -1841,11 +1898,14 @@
           const s = this._spec;
           if (s && s._codes === codes && s.year === this.vfYear && s.market === this.vfMarket &&
               s.line === this.vfLine && s.body === this.vfBody &&
+              s.drive === this.vfDrive && s.trim === this.vfTrim &&
               s.engine === this.vfEngine && s.gearbox === this.vfGearbox &&
               s.chassis === this.vfChassis && s.engineNum === this.vfEngineNo) return s;
           return (this._spec = {
             line:    this.vfLine,
             body:    this.vfBody,
+            drive:   this.vfDrive,
+            trim:    this.vfTrim,
             engine:  this.vfEngine,
             gearbox: this.vfGearbox,
             // A breakpoint only speaks about cars in its own number block, so the

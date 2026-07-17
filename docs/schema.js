@@ -17,7 +17,11 @@
       CREATE TABLE IF NOT EXISTS catalog (
         -- title is the TOC's top-level title ("Porsche 911 Turbo/GT2"); model is the
         -- code the V-page headers key on ("997T07"). Displayed as "title - model".
-        id TEXT PRIMARY KEY, title TEXT, model TEXT, page_count INTEGER, ingested_at TEXT
+        -- dialect ('modern'|'old') is detected once from V-page header vocabulary and
+        -- read back by the viewer to gate the old-dialect grammar forms; year_pivot is
+        -- the Model-life start year, the century pivot for two-digit years.
+        id TEXT PRIMARY KEY, title TEXT, model TEXT, page_count INTEGER, ingested_at TEXT,
+        dialect TEXT, year_pivot INTEGER
       );
       CREATE TABLE IF NOT EXISTS main_group (
         id INTEGER PRIMARY KEY, catalog_id TEXT, number TEXT, title TEXT
@@ -37,8 +41,11 @@
         -- free-text string, so nothing can filter on any of them. These hold the same
         -- tokens typed and separated, each as a canonical OR-list ("G9750,G9788" =
         -- either gearbox); title_model stays as printed because it is the display
-        -- string. NULL means the section does not constrain that facet.
-        engine_code TEXT, gearbox_code TEXT, body_line TEXT, body_style TEXT
+        -- string. NULL means the section does not constrain that facet. drive_code
+        -- (2=RWD/4=AWD) and trim_code (S/GTS/RS/RS 4.0) are the decomposed variant
+        -- axes; only facets INVARIANT across a title's OR-of-variants are populated.
+        engine_code TEXT, gearbox_code TEXT, body_line TEXT, body_style TEXT,
+        drive_code TEXT, trim_code TEXT
       );
       -- parent_id: colour/trim variants of a part are CHILD rows. They stay orderable
       -- and searchable but occupy no position of their own and inherit the parent's

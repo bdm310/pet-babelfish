@@ -141,14 +141,15 @@ async function ingest(buffer, catalogId) {
 
   // After parseVPages: the model code comes off the V-page headers.
   db.run(
-    'INSERT OR REPLACE INTO catalog (id, title, model, page_count, ingested_at) VALUES (?,?,?,?,?)',
-    [catalogId, title, vp.model, pdf.numPages, new Date().toISOString()]
+    'INSERT OR REPLACE INTO catalog (id, title, model, page_count, ingested_at, dialect, year_pivot) VALUES (?,?,?,?,?,?,?)',
+    [catalogId, title, vp.model, pdf.numPages, new Date().toISOString(), vp.dialect, vp.yearPivot]
   );
 
   insertVPageData(db, catalogId, vp);
   // V-pages are parsed before any section, so the code index comes straight from
   // this parse — no re-query and no second pass over the sections.
   const codeIndex = buildCodeIndex(vp);
+  const dialectInfo = { dialect: vp.dialect, yearPivot: vp.yearPivot, yearEnd: vp.yearEnd };
   TIMING.vPageParse = performance.now() - t;
 
   const mgCache   = new Map(); // `catalogId\0number` → rowid
@@ -213,7 +214,7 @@ async function ingest(buffer, catalogId) {
       const { parts, titleRow } = partsResults[pi];
       t = performance.now();
       if (pi === 0 && titleRow) applyTitleRow(db, secId, titleRow, sec.sectionTitle, codeIndex);
-      partCount += insertPartBlocks(db, partStmt, secId, catalogId, parts);
+      partCount += insertPartBlocks(db, partStmt, secId, catalogId, parts, dialectInfo);
       TIMING.dbInserts += performance.now() - t;
     }
 
@@ -335,9 +336,42 @@ async function parseVPages(pdf, firstDiagramPage) {
   const transmCodes  = [];
   const engineNums   = [];
   const transmNums   = [];
-  // Carries the open PR entry across page breaks — see parsePRCodesPage.
-  const prState      = { current: null };
-  let   model        = '';
+
+  // Per-table state persists ACROSS pages. A reference table that spills onto a
+  // second page prints its data rows there with NO repeated header, so the old
+  // header-keyed dispatch left the continuation matching no parser and dropped
+  // whole model years. Now the last table that owned a header stays `active` and
+  // keeps consuming headerless pages; each parser carries its `inData` latch and
+  // open row in this state so it resumes mid-table instead of restarting.
+  const S = {
+    pr:   { inData: false, current: null },
+    sales:{ inData: false },
+    ec:   { inData: false },
+    tc:   { inData: false },
+    vin:  { inData: false, current: null },
+    summ: { inData: false, lastVehicle: null, lastMY: null },
+    seng: { inData: false, last: null },
+    stx:  { inData: false, last: null },
+    eno:  { inData: false },
+    tno:  { inData: false },
+  };
+  let model = '', dialect = 'modern', yearPivot = null, yearEnd = null;
+
+  // yearPivot is read at call time (closures over `let`), so the SUMMARY parsers
+  // see it even though the array is built before the Model-life header is scanned.
+  const handlers = [
+    ['Optional Equipment',        rows => parsePRCodesPage(rows, prCodes, S.pr)],
+    ['Model Overview Sales Type', rows => parseSalesTypesPage(rows, salesTypes, S.sales)],
+    ['Model Overview EC',         rows => parseEngineCodesPage(rows, engineCodes, S.ec)],
+    ['Model Overview TC',         rows => parseTransmissionCodesPage(rows, transmCodes, S.tc)],
+    ['VIN-Numbers Overview',      rows => parseVINRangesPage(rows, vinRanges, S.vin)],
+    ['SUMMARY TYPES',             rows => parseSummaryTypesPage(rows, vinRanges, S.summ)],
+    ['SUMMARY ENGINES',           rows => parseSummaryEnginesPage(rows, engineCodes, engineNums, S.seng, yearPivot)],
+    ['SUMM.TRANSMISS',            rows => parseSummaryTransmissionsPage(rows, transmCodes, transmNums, S.stx, yearPivot)],
+    ['Engine type',               rows => parseEngineNumbersPage(rows, engineNums, S.eno)],
+    ['Gearbox type',              rows => parseTransmissionNumbersPage(rows, transmNums, S.tno)],
+  ];
+  let active = null;
 
   for (let pageNum = 1; pageNum < firstDiagramPage; pageNum++) {
     const page    = await pdf.getPage(pageNum);
@@ -352,22 +386,27 @@ async function parseVPages(pdf, firstDiagramPage) {
 
     // Every V-page repeats "Model: 997T07 Model life 2007>>2009". The code is not
     // one token — "356 50" and "9PA 03" contain a space — so "Model life" is the
-    // only reliable right edge.
+    // only reliable right edge. The life-start year is the century pivot for the
+    // old dialect's two-digit years.
     if (!model) model = pageText.match(/Model:\s*(.+?)\s+Model life/)?.[1] ?? '';
+    if (!yearPivot) {
+      const m = pageText.match(/Model life\s+(\d{4})\s*>>\s*(\d{4})/);
+      if (m) { yearPivot = parseInt(m[1], 10); yearEnd = parseInt(m[2], 10); }
+    }
+    // The old-dialect summary layouts are the one reliable, in-catalog dialect
+    // signal (the guiding principle: detect, never branch on catalog id).
+    if (/SUMMARY ENGINES|SUMM\.TRANSMISS|SUMMARY TYPES/.test(pageText)) dialect = 'old';
 
-    if      (pageText.includes('Optional Equipment'))        parsePRCodesPage(rows, prCodes, prState);
-    else if (pageText.includes('Model Overview Sales Type')) parseSalesTypesPage(rows, salesTypes);
-    else if (pageText.includes('Model Overview EC'))         parseEngineCodesPage(rows, engineCodes);
-    else if (pageText.includes('Model Overview TC'))         parseTransmissionCodesPage(rows, transmCodes);
-    else if (pageText.includes('VIN-Numbers Overview'))      parseVINRangesPage(rows, vinRanges);
-    else if (pageText.includes('SUMMARY TYPES'))             parseSummaryTypesPage(rows, vinRanges);
-    else if (pageText.includes('Engine type'))               parseEngineNumbersPage(rows, engineNums);
-    else if (pageText.includes('Gearbox type'))              parseTransmissionNumbersPage(rows, transmNums);
+    const h = handlers.find(([key]) => pageText.includes(key));
+    if (h) { active = h; h[1](rows); }
+    else if (active) active[1](rows);   // headerless continuation of the open table
   }
 
-  if (prState.current) prCodes.push(prState.current);
+  if (S.pr.current)  prCodes.push(S.pr.current);
+  if (S.vin.current) vinRanges.push(S.vin.current);
 
-  return { model, prCodes, salesTypes, vinRanges, engineCodes, transmCodes, engineNums, transmNums };
+  return { model, dialect, yearPivot, yearEnd, prCodes, salesTypes, vinRanges,
+           engineCodes, transmCodes, engineNums, transmNums };
 }
 
 // `state.current` is the open entry and is owned by the caller, because a description
@@ -377,14 +416,13 @@ async function parseVPages(pdf, firstDiagramPage) {
 // last open entry once every page has been read.
 function parsePRCodesPage(rows, prCodes, state) {
   const CODE_RE = /^\d{3}$|^[A-Z][A-Z0-9]{2,3}$/;
-  let inData  = false;
 
   for (const texts of rows) {
     if (!texts.length) continue;
 
-    if (!inData) {
+    if (!state.inData) {
       const rowText = texts.join(' ');
-      if (/\bNR\b/.test(rowText) && rowText.includes('Description')) { inData = true; }
+      if (/\bNR\b/.test(rowText) && rowText.includes('Description')) { state.inData = true; }
       continue;
     }
 
@@ -406,15 +444,15 @@ function parsePRCodesPage(rows, prCodes, state) {
   }
 }
 
-function parseSalesTypesPage(rows, salesTypes) {
-  let inData = false;
-
+function parseSalesTypesPage(rows, salesTypes, state) {
   for (const texts of rows) {
     if (!texts.length) continue;
-    if (!inData) {
-      if (texts.join(' ').includes('Sales term')) { inData = true; }
+    if (!state.inData) {
+      if (texts.join(' ').includes('Sales term')) { state.inData = true; }
       continue;
     }
+    // Skip a repeated page header on a continuation page.
+    if (texts.some(t => t.startsWith('Model:')) || (texts.length === 1 && texts[0] === 'V-Pages')) continue;
 
     // Mounting time is the anchor: "MM/YY-MM/YY"
     const mountIdx = texts.findIndex(t => /^\d{2}\/\d{2}-\d{2}\/\d{2}$/.test(t));
@@ -431,39 +469,38 @@ function parseSalesTypesPage(rows, salesTypes) {
   }
 }
 
-function parseVINRangesPage(rows, vinRanges) {
-  let inData  = false;
-  let current = null;
-
+function parseVINRangesPage(rows, vinRanges, state) {
   for (const texts of rows) {
     if (!texts.length) continue;
-    if (!inData) {
-      if (texts.join(' ').includes('Model year')) { inData = true; }
+    if (!state.inData) {
+      if (texts.join(' ').includes('Model year')) { state.inData = true; }
       continue;
     }
 
+    // Repeated page headers on a continuation page. Without these skips the
+    // "V-Pages" / "Model:" lines get appended into the open row's remark.
+    if (texts.some(t => t.startsWith('Model:')) || (texts.length === 1 && texts[0] === 'V-Pages')) continue;
+
     if (/^\d{4}$/.test(texts[0])) {
-      if (current) vinRanges.push(current);
+      if (state.current) vinRanges.push(state.current);
       // VIN-to may be its own item ">99-7S783000" or merged with vin_from; find it by ">" prefix
       const vinToIdx = texts.findIndex((t, i) => i >= 3 && t.startsWith('>'));
       const vinToRaw = vinToIdx >= 0 ? texts[vinToIdx] : (texts[3] || '');
       const remarkStart = vinToIdx >= 0 ? vinToIdx + 1 : 4;
-      current = {
+      state.current = {
         modelYear: parseInt(texts[0]),
         startDate: texts[1] || null,
         vinFrom:   texts[2] || null,
         vinTo:     vinToRaw.replace(/^>/, '') || null,
         remark:    texts.slice(remarkStart).join(' ') || null,
       };
-    } else if (current) {
+    } else if (state.current) {
       // Skip page header/footer lines (e.g. "19.07.2018 - 1 Kat P30")
       if (texts.some(t => /^\d{2}\.\d{2}\.\d{4}/.test(t))) continue;
       const cont = texts.join(' ').trim();
-      if (cont) current.remark = current.remark ? current.remark + ' ' + cont : cont;
+      if (cont) state.current.remark = state.current.remark ? state.current.remark + ' ' + cont : cont;
     }
   }
-
-  if (current) vinRanges.push(current);
 }
 
 // Parses older "SUMMARY TYPES" pages (e.g. Cayenne 955, 356).
@@ -474,14 +511,12 @@ function parseVINRangesPage(rows, vinRanges) {
 //   tokens:  *  [vehicle]  MY  from>to      engine
 //
 // Continuation rows (356 only): just an extra from>to on its own line — inherit last vehicle+MY.
-function parseSummaryTypesPage(rows, vinRanges) {
-  let inData      = false;
-  let lastVehicle = null;
-  let lastMY      = null;
-
-  // VIN/chassis range token: optional prefix letters then digits>digits
-  // Handles "00061>10000", "9P6LA00061>10000", "05001>05410", "P90501>P90959"
-  const VIN_RE = /^[A-Z]*\d[\w]*>[A-Z]*\d[\w]*$/;
+function parseSummaryTypesPage(rows, vinRanges, state) {
+  // VIN/chassis range token: optional prefix letters then digits>digits, OR an
+  // open-ended "150001>" (356 production tail) with nothing after the '>'.
+  const VIN_RE = /^[A-Z]*\d[\w]*>(?:[A-Z]*\d[\w]*)?$/;
+  // A separate VIN-prefix token in the 996-family MY column: "99WS6", "991S6".
+  const PFX_RE = /^\d\d[A-Z0-9]S\d$/;
 
   for (const texts of rows) {
     if (!texts.length) continue;
@@ -489,11 +524,12 @@ function parseSummaryTypesPage(rows, vinRanges) {
     // Skip page header/footer lines
     if (texts.some(t => /^\d{2}\.\d{2}\.\d{4}/.test(t))) continue;
     if (texts.some(t => t.startsWith('Model:'))) continue;
+    if (texts.length === 1 && texts[0] === 'V-Pages') continue;
 
-    if (!inData) {
+    if (!state.inData) {
       // Header row: "VIN" or "VEHICLE IDENT.NR." column label signals start of data
       if (texts.some(t => t === 'VIN' || t === 'IDENT.NR.' || t.startsWith('IDENT'))) {
-        inData = true;
+        state.inData = true;
       }
       continue;
     }
@@ -510,7 +546,7 @@ function parseSummaryTypesPage(rows, vinRanges) {
     const vinIdx = ts.findIndex(t => VIN_RE.test(t));
     if (vinIdx === -1) continue;
 
-    // Tokens before the VIN range: [...vehicleWords, MY_2digit, ?singleDigit, ?vinPfx]
+    // Tokens before the VIN range: [...vehicleWords, MY_2digit, ?myCode, ?vinPfx]
     const pre = ts.slice(0, vinIdx);
 
     // Find the 2-digit MY: last token matching exactly \d{2} in pre
@@ -521,20 +557,25 @@ function parseSummaryTypesPage(rows, vinRanges) {
 
     let vehicle, my, vinPrefix;
     if (myIdx >= 0) {
-      vehicle = pre.slice(0, myIdx).join(' ') || lastVehicle;
+      vehicle = pre.slice(0, myIdx).join(' ') || state.lastVehicle;
       my      = pre[myIdx];
 
-      // After MY: skip single-digit internal code, find optional VIN prefix (mixed alnum)
+      // The 996 family prints the MY column as two tokens — the 2-digit year plus a
+      // one-char MY code (W=1998, X=1999, Y=2000, then digits) — and the VIN prefix
+      // ("99XS6") is a THIRD token. The old find(/[A-Z]/) grabbed the code letter
+      // "X" instead, mangling "99XS6 20061" into prefix "X". Read the prefix by its
+      // shape positionally; otherwise (Cayenne/356) fall back to the first lettered
+      // token as before.
       const afterMY = pre.slice(myIdx + 1);
-      const pfxTok  = afterMY.find(t => /[A-Z]/.test(t)); // contains a letter → VIN prefix
-      vinPrefix = pfxTok || '';
+      const shaped  = afterMY.find(t => PFX_RE.test(t));
+      vinPrefix = shaped || afterMY.find(t => /[A-Z]/.test(t)) || '';
 
-      lastVehicle = vehicle;
-      lastMY      = my;
+      state.lastVehicle = vehicle;
+      state.lastMY      = my;
     } else {
       // Continuation row (e.g. 356 extra VIN range for same vehicle/MY)
-      vehicle   = lastVehicle;
-      my        = lastMY;
+      vehicle   = state.lastVehicle;
+      my        = state.lastMY;
       vinPrefix = '';
     }
 
@@ -575,12 +616,11 @@ function parseSummaryTypesPage(rows, vinRanges) {
   }
 }
 
-function parseEngineCodesPage(rows, engineCodes) {
-  let inData = false;
+function parseEngineCodesPage(rows, engineCodes, state) {
   for (const texts of rows) {
     if (!texts.length) continue;
-    if (!inData) {
-      if (texts[0] === 'EC') { inData = true; }
+    if (!state.inData) {
+      if (texts[0] === 'EC') { state.inData = true; }
       continue;
     }
     if (texts.some(t => t.startsWith('Model:') || /^\d{2}\.\d{2}\.\d{4}/.test(t))) continue;
@@ -600,12 +640,11 @@ function parseEngineCodesPage(rows, engineCodes) {
   }
 }
 
-function parseTransmissionCodesPage(rows, transmCodes) {
-  let inData = false;
+function parseTransmissionCodesPage(rows, transmCodes, state) {
   for (const texts of rows) {
     if (!texts.length) continue;
-    if (!inData) {
-      if (texts[0] === 'TC') { inData = true; }
+    if (!state.inData) {
+      if (texts[0] === 'TC') { state.inData = true; }
       continue;
     }
     if (texts.some(t => t.startsWith('Model:') || /^\d{2}\.\d{2}\.\d{4}/.test(t))) continue;
@@ -634,12 +673,11 @@ function expandRangeEnd(from, to) {
   return [...f.slice(0, f.length - t.length), ...t].join(' ');
 }
 
-function parseEngineNumbersPage(rows, engineNumbers) {
-  let inData = false;
+function parseEngineNumbersPage(rows, engineNumbers, state) {
   for (const texts of rows) {
     if (!texts.length) continue;
-    if (!inData) {
-      if (texts.join(' ').includes('Engine number')) { inData = true; }
+    if (!state.inData) {
+      if (texts.join(' ').includes('Engine number')) { state.inData = true; }
       continue;
     }
     if (texts.some(t => /^\d{2}\.\d{2}\.\d{4}/.test(t))) continue;
@@ -659,12 +697,11 @@ function parseEngineNumbersPage(rows, engineNumbers) {
   }
 }
 
-function parseTransmissionNumbersPage(rows, transmNumbers) {
-  let inData = false;
+function parseTransmissionNumbersPage(rows, transmNumbers, state) {
   for (const texts of rows) {
     if (!texts.length) continue;
-    if (!inData) {
-      if (texts.join(' ').includes('Gearbox type')) { inData = true; }
+    if (!state.inData) {
+      if (texts.join(' ').includes('Gearbox type')) { state.inData = true; }
       continue;
     }
     if (texts.some(t => /^\d{2}\.\d{2}\.\d{4}/.test(t))) continue;
@@ -680,6 +717,164 @@ function parseTransmissionNumbersPage(rows, transmNumbers) {
       vehicleType: texts.slice(yearIdx + 1, -1).join(' '),
       gearboxType: texts.at(-1),
     });
+  }
+}
+
+// ── Old-dialect V-page summaries (996 family, Cayenne, 356) ──────────────────
+// These catalogs replace the modern "Model Overview EC/TC" + "Engine/Gearbox
+// number" pages with one "SUMMARY ENGINES" / "SUMM.TRANSMISS." table that carries
+// the code, tech data AND the serial-number range in a single row per vehicle-type
+// × model year. One parser fills both the *_code and *_number_range tables.
+// Without them these six catalogs ingested zero code rows, leaving every dotted
+// code (M96.03, G96.50) untyped and every engine/gearbox breakpoint unenforceable.
+// Their number ranges are NOT the ambiguous modern ones — 356/Cayenne serials are
+// distinct per type — so deriving from them is sound.
+
+// Expand a 2-digit model year using the Model-life pivot (pivot 1998: "05"→2005).
+function pivotYear(yy, pivot) {
+  const n = parseInt(yy, 10);
+  if (Number.isNaN(n) || !pivot) return null;
+  let full = Math.floor(pivot / 100) * 100 + n;
+  if (full < pivot) full += 100;
+  return full;
+}
+
+// TECH tail: "6ZYL/3,4L /220 KW" → { cylinders:6, displacementL:"3.4", powerKw:220 }.
+function parseSummaryTech(tail) {
+  const cyl = tail.match(/(\d+)\s*ZYL/);
+  const dis = tail.match(/([\d,]+)\s*L\b/);
+  const kw  = tail.match(/(\d+)\s*\/?\s*KW/);
+  return {
+    cylinders:     cyl ? parseInt(cyl[1], 10) : null,
+    displacementL: dis ? dis[1].replace(',', '.') : null,
+    powerKw:       kw  ? parseInt(kw[1], 10) : null,
+  };
+}
+
+const SUMM_EC_RE  = /^[A-Z]\d{2}\.[0-9A-Z]{2,3}$/; // M96.01, M96.70S, M02.2Y
+const SUMM_TC_RE  = /^[GA]\d{2}\.\d{2}$/;          // G96.00, A96.50
+const SUMM_TN_RE  = /^[GA]\d{4}$/;                 // G9600, A4820 (undotted TC)
+const SUMM_356_RE = /^\d{3}(?:\/\d)?$/;            // 369, 506/1, 547/1, 519
+const SUMM_GT_RE  = t => t.includes('>') && /\d/.test(t) && /^[A-Z0-9]*\d*>[A-Z0-9]*\d*$/.test(t);
+const undot = code => code.replace(/^[A-Z]/, '').replace('.', '');
+
+function isVPageChrome(texts) {
+  return texts[0] === 'V-Pages' ||
+         texts.some(t => t.startsWith('Model:') || /^\d{2}\.\d{2}\.\d{4}/.test(t));
+}
+
+function parseSummaryEnginesPage(rows, engineCodes, engineNumbers, state, pivot) {
+  const seen = state.seen || (state.seen = new Set());
+  for (const texts of rows) {
+    if (!texts.length || isVPageChrome(texts)) continue;
+    if (!state.inData) { if (texts.includes('MY')) state.inData = true; continue; }
+    if (texts.includes('SUMMARY') && texts.includes('ENGINES')) continue;
+
+    const eIdx = texts.findIndex(t => SUMM_EC_RE.test(t));
+    if (eIdx >= 0) {
+      // General (996/996Turbo/996GT3/Cayenne): dotted EC + year-code + prefix block.
+      const rIdx = texts.findIndex((t, i) => i > eIdx && SUMM_GT_RE(t));
+      if (rIdx < 1) continue;
+      const ec      = texts[eIdx];
+      const my4     = pivotYear(texts[eIdx + 1], pivot);
+      const prefix  = texts[rIdx - 1] || '';
+      const vehicle = texts.slice(0, eIdx).join(' ');
+      const tech    = parseSummaryTech(texts.slice(rIdx + 1).join(' '));
+      const [fromS, toS] = texts[rIdx].split('>');
+      if (!seen.has(ec)) {
+        seen.add(ec);
+        engineCodes.push({ ec, displacementL: tech.displacementL, powerKw: tech.powerKw,
+          powerHp: null, cylinders: tech.cylinders, mountFrom: null, mountTo: null, remark: null });
+      }
+      const numberFrom = (prefix ? prefix + ' ' : '') + fromS;
+      engineNumbers.push({ numberFrom, numberTo: toS ? expandRangeEnd(numberFrom, toS) : null,
+        modelYear: my4, vehicleType: vehicle, engineType: undot(ec) });
+      state.last = { vehicle, my4, type: undot(ec) };
+      continue;
+    }
+
+    // 356: bare 3-digit TYPE, then MY, then a '>'- or '/'-separated range.
+    let myI = -1;
+    for (let i = 1; i < texts.length - 1; i++) {
+      if (/^\d{2}$/.test(texts[i]) && /[>/]/.test(texts[i + 1]) && /\d/.test(texts[i + 1])) { myI = i; break; }
+    }
+    if (myI >= 1) {
+      const type    = texts[myI - 1];
+      const my4     = pivotYear(texts[myI], pivot);
+      const vehicle = texts.slice(0, myI - 1).join(' ');
+      const tech    = parseSummaryTech(texts.slice(myI + 2).join(' '));
+      const [fromS, toS] = texts[myI + 1].split(/[>/]/);
+      if (!seen.has(type)) {
+        seen.add(type);
+        engineCodes.push({ ec: type, displacementL: tech.displacementL, powerKw: tech.powerKw,
+          powerHp: null, cylinders: tech.cylinders, mountFrom: null, mountTo: null, remark: null });
+      }
+      engineNumbers.push({ numberFrom: fromS || null, numberTo: toS || null,
+        modelYear: my4, vehicleType: vehicle, engineType: type });
+      state.last = { vehicle, my4, type };
+    } else if (texts.length === 1 && SUMM_GT_RE(texts[0]) && state.last) {
+      // 356 continuation: a lone range on the previous row's vehicle/MY/type.
+      const [fromS, toS] = texts[0].split('>');
+      engineNumbers.push({ numberFrom: fromS || null, numberTo: toS || null,
+        modelYear: state.last.my4, vehicleType: state.last.vehicle, engineType: state.last.type });
+    }
+  }
+}
+
+function parseSummaryTransmissionsPage(rows, transmCodes, transmNumbers, state, pivot) {
+  const seen = state.seen || (state.seen = new Set());
+  for (const texts of rows) {
+    if (!texts.length || isVPageChrome(texts)) continue;
+    if (!state.inData) { if (texts.includes('MY')) state.inData = true; continue; }
+    if (texts.includes('SUMM.TRANSMISS.') || (texts.includes('SUMMARY') && texts.includes('TRANSMISS'))) continue;
+
+    const tcIdx = texts.findIndex(t => SUMM_TC_RE.test(t));
+    if (tcIdx >= 0) {
+      // General: dotted TC + year-code + undotted TN-prefix + variant index + range.
+      const pIdx = texts.findIndex((t, i) => i > tcIdx && SUMM_TN_RE.test(t));
+      const rIdx = texts.findIndex((t, i) => i > tcIdx && SUMM_GT_RE(t));
+      if (pIdx < 0 || rIdx < 0) continue;
+      const tc      = texts[tcIdx];
+      const my4     = pivotYear(texts[tcIdx + 1], pivot);
+      const tnPfx   = texts[pIdx];
+      const index   = texts[rIdx - 1] || '';
+      const vehicle = texts.slice(0, tcIdx).join(' ');
+      const tech    = texts.slice(rIdx + 1).join(' ') || null;
+      const [fromS, toS] = texts[rIdx].split('>');
+      if (!seen.has(tc)) {
+        seen.add(tc);
+        transmCodes.push({ tc, typeCode: tech, mountFrom: null, mountTo: null, remark: null });
+      }
+      const numberFrom = `${tnPfx} ${index} ${fromS}`.replace(/\s+/g, ' ').trim();
+      transmNumbers.push({ numberFrom, numberTo: toS ? expandRangeEnd(numberFrom, toS) : null,
+        modelYear: my4, vehicleType: vehicle, gearboxType: tnPfx });
+      state.lastNum = null;
+      continue;
+    }
+
+    // 356: bare 3-digit TYPE, MY, then a possibly open-ended range (">10999").
+    let myI = -1;
+    for (let i = 1; i < texts.length - 1; i++) {
+      if (/^\d{2}$/.test(texts[i]) && SUMM_GT_RE(texts[i + 1])) { myI = i; break; }
+    }
+    if (myI >= 1 && SUMM_356_RE.test(texts[myI - 1])) {
+      const type    = texts[myI - 1];
+      const my4     = pivotYear(texts[myI], pivot);
+      const vehicle = texts.slice(0, myI - 1).join(' ');
+      const tech    = texts.slice(myI + 2).join(' ') || null;
+      const [fromS, toS] = texts[myI + 1].split('>');
+      if (!seen.has(type)) {
+        seen.add(type);
+        transmCodes.push({ tc: type, typeCode: tech, mountFrom: null, mountTo: null, remark: null });
+      }
+      const num = { numberFrom: fromS || null, numberTo: toS || null,
+        modelYear: my4, vehicleType: vehicle, gearboxType: type };
+      transmNumbers.push(num);
+      state.lastNum = num;
+    } else if (state.lastNum && texts.every(t => /^[A-Z]+$/.test(t))) {
+      // 356 continuation: lone body words (SPEEDSTER, CONVERTIBLE) extend the row.
+      state.lastNum.vehicleType = `${state.lastNum.vehicleType} ${texts.join(' ')}`.trim();
+    }
   }
 }
 
@@ -869,6 +1064,36 @@ function childApplicability(child, block) {
     .split(' | ')
     .filter(s => s && !ownKinds.has(segmentKind(s)));
   return [...inherited, own].join(' | ');
+}
+
+// Old dialect prints part scope in the REMARK column, not the Model column: 2-digit
+// year windows ("-02", "03-", "00-01") and parenthesised markets ("(J)", "-(CN)").
+// The viewer only filters `applicability`, so recognise those tokens and fold them
+// into the block's Description-scope list (applDesc) — the existing block/child
+// applicability logic then carries them through, and appl.js (dialect='old',
+// yearPivot set) interprets them. The raw remark string is left intact for display.
+//   info: { dialect, yearPivot, yearEnd }
+function remarkScopeTokens(remark, info) {
+  if (!info || info.dialect !== 'old' || !remark) return [];
+  const pivot = info.yearPivot, end = info.yearEnd || (pivot ? pivot + 20 : null);
+  const inSpan = yy => {
+    if (yy == null) return true;                       // an open range side
+    if (!pivot) return false;
+    let y = Math.floor(pivot / 100) * 100 + parseInt(yy, 10);
+    if (y < pivot) y += 100;
+    return y >= pivot && y <= end;                     // else it is a dimension, not a year
+  };
+  const out = [];
+  for (const tok of String(remark).split(/\s+/)) {
+    if (/^-?\([A-Z]{1,4}\)$/.test(tok)) { out.push(tok); continue; }
+    const ym = tok.match(/^(\d{2})?-(\d{2})?$/);
+    if (ym && (ym[1] || ym[2]) && inSpan(ym[1]) && inSpan(ym[2])) out.push(tok);
+  }
+  return out;
+}
+
+function addRemarkScope(block, info) {
+  for (const tok of remarkScopeTokens(block.remark, info)) block.applDesc.push(tok);
 }
 
 async function extractParts(pdf, pageNum, carry = {}) {
@@ -1626,6 +1851,40 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
     db = new SQL.Database(new Uint8Array(await file.arrayBuffer()));
   } catch { throw new Error(`catalog.sqlite not found for "${catalogId}" — run a full ingest first.`); }
 
+  // A schema change (a new column) means the old DB can't be updated in place — and
+  // this project never migrates, it rebuilds. But re-rendering diagrams and re-OCRing
+  // would be wasteful when only the interpretation layer changed, so carry the old
+  // DB's diagrams and callouts across into a fresh, current-schema DB keyed by section
+  // number. The parts/V-pages/facets are then re-extracted normally, no OCR.
+  const oldDiagrams = new Map();   // section number → diagram_blob
+  const oldCallouts = new Map();   // section number → [callout rows]
+  let rebuilt = false;
+  if (!SCHEMA.matches(SQL, db)) {
+    post('status', { message: 'Schema changed — rebuilding (diagrams kept, no OCR)…' });
+    const idToNum = new Map();
+    let st = db.prepare('SELECT id, number, diagram_blob FROM section WHERE catalog_id=?');
+    st.bind([catalogId]);
+    while (st.step()) {
+      const r = st.getAsObject();
+      idToNum.set(r.id, r.number);
+      if (r.diagram_blob) oldDiagrams.set(r.number, r.diagram_blob);
+    }
+    st.free();
+    st = db.prepare('SELECT section_id, number, x0, y0, x1, y1, confidence FROM callout');
+    while (st.step()) {
+      const r = st.getAsObject();
+      const num = idToNum.get(r.section_id);
+      if (num == null) continue;
+      if (!oldCallouts.has(num)) oldCallouts.set(num, []);
+      oldCallouts.get(num).push(r);
+    }
+    st.free();
+    db.close();
+    db = new SQL.Database();
+    SCHEMA.create(db);
+    rebuilt = true;
+  }
+
   post('status', { message: 'Parsing table of contents…' });
   const outline          = await pdf.getOutline();
   const { title, sections } = await parseOutline(outline, pdf);
@@ -1634,9 +1893,15 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
   for (const tbl of ['pr_code','sales_type','vin_range','engine_code','transmission_code','engine_number_range','transmission_number_range'])
     db.run(`DELETE FROM ${tbl} WHERE catalog_id=?`, [catalogId]);
   const vp = await parseVPages(pdf, sections[0].diagramPage);
-  db.run('UPDATE catalog SET title=?, model=? WHERE id=?', [title, vp.model, catalogId]);
+  if (rebuilt)
+    db.run('INSERT OR REPLACE INTO catalog (id, title, model, page_count, ingested_at, dialect, year_pivot) VALUES (?,?,?,?,?,?,?)',
+           [catalogId, title, vp.model, pdf.numPages, new Date().toISOString(), vp.dialect, vp.yearPivot]);
+  else
+    db.run('UPDATE catalog SET title=?, model=?, dialect=?, year_pivot=? WHERE id=?',
+           [title, vp.model, vp.dialect, vp.yearPivot, catalogId]);
   insertVPageData(db, catalogId, vp);
   const codeIndex = buildCodeIndex(vp);
+  const dialectInfo = { dialect: vp.dialect, yearPivot: vp.yearPivot, yearEnd: vp.yearEnd };
 
   let targets;
   if (sectionNums?.length) {
@@ -1666,6 +1931,7 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
   const partStmt = db.prepare(PART_INSERT_SQL);
 
   const sectionIndexMap = new Map(sections.map((s, i) => [s.sectionNum, i]));
+  const mgCache = new Map();   // only used when rebuilding a fresh DB
   let doneCount = 0, partCount = 0;
 
   for (const sec of targets) {
@@ -1686,15 +1952,23 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
         extractSectionParts(pdf, firstPartsPage, nextDiagramPage),
       ]);
 
-      const secStmt = db.prepare('SELECT id FROM section WHERE catalog_id=? AND number=?');
-      secStmt.bind([catalogId, sec.sectionNum]);
       let secId = null;
-      if (secStmt.step()) secId = secStmt.getAsObject().id;
-      secStmt.free();
-
-      if (secId == null) {
-        post('status', { message: `Section ${sec.sectionNum} not in DB — skipping` });
-        continue;
+      if (rebuilt) {
+        // Fresh DB: create the section, carrying the old diagram and callouts over.
+        const mgId = ensureMainGroup(db, mgCache, catalogId, sec.mainGroupNum, sec.mainGroupTitle);
+        secId = insertSection(db, mgId, catalogId, sec.sectionNum, sec.sectionTitle,
+                              firstPartsPage, sec.diagramPage, oldDiagrams.get(sec.sectionNum) || null);
+        for (const c of (oldCallouts.get(sec.sectionNum) || []))
+          calloutStmt.run([secId, c.number, c.x0, c.y0, c.x1, c.y1, c.confidence]);
+      } else {
+        const secStmt = db.prepare('SELECT id FROM section WHERE catalog_id=? AND number=?');
+        secStmt.bind([catalogId, sec.sectionNum]);
+        if (secStmt.step()) secId = secStmt.getAsObject().id;
+        secStmt.free();
+        if (secId == null) {
+          post('status', { message: `Section ${sec.sectionNum} not in DB — skipping` });
+          continue;
+        }
       }
 
       if (diagramResult.imgBytes)
@@ -1710,7 +1984,7 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
       for (let pi = 0; pi < partsResults.length; pi++) {
         const { parts, titleRow } = partsResults[pi];
         if (pi === 0 && titleRow) applyTitleRow(db, secId, titleRow, sec.sectionTitle, codeIndex);
-        partCount += insertPartBlocks(db, partStmt, secId, catalogId, parts);
+        partCount += insertPartBlocks(db, partStmt, secId, catalogId, parts, dialectInfo);
       }
     } finally {
       if (tWorker) pool.release(tWorker);
@@ -1901,15 +2175,17 @@ const PART_INSERT_SQL =
 // Write a section's blocks: each parent, then its colour variants as child rows.
 // Children carry no position; they inherit the parent's applicability unless the
 // PDF scoped them individually, in which case they carry the whole resolved scope.
-function insertPartBlocks(db, partStmt, secId, catalogId, parts) {
+function insertPartBlocks(db, partStmt, secId, catalogId, parts, info) {
   let n = 0;
   for (const b of parts) {
+    addRemarkScope(b, info);
     partStmt.run([secId, catalogId, null, b.pos, b.partNumber, b.colourCode,
                   b.description, b.qty, b.remark, blockApplicability(b)]);
     n++;
     if (!b.children.length) continue;
     const parentId = db.exec('SELECT last_insert_rowid()')[0].values[0][0];
     for (const c of b.children) {
+      addRemarkScope(c, info);
       partStmt.run([secId, catalogId, parentId, null, c.partNumber, c.colourCode,
                     c.description, c.qty, c.remark, childApplicability(c, b)]);
       n++;
@@ -1918,28 +2194,59 @@ function insertPartBlocks(db, partStmt, secId, catalogId, parts) {
   return n;
 }
 
-// The catalog's OWN engine/transmission tables decide what a code token means.
-// A hard-coded vocabulary would be wrong for the next model line, and guessing by
-// shape would promote "Z97.00" — which resolves to no V-page table at all — into a
-// constraint that rejects every vehicle.
+// The parser's dictionaries come straight from the catalog's OWN tables (see
+// APPL.buildIndex) — engine/transmission codes, option codes, the line words its
+// sales_type/vin_range enumerate — plus the dialect and century pivot detected at
+// V-page parse. Nothing is hardcoded per catalog and nothing is guessed by shape.
 function buildCodeIndex(vp) {
-  return {
-    engines:   new Set((vp?.engineCodes ?? []).map(e => APPL.normalizeToken(e.ec))),
-    gearboxes: new Set((vp?.transmCodes ?? []).map(t => APPL.normalizeToken(t.tc))),
-  };
+  const vehicleTypes = [...(vp.engineNums ?? []), ...(vp.transmNums ?? [])]
+    .map(r => r.vehicleType).filter(Boolean);
+  return APPL.buildIndex({ ...vp, vehicleTypes });
 }
 
-const orList = group => (group.any.length ? group.any.join(',') : null);
+// A section title is often an OR-list of WHOLE variants, not a token soup:
+// "CARRERA 4 CARRERA 4S TARGA TARGA S" means (Carrera 4) OR (Carrera 4S) OR Targa
+// OR (Targa S). Flattening it into one column per facet and AND-ing them wrongly
+// demands line=CARRERA AND body=TARGA — hiding a C4 coupe. So split the title at
+// each head token (a line or body word; slash-joined tokens like "TURBO/COUPE"
+// stay one variant) and populate a facet column ONLY when that facet appears in
+// EVERY variant — the union of its values, OR-ed. A facet that varies across the
+// alternatives (body here) is dropped; the parts inside carry their own scope.
+function isHeadToken(tok, opts) {
+  const p = APPL.parse(tok, opts);
+  return !!(p.lines.any.length || p.bodies.any.length);
+}
 
-function applyTitleRow(db, secId, titleRow, fallbackTitle, codeIndex) {
-  const scope = APPL.parse(titleRow.modelScope || '', { codeIndex });
+function splitTitleVariants(scopeStr, opts) {
+  const tokens = String(scopeStr || '').trim().split(/\s+/).filter(Boolean);
+  const groups = [];
+  let cur = [];
+  for (const tok of tokens) {
+    if (cur.length && isHeadToken(tok, opts)) { groups.push(cur); cur = []; }
+    cur.push(tok);
+  }
+  if (cur.length) groups.push(cur);
+  return groups.map(g => APPL.parse(g.join(' '), opts));
+}
+
+function invariantColumn(variants, facet) {
+  if (!variants.length || !variants.every(v => v[facet].any.length)) return null;
+  const union = [];
+  for (const v of variants) for (const val of v[facet].any) if (!union.includes(val)) union.push(val);
+  return union.length ? union.join(',') : null;
+}
+
+function applyTitleRow(db, secId, titleRow, fallbackTitle, index) {
+  const variants = splitTitleVariants(titleRow.modelScope || '', index);
   db.run(
     `UPDATE section SET title=?, title_remark=?, title_model=?, applicability=?,
-       engine_code=?, gearbox_code=?, body_line=?, body_style=? WHERE id=?`,
+       engine_code=?, gearbox_code=?, body_line=?, body_style=?,
+       drive_code=?, trim_code=? WHERE id=?`,
     [titleRow.description || fallbackTitle, titleRow.remark || null,
      titleRow.model || null, titleRow.applicability || null,
-     orList(scope.engines), orList(scope.gearboxes),
-     orList(scope.lines), orList(scope.bodies), secId]
+     invariantColumn(variants, 'engines'),  invariantColumn(variants, 'gearboxes'),
+     invariantColumn(variants, 'lines'),    invariantColumn(variants, 'bodies'),
+     invariantColumn(variants, 'drive'),    invariantColumn(variants, 'trim'), secId]
   );
 }
 
