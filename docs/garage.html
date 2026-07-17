@@ -43,7 +43,6 @@
              border-radius: 3px; padding: 0.05rem 0.4rem; font-size: 0.7rem; color: var(--text3); }
     .badge.cat { color: var(--accent); border-color: var(--accent-bd); background: var(--accent-bg2); }
     .badge.pr  { color: var(--pn); }
-    .badge.unknown { color: var(--warn, #c87800); border-color: var(--warn-bd, rgba(200,120,0,0.4)); }
     .card .actions { display: flex; gap: 0.4rem; margin-top: 0.3rem; }
     .card .actions button { padding: 0.25rem 0.5rem; font-size: 0.76rem; }
     .card .actions .spacer { margin-left: auto; }
@@ -64,7 +63,6 @@
     .vin-result.err { color: var(--err, #d66); }
     .form-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
     .form-actions .spacer { margin-left: auto; }
-    .pr-preview { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 0.3rem; }
   </style>
 </head>
 <body x-data="garageApp()" x-init="init()">
@@ -182,10 +180,17 @@
           <div style="flex:1">
             <input type="text" x-model="form.prText" @input="refreshPrPreview(); deriveSpec()"
                    placeholder="e.g. 480 X51 XAA  (space/comma separated)" style="width:100%">
-            <div class="pr-preview">
+            <div style="margin-top:0.3rem" x-show="prPreview.length">
+              <button class="pr-toggle" :class="{on: prListOpen}" @click="prListOpen = !prListOpen"
+                      x-text="prPreview.length + (prPreview.length === 1 ? ' option ' : ' options ') + (prListOpen ? '▴' : '▾')"></button>
+            </div>
+            <div class="pr-list" style="margin-top:0.3rem" x-show="prListOpen && prPreview.length">
               <template x-for="pr in prPreview" :key="pr.code">
-                <span class="badge pr" :class="{unknown: !pr.desc}" :title="pr.desc || 'Not in this catalog\'s option list'"
-                      x-text="pr.desc ? (pr.code + ' · ' + pr.desc) : pr.code"></span>
+                <div class="pr-row" :class="{unknown: pr.unknown}">
+                  <span class="pr-code" x-text="pr.code"></span>
+                  <span class="pr-desc" x-text="pr.desc || 'not in this catalog\'s option list'"></span>
+                  <span class="pr-x" title="Remove" @click="removePrCode(pr.code)">×</span>
+                </div>
               </template>
             </div>
             <template x-if="prUnknown.length">
@@ -271,6 +276,7 @@
         prCodes:   {},        // code -> description for the selected catalog
         prPreview: [],
         prUnknown: [],
+        prListOpen: true,     // the form is where the pasted list gets checked
         // Facet vocabularies for the selected catalog — see onCatalogChange.
         opts:      { engines: [], gearboxes: [], lines: [], bodies: [], markets: [] },
         _engineNums:  [],     // engine serial ranges, for deriveSpec
@@ -504,10 +510,22 @@
         // filtered on — PR codes and M-numbers are one vocabulary here and the
         // sticker's M-numbers gate real parts. They are only called out, never dropped.
         refreshPrPreview() {
-          const codes = this.parsePrText();
-          this.prPreview = codes.map(code => ({ code, desc: this.prCodes[code] || '' }));
-          this.prUnknown = Object.keys(this.prCodes).length
-            ? codes.filter(c => !(c in this.prCodes)) : [];
+          const codes = [...new Set(this.parsePrText())];
+          const known = Object.keys(this.prCodes).length > 0;
+          // Option-list order (numeric first, then M-numbers), not paste order —
+          // a code is looked up by eye, and the sticker's order is arbitrary.
+          const num = c => /^\d+$/.test(c) ? parseInt(c, 10) : Infinity;
+          this.prPreview = codes
+            .sort((a, b) => num(a) - num(b) || a.localeCompare(b))
+            .map(code => ({ code, desc: this.prCodes[code] || '',
+                            unknown: known && !(code in this.prCodes) }));
+          this.prUnknown = known ? codes.filter(c => !(c in this.prCodes)) : [];
+        },
+
+        removePrCode(code) {
+          this.form.prText = this.parsePrText().filter(c => c !== code).join(' ');
+          this.refreshPrPreview();
+          this.deriveSpec();
         },
 
         // ── Save / delete ──────────────────────────────────────────

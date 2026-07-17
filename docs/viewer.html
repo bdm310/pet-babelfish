@@ -143,12 +143,10 @@
     #filter-bar input { background: var(--bg); color: var(--text); border: 1px solid var(--border3);
                         padding: 0.2rem 0.4rem; border-radius: 3px; font-family: monospace; font-size: 0.78rem; }
     #filter-bar input:focus { outline: none; border-color: var(--accent); }
-    .vf-chips { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; }
+    /* .vf-chip is the header's active-vehicle tag only — PR codes use .pr-list. */
     .vf-chip { display: inline-flex; align-items: center; gap: 3px; border-radius: 2px;
                padding: 0.1rem 0.3rem; font-size: 0.68rem; line-height: 1.6;
                background: var(--accent-bg2); border: 1px solid var(--accent-bd); color: var(--accent); }
-    .vf-chip-desc { color: var(--text3); max-width: 100px; overflow: hidden;
-                    text-overflow: ellipsis; white-space: nowrap; }
     .vf-chip-x { cursor: pointer; color: var(--text5); }
     .vf-chip-x:hover { color: var(--text); }
     .vf-pr-wrap { position: relative; }
@@ -281,15 +279,9 @@
            placeholder="62807297" style="width:7rem"
            title="Engine number, as stamped. Only parts whose changeover is printed for your engine's own number block are filtered on it.">
     <span class="fl">PR&nbsp;Codes</span>
-    <div class="vf-chips">
-      <template x-for="pr in vfPrCodes" :key="pr">
-        <span class="vf-chip" :title="prDesc(pr)">
-          PR:<span x-text="pr"></span>
-          <span class="vf-chip-desc" x-text="prDesc(pr)"></span>
-          <span class="vf-chip-x" @click="removePrCode(pr)">×</span>
-        </span>
-      </template>
-    </div>
+    <button class="pr-toggle" :class="{on: prListOpen}" x-show="vfPrCodes.length"
+            @click="prListOpen = !prListOpen"
+            x-text="vfPrCodes.length + (vfPrCodes.length === 1 ? ' option ' : ' options ') + (prListOpen ? '▴' : '▾')"></button>
     <div class="vf-pr-wrap">
       <input type="text" x-model="prSearch" placeholder="add / paste list…" style="width:8rem"
              title="Type a code and press Enter, or paste your option-sticker (Kardex) list"
@@ -322,6 +314,17 @@
     <template x-if="emptySectionIds.size">
       <span class="fl" x-text="emptySectionIds.size + ' sections hidden — no parts on this car'"></span>
     </template>
+    <!-- Expanded option list — its own full-width row so the filter bar's
+         inline controls stay put whether the car has 5 codes or 100. -->
+    <div class="pr-list" style="flex-basis:100%" x-show="prListOpen && vfPrCodes.length">
+      <template x-for="item in selectedPrItems" :key="item.code">
+        <div class="pr-row" :class="{unknown: item.unknown}">
+          <span class="pr-code" x-text="item.code"></span>
+          <span class="pr-desc" x-text="item.desc || 'not in this catalog\'s option list'"></span>
+          <span class="pr-x" title="Remove" @click="removePrCode(item.code)">×</span>
+        </div>
+      </template>
+    </div>
   </div>
 
   <div class="layout">
@@ -687,6 +690,7 @@
         vfChassis:        '',
         vfEngineNo:       '',
         vfPrCodes:        [],
+        prListOpen:       false,
         prSearch:         '',
         prDropdownOpen:   false,
         allPrCodes:       [],
@@ -1614,8 +1618,17 @@
           } catch { this._codeIndex = null; }
         },
 
-        prDesc(code) {
-          return (this.allPrCodes.find(p => p.code === code) || {}).description || '';
+        // The selected codes with the catalog's labels, in the option list's own
+        // order (numeric codes first, then M-numbers alphabetically) so a code can
+        // be found by eye rather than by paste order. `unknown` only means anything
+        // once the catalog's list is loaded — before that, nothing is flagged.
+        get selectedPrItems() {
+          const desc = new Map(this.allPrCodes.map(p => [p.code, p.description]));
+          const num = c => /^\d+$/.test(c) ? parseInt(c, 10) : Infinity;
+          return [...this.vfPrCodes]
+            .sort((a, b) => num(a) - num(b) || a.localeCompare(b))
+            .map(code => ({ code, desc: desc.get(code) || '',
+                            unknown: desc.size > 0 && !desc.has(code) }));
         },
 
         updatePrDropdown() {

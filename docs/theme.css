@@ -142,6 +142,33 @@ html { background: var(--bg); }
 .hdr-btn.danger { color: var(--text4); }
 .hdr-btn.danger:hover:not(:disabled) { border-color: #c0392b; color: #c0392b; }
 
+/* ── PR option list (shared by garage + viewer) ──────────── */
+/* 50-100 codes don't work as wrapped chips — a fixed-height scrollable
+   code/description list behind a count toggle keeps the surrounding UI stable
+   no matter how long the option sticker is. */
+
+.pr-toggle {
+  background: none; border: 1px solid var(--border3); color: var(--text3);
+  border-radius: 4px; padding: 0.15rem 0.5rem; cursor: pointer;
+  font-family: monospace; font-size: 0.75rem; white-space: nowrap; line-height: 1.5;
+}
+.pr-toggle:hover { border-color: var(--accent); color: var(--text); }
+.pr-toggle.on { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+
+.pr-list { border: 1px solid var(--border2); border-radius: 4px; background: var(--bg);
+           max-height: 13rem; overflow-y: auto; max-width: 46rem; }
+.pr-row { display: grid; grid-template-columns: 4.5rem 1fr auto; gap: 0.5rem;
+          align-items: baseline; padding: 0.12rem 0.6rem;
+          border-bottom: 1px solid var(--row-border); font-size: 0.75rem; }
+.pr-row:last-child { border-bottom: none; }
+.pr-row:hover { background: var(--row-hover); }
+.pr-row .pr-code { color: var(--accent); white-space: nowrap; }
+.pr-row .pr-desc { color: var(--text2); }
+.pr-row.unknown .pr-code { color: var(--warn, #c87800); }
+.pr-row.unknown .pr-desc { color: var(--text4); font-style: italic; }
+.pr-row .pr-x { cursor: pointer; color: var(--text5); padding: 0 0.2rem; }
+.pr-row .pr-x:hover { color: var(--err, #d66); }
+
 /* ── Diagram inversion ───────────────────────────────────── */
 
 /* Dark default: invert black-on-white line drawings */
