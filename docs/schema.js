@@ -28,11 +28,15 @@
       );
       CREATE TABLE IF NOT EXISTS section (
         id INTEGER PRIMARY KEY, main_group_id INTEGER, catalog_id TEXT,
-        -- diagram_blob is the rendered diagram (WebP). It lives in the DB because OPFS
+        -- diagram_blob is the rendered diagram as a raw CCITT Group 4 (ITU-T T.6)
+        -- bitstream — bilevel line art, ~44% the size of the lossy WebP it replaced,
+        -- decoded by ccitt.js for display. T.6 has no header, so diagram_w/diagram_h
+        -- carry the pixel dimensions the decoder needs. It lives in the DB because OPFS
         -- costs ~2.6 ms per file however small, so a file per diagram costs ~7.4 s per
         -- import against ~0.3 s for the same bytes here. Never SELECT it in a list
         -- query — read it by section id only when a diagram is actually shown.
-        number TEXT, title TEXT, parts_page INTEGER, diagram_page INTEGER, diagram_blob BLOB,
+        number TEXT, title TEXT, parts_page INTEGER, diagram_page INTEGER,
+        diagram_blob BLOB, diagram_w INTEGER, diagram_h INTEGER,
         title_remark TEXT, title_model TEXT,
         -- Scope printed on the section's title row (e.g. "PR:480" gating the whole
         -- manual-gearbox section). AND-ed with each part's own applicability.

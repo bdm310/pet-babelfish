@@ -642,6 +642,7 @@
   <script src="appl.js"></script>
   <script src="vin.js"></script>
   <script src="schema.js"></script>
+  <script src="ccitt.js"></script>
   <script src="catalogs.js"></script>
   <script src="garage.js"></script>
   <script>
@@ -693,6 +694,7 @@
         posGroups:      [],
         displayRows:    [],
         diagramUrl:     null,
+        _diagramToken:  0,
         callouts:       [],
         hoveredPos:     null,
         selectedPos:    null,
@@ -1248,7 +1250,7 @@
           );
           this.mainGroups = mgs.map(([id, number, title]) => {
             // diagram_blob is deliberately not selected — it would pull every
-            // section's WebP into memory to build a list of titles. Only its
+            // section's G4 bitstream into memory to build a list of titles. Only its
             // presence matters here; selectSection() reads the bytes by id.
             const sections = this._query(
               `SELECT id, number, title, diagram_blob IS NOT NULL, title_remark, title_model,
@@ -1307,11 +1309,15 @@
           this.hoveredPos  = null;
           this.selectedPos = null;
 
-          // Load diagram. It travels inside the DB, so this works in file mode too.
+          // Load diagram. It travels inside the DB (CCITT G4 bitstream), so this works
+          // in file mode too. Decode happens here, only for the section being shown.
           this._setDiagram(null);
+          const token = ++this._diagramToken;
           if (sec.has_diagram) {
-            const bytes = this._scalar('SELECT diagram_blob FROM section WHERE id=?', [sec.id]);
-            if (bytes) this._setDiagram(URL.createObjectURL(new Blob([bytes], { type: 'image/webp' })));
+            const row = this._query(
+              'SELECT diagram_blob, diagram_w, diagram_h FROM section WHERE id=?', [sec.id]
+            )[0];
+            if (row && row[0]) this._showG4Diagram(row[0], row[1], row[2], token);
           }
         },
 
@@ -1519,6 +1525,24 @@
         _setDiagram(url) {
           if (this.diagramUrl) URL.revokeObjectURL(this.diagramUrl);
           this.diagramUrl = url;
+        },
+
+        // Decode a section's CCITT G4 bitstream to a displayable image. toBlob is
+        // async, so a token guards against a slow decode clobbering a newer section.
+        _showG4Diagram(bytes, w, h, token) {
+          try {
+            const { pixels } = CCITT.decode(bytes, w, h);
+            const rgba = CCITT.toRGBA(pixels, w, h);
+            const cvs = document.createElement('canvas');
+            cvs.width = w; cvs.height = h;
+            cvs.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0);
+            cvs.toBlob(b => {
+              if (!b || token !== this._diagramToken) return;
+              this._setDiagram(URL.createObjectURL(b));
+            }, 'image/png');
+          } catch (e) {
+            console.error('diagram G4 decode failed', e);
+          }
         },
 
         // Extract numeric part of a position for callout matching.

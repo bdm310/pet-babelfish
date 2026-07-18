@@ -36,6 +36,8 @@ importScripts(
 // for the same reason: the viewer checks a DB against the definition that wrote it.
 importScripts(new URL('./appl.js', self.location.href).href);
 importScripts(new URL('./schema.js', self.location.href).href);
+// CCITT Group 4 codec — diagrams are stored as its bitstream, encoded here.
+importScripts(new URL('./ccitt.js', self.location.href).href);
 
 // Prevent pdf.min.js from spawning a nested worker — it should use the
 // already-running pdf.worker.min.js indirectly via the fake worker path.
@@ -213,14 +215,14 @@ async function ingest(buffer, catalogId) {
   // ── Phase 2: sequential — insert collected results into the database ──────────
   for (let i = 0; i < sections.length; i++) {
     const { sec, diagramResult, partsResults } = sectionResults[i];
-    const { imgBytes, callouts } = diagramResult;
+    const { imgBytes, w, h, callouts } = diagramResult;
     const firstPartsPage = sec.diagramPage + 1;
 
     t = performance.now();
     const mgId  = ensureMainGroup(db, mgCache, catalogId, sec.mainGroupNum, sec.mainGroupTitle);
     const secId = insertSection(
       db, mgId, catalogId, sec.sectionNum, sec.sectionTitle,
-      firstPartsPage, sec.diagramPage, imgBytes
+      firstPartsPage, sec.diagramPage, imgBytes ? { blob: imgBytes, w, h } : null
     );
     for (const c of callouts) {
       calloutStmt.run([secId, c.number, c.x0, c.y0, c.x1, c.y1, c.confidence]);
@@ -276,7 +278,7 @@ async function ingest(buffer, catalogId) {
     `  V-page parse       : ${fmt(T.vPageParse)} [${pct(T.vPageParse)}]\n` +
     `  renderDiagram()    : ${fmt(T.renderDiagram)} [${pct(T.renderDiagram)}] ${perSec(T.renderDiagram)}\n` +
     `    page render+oplist : ${fmt(T.render)} ${perDiag(T.render)}\n` +
-    `    WebP encode        : ${fmt(T.convertDiagram)} ${perDiag(T.convertDiagram)}\n` +
+    `    G4 encode          : ${fmt(T.convertDiagram)} ${perDiag(T.convertDiagram)}\n` +
     `    ocrDiagram() total : ${fmt(T.totalOcr)} ${perDiag(T.totalOcr)}\n` +
     `      binarize+upscale   : ${fmt(T.binarizeUpscale)}\n` +
     `      findBlobs (BFS)    : ${fmt(T.findBlobs)}\n` +
@@ -1559,6 +1561,74 @@ function findBlobs(canvas) {
   return { blobs, ink, W, H };
 }
 
+// Containment-nesting depth of every ink pixel — used to drop callouts that sit INSIDE
+// a closed shape (a mark/feature enclosed by a part outline read as a digit). Real
+// callouts float on the drawing; enclosed detections are ~90% spurious. Frame-agnostic:
+// depth is relative, so a page border just shifts everyone down together.
+//
+// Method (portable, no contour tracing): 4-connected flood-label the white and the ink
+// regions, then BFS outward from the border-touching white (level 0), alternating
+// white→ink→white… Each ink region's level is its nesting depth (odd). Validated to
+// reproduce an OpenCV RETR_TREE contour-depth filter (removes ~16 spurious per catalog,
+// ~2 real). Returns Int32Array `depth` (per pixel; -1 for white), plus W,H.
+function containmentDepth(binnedCanvas) {
+  const W = binnedCanvas.width, H = binnedCanvas.height, N = W * H;
+  const px = binnedCanvas.getContext('2d').getImageData(0, 0, W, H).data;
+  const ink = new Uint8Array(N);
+  for (let i = 0; i < N; i++) ink[i] = (px[i*4] + px[i*4+1] + px[i*4+2]) < 384 ? 1 : 0;
+
+  // Flood-label a mask (want=1 ink / 0 white), 4-connected. lab[] 0 = unlabelled.
+  function label(want) {
+    const lab = new Int32Array(N);
+    let n = 0;
+    const stk = new Int32Array(N);
+    for (let s = 0; s < N; s++) {
+      if (ink[s] !== want || lab[s]) continue;
+      n++; let sp = 0; stk[sp++] = s; lab[s] = n;
+      while (sp) {
+        const p = stk[--sp], x = p % W, y = (p / W)|0;
+        if (x > 0   && ink[p-1] === want && !lab[p-1]) { lab[p-1] = n; stk[sp++] = p-1; }
+        if (x < W-1 && ink[p+1] === want && !lab[p+1]) { lab[p+1] = n; stk[sp++] = p+1; }
+        if (y > 0   && ink[p-W] === want && !lab[p-W]) { lab[p-W] = n; stk[sp++] = p-W; }
+        if (y < H-1 && ink[p+W] === want && !lab[p+W]) { lab[p+W] = n; stk[sp++] = p+W; }
+      }
+    }
+    return { lab, n };
+  }
+  const { lab: il, n: iN } = label(1);
+  const { lab: wl, n: wN } = label(0);
+
+  // ink-region <-> white-region adjacency (scan down/right boundaries)
+  const adjI = Array.from({ length: iN + 1 }, () => new Set());
+  const adjW = Array.from({ length: wN + 1 }, () => new Set());
+  const link = (ilab, wlab) => { adjI[ilab].add(wlab); adjW[wlab].add(ilab); };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const p = y*W + x;
+    if (x < W-1 && ink[p] !== ink[p+1]) ink[p] ? link(il[p], wl[p+1]) : link(il[p+1], wl[p]);
+    if (y < H-1 && ink[p] !== ink[p+W]) ink[p] ? link(il[p], wl[p+W]) : link(il[p+W], wl[p]);
+  }
+
+  // BFS from border white = level 0, alternating white/ink.
+  const wDepth = new Int32Array(wN + 1).fill(-1);
+  const iDepth = new Int32Array(iN + 1).fill(-1);
+  const q = [];
+  const seedBorderW = w => { if (w && wDepth[w] < 0) { wDepth[w] = 0; q.push([0, w]); } };
+  for (let x = 0; x < W; x++) { seedBorderW(wl[x]); seedBorderW(wl[(H-1)*W + x]); }
+  for (let y = 0; y < H; y++) { seedBorderW(wl[y*W]); seedBorderW(wl[y*W + W-1]); }
+  for (let h = 0; h < q.length; h++) {
+    const [kind, r] = q[h];
+    if (kind === 0) {                                   // white region → adjacent ink
+      for (const i of adjW[r]) if (iDepth[i] < 0) { iDepth[i] = wDepth[r] + 1; q.push([1, i]); }
+    } else {                                            // ink region → adjacent white
+      for (const w of adjI[r]) if (wDepth[w] < 0) { wDepth[w] = iDepth[r] + 1; q.push([0, w]); }
+    }
+  }
+
+  const depth = new Int32Array(N);
+  for (let i = 0; i < N; i++) depth[i] = ink[i] ? (iDepth[il[i]] > 0 ? iDepth[il[i]] : 1) : -1;
+  return { depth, W, H };
+}
+
 // Render a single blob (re-flooded from seed) onto a white padded OffscreenCanvas
 function renderBlobCanvas(ink, W, H, blob, pad) {
   const gx0 = Math.max(0, blob.x0 - pad), gy0 = Math.max(0, blob.y0 - pad);
@@ -1866,8 +1936,29 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params =
     if (!placed) numGroups.push({ digits: [dr], x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 });
   }
 
+  // Containment filter: drop callouts that sit INSIDE a closed shape (a feature enclosed
+  // by a part outline read as a digit). Compute each group's nesting depth on the native
+  // `binned` crop (group coords are in `processed` space → divide by scale). A group
+  // deeper than this diagram's shallowest callout is enclosed → spurious (~90% of them).
+  const { depth: depthArr, W: dW, H: dH } = containmentDepth(binned);
+  const groupDepth = (g) => {
+    const bx0 = Math.max(0, Math.floor(g.x0 / scale)), by0 = Math.max(0, Math.floor(g.y0 / scale));
+    const bx1 = Math.min(dW - 1, Math.ceil(g.x1 / scale)), by1 = Math.min(dH - 1, Math.ceil(g.y1 / scale));
+    const ds = [];
+    for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) {
+      const d = depthArr[y*dW + x];
+      if (d > 0) ds.push(d);                     // ink pixels only
+    }
+    if (!ds.length) return 1;
+    ds.sort((a, b) => a - b);
+    return ds[ds.length >> 1];                   // median
+  };
+  for (const g of numGroups) g.depth = groupDepth(g);
+  const minDepth = numGroups.reduce((m, g) => Math.min(m, g.depth), Infinity);
+  const kept = numGroups.filter(g => g.depth <= minDepth);
+
   const pngW = canvas.width, pngH = canvas.height;
-  const callouts = numGroups
+  const callouts = kept
     .map(g => ({
       number:     g.digits.map(d => d.text).join(''),
       confidence: Math.round(g.digits.reduce((s, d) => s + d.confidence, 0) / g.digits.length),
@@ -1914,18 +2005,18 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
   // would be wasteful when only the interpretation layer changed, so carry the old
   // DB's diagrams and callouts across into a fresh, current-schema DB keyed by section
   // number. The parts/V-pages/facets are then re-extracted normally, no OCR.
-  const oldDiagrams = new Map();   // section number → diagram_blob
+  const oldDiagrams = new Map();   // section number → { blob, w, h }
   const oldCallouts = new Map();   // section number → [callout rows]
   let rebuilt = false;
   if (!SCHEMA.matches(SQL, db)) {
     post('status', { message: 'Schema changed — rebuilding (diagrams kept, no OCR)…' });
     const idToNum = new Map();
-    let st = db.prepare('SELECT id, number, diagram_blob FROM section WHERE catalog_id=?');
+    let st = db.prepare('SELECT id, number, diagram_blob, diagram_w, diagram_h FROM section WHERE catalog_id=?');
     st.bind([catalogId]);
     while (st.step()) {
       const r = st.getAsObject();
       idToNum.set(r.id, r.number);
-      if (r.diagram_blob) oldDiagrams.set(r.number, r.diagram_blob);
+      if (r.diagram_blob) oldDiagrams.set(r.number, { blob: r.diagram_blob, w: r.diagram_w, h: r.diagram_h });
     }
     st.free();
     st = db.prepare('SELECT section_id, number, x0, y0, x1, y1, confidence FROM callout');
@@ -2030,7 +2121,8 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
       }
 
       if (diagramResult.imgBytes)
-        db.run('UPDATE section SET diagram_blob=? WHERE id=?', [diagramResult.imgBytes, secId]);
+        db.run('UPDATE section SET diagram_blob=?, diagram_w=?, diagram_h=? WHERE id=?',
+               [diagramResult.imgBytes, diagramResult.w, diagramResult.h, secId]);
 
       if (diagramResult.callouts !== null) {
         db.run('DELETE FROM callout WHERE section_id=?', [secId]);
@@ -2079,14 +2171,14 @@ const TIMING = {
   opfsSetup:       0,  // navigator.storage.getDirectory + handle setup
   tocParse:        0,  // pdf.getOutline + parseOutline
   vPageParse:      0,  // parseVPages() — PR codes, sales types, VIN ranges
-  renderDiagram:   0,  // renderDiagram() wall time (includes OCR and WebP encode)
+  renderDiagram:   0,  // renderDiagram() wall time (includes OCR and G4 encode)
   extractParts:    0,  // extractParts() across all pages of all sections
   dbInserts:       0,  // calloutStmt.run + partStmt.run + insertSection
   ftsBuild:        0,  // FTS index rebuild
   dbSave:          0,  // db.export + writeOpfsFile
   // ── OCR internals (subset of renderDiagram) ────────────────────────────────
   render:          0,  // page.getOperatorList + page.render
-  convertDiagram:  0,  // canvas.convertToBlob → WebP bytes for section.diagram_blob
+  convertDiagram:  0,  // binarize + CCITT.encode → G4 bytes for section.diagram_blob
   binarizeUpscale: 0,  // binarize + upscale
   findBlobs:       0,  // connected-component labeling
   renderBlobs:     0,  // renderBlobCanvas × N candidates
@@ -2151,11 +2243,16 @@ async function renderDiagram(pdf, pageNum, tWorker) {
 
   page.cleanup();
 
-  // Save native image (or 2× render fallback) binarized to WebP for display.
+  // Save native image (or 2× render fallback) binarized to a CCITT Group 4
+  // bitstream for display — bilevel line art, ~44% the size of lossy WebP.
   // ocrCanvas is native when available — no upscaling wasted on the stored file.
   t = performance.now();
-  const blob     = await binarize(ocrCanvas, OCR_BIN_THRESH).convertToBlob({ type: 'image/webp' });
-  const imgBytes = new Uint8Array(await blob.arrayBuffer());
+  const binCanvas = binarize(ocrCanvas, OCR_BIN_THRESH);
+  const w = binCanvas.width, h = binCanvas.height;
+  const bd = binCanvas.getContext('2d').getImageData(0, 0, w, h).data;
+  const pixels = new Uint8Array(w * h);
+  for (let i = 0, j = 0; i < pixels.length; i++, j += 4) pixels[i] = bd[j] < 128 ? 1 : 0; // black=1
+  const imgBytes = CCITT.encode(pixels, w, h);
   TIMING.convertDiagram += performance.now() - t;
 
   let callouts = [];
@@ -2167,7 +2264,7 @@ async function renderDiagram(pdf, pageNum, tWorker) {
     }
   }
 
-  return { imgBytes, callouts };
+  return { imgBytes, w, h, callouts };
 }
 
 // ── OPFS helper ───────────────────────────────────────────────────────────────
@@ -2214,12 +2311,14 @@ function ensureMainGroup(db, cache, catalogId, number, title) {
   return id;
 }
 
-function insertSection(db, mgId, catalogId, num, title, partsPage, diagPage, imgBytes) {
+function insertSection(db, mgId, catalogId, num, title, partsPage, diagPage, diagram) {
+  const d = diagram || {};
   db.run(
     `INSERT INTO section
-       (main_group_id, catalog_id, number, title, parts_page, diagram_page, diagram_blob)
-     VALUES (?,?,?,?,?,?,?)`,
-    [mgId, catalogId, num, title, partsPage, diagPage, imgBytes]
+       (main_group_id, catalog_id, number, title, parts_page, diagram_page,
+        diagram_blob, diagram_w, diagram_h)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    [mgId, catalogId, num, title, partsPage, diagPage, d.blob || null, d.w || null, d.h || null]
   );
   return db.exec('SELECT last_insert_rowid()')[0].values[0][0];
 }

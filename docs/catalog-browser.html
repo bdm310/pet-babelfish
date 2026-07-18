@@ -191,8 +191,9 @@
               catalogCount++;
             }
             if (!catalogCount) { this.status = 'No catalogs found'; return; }
-            // level 0: most of the DB is now WebP, which deflate shrinks by ~2% while
-            // costing seconds. The catalog data that does compress is the small part.
+            // level 0: most of the DB is CCITT G4, already compressed, so deflate
+            // shrinks it by ~2% while costing seconds. The compressible data is a
+            // small part.
             const zip  = fflate.zipSync(files, { level: 0 });
             const blob = new Blob([zip], { type: 'application/zip' });
             const url  = URL.createObjectURL(blob);
