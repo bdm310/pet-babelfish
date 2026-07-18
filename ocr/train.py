@@ -16,6 +16,7 @@ import gzip
 import random
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import requests
@@ -90,17 +91,21 @@ def gen_lstmf() -> None:
     pending = [t for t in tifs if t.stem not in done]
     print(f"Generating lstmf files: {len(pending)} remaining of {len(tifs)} total")
 
-    for i, tif in enumerate(pending, 1):
-        # Outbase co-located with .tif so Tesseract finds the .box file.
-        outbase = tif.with_suffix("")
-        cmd = [str(TESS), str(tif), str(outbase), "--psm", "6", "-l", "eng",
-               "--tessdata-dir", str(TESSDATA), "lstm.train"]
-        subprocess.run(cmd, check=True, capture_output=True)
+    def one(tif):
+        outbase = tif.with_suffix("")   # co-located so Tesseract finds the .box
+        subprocess.run([str(TESS), str(tif), str(outbase), "--psm", "6", "-l", "eng",
+                        "--tessdata-dir", str(TESSDATA), "lstm.train"],
+                       check=True, capture_output=True)
         generated = tif.with_suffix(".lstmf")
         if generated.exists():
             generated.replace(LSTMF_DIR / generated.name)
-        if i % 50 == 0:
-            print(f"  {i}/{len(pending)}")
+
+    done_n = 0
+    with ThreadPoolExecutor(max_workers=16) as ex:
+        for _ in ex.map(one, pending):
+            done_n += 1
+            if done_n % 500 == 0:
+                print(f"  {done_n}/{len(pending)}")
 
 
 def write_lists() -> None:
@@ -123,7 +128,7 @@ def train() -> None:
         "--traineddata",   ENG_BEST,
         "--train_listfile", TRAIN_LIST,
         "--eval_listfile",  EVAL_LIST,
-        "--max_iterations", "1000",
+        "--max_iterations", "4000",
         "--target_error_rate", "0.01")
 
 

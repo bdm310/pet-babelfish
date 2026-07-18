@@ -54,10 +54,27 @@ const DIAGRAM_SCALE = 2.0;
 // OCR parameters — tuned for Porsche PET callout digits at ~7pt
 // 6pt catches diagrams whose callouts render smaller (~5.5–6.5pt) because a large,
 // sprawling illustration is scaled down to fit the frame (e.g. 604-015 / p268).
-const OCR_FONT_PT_CANDIDATES = [6, 7, 8, 9, 12];  // pt sizes to try in cascade order
+// 16/20/28pt catch OVERSIZED callouts: some sections (e.g. 996 320-06) draw the
+// position numbers very large, well above 12pt — the old cascade top-cut left those
+// whole sections at 0 detections. These are FALLBACK-only (see OCR_FALLBACK_PT): a big
+// downscale scale can find more *spurious* blobs than the right scale finds real ones,
+// so if it competed on "most digits" it would corrupt normal sections. It only runs
+// when the primary sizes found nothing — i.e. genuinely oversized-callout sections.
+const OCR_FONT_PT_CANDIDATES = [6, 7, 8, 9, 12, 16, 20, 28];  // pt sizes, cascade order
+const OCR_FALLBACK_PT = new Set([16, 20, 28]);                // tried only if primary found none
 const OCR_TARGET_PX  = 40;   // upscale digits to this height before OCR
 const OCR_BIN_THRESH = 128;
 const OCR_MIN_CONF   = 90;
+// Callout numbers are 1-2 digits, value <= ~60 — never 3+. A merged group above this
+// is two adjacent callouts fused (e.g. "20"+"21"->"2021"), so the grouper refuses it.
+const OCR_MAX_CALLOUT = 99;
+// Narrow-blob "1" recovery. Among digits only "1" is a thin vertical stroke, so a
+// callout-height blob in this aspect (w/h) band that OCR rejected is almost certainly a
+// "1" whose lone bar read below conf or as a wrong char — the dominant 996 miss (the
+// "1" of "12"/"10"/"16" dropped, leaving "2"/"0"/"6"). Real 996 "1"s measure 0.24-0.49;
+// thinner blobs are leader-line fragments (kept out to protect precision).
+const OCR_ONE_AR_MIN = 0.24;
+const OCR_ONE_AR_MAX = 0.50;
 // Tessdata served alongside the worker
 const TESSDATA_URL = new URL('./tessdata', self.location.href).href;
 
@@ -1500,10 +1517,14 @@ function binarize(src, threshold) {
   return dst;
 }
 
-// Bilinear upscale — returns new OffscreenCanvas
+// Bilinear resample — returns new OffscreenCanvas. Handles BOTH up- and downscaling:
+// downscaling matters for oversized callouts (a large-font scale needs factor < 1 to
+// bring the glyph down to targetPx). Only a near-identity factor is passed through.
 function upscale(src, factor) {
-  if (factor <= 1) return src;
-  const dst = new OffscreenCanvas(Math.round(src.width * factor), Math.round(src.height * factor));
+  if (factor > 0.98 && factor < 1.02) return src;
+  const dst = new OffscreenCanvas(
+    Math.max(1, Math.round(src.width * factor)),
+    Math.max(1, Math.round(src.height * factor)));
   const ctx = dst.getContext('2d');
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
@@ -1715,13 +1736,33 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params =
     const pass8  = await runPass('8');
 
     const digitResults = [];
+    const rejected = [];
     for (let i = 0; i < blobItems.length; i++) {
       const r10 = pass10[i], r8 = pass8[i];
       const ok10 = /^\d$/.test(r10.text) && r10.conf >= minConf;
       const ok8  = /^\d$/.test(r8.text)  && r8.conf  >= minConf;
-      if (!ok10 && !ok8) continue;
+      if (!ok10 && !ok8) { rejected.push(blobItems[i].blob); continue; }
       const pick = !ok10 ? r8 : !ok8 ? r10 : r10.conf >= r8.conf ? r10 : r8;
       digitResults.push({ text: pick.text, confidence: pick.conf, blob: blobItems[i].blob });
+    }
+
+    // Narrow-blob "1" recovery: a callout-height blob in the "1" aspect band that OCR
+    // rejected is almost certainly a "1" (its lone bar reads below conf / as a wrong
+    // char) — but ONLY inject it when it sits directly beside an already-accepted digit
+    // on the same baseline, i.e. it is the "1" of a 2-digit callout ("12"/"10"/"16"
+    // whose "1" dropped, leaving "2"/"0"/"6"). Requiring an accepted neighbour is what
+    // keeps precision: injecting every band blob (incl. isolated noise) floods false 1s.
+    const injGap = targetPx * 0.6;
+    for (const b of rejected) {
+      const ar = b.w / b.h;
+      if (ar < OCR_ONE_AR_MIN || ar > OCR_ONE_AR_MAX) continue;
+      const yc = (b.y0 + b.y1) / 2, h = b.y1 - b.y0;
+      const adjacent = digitResults.some(d => {
+        const db = d.blob;
+        const gap = Math.max(b.x0 - db.x1, db.x0 - b.x1);   // edge-to-edge, either side
+        return Math.abs(yc - (db.y0 + db.y1) / 2) < 0.35 * h && gap > -0.3 * h && gap < injGap;
+      });
+      if (adjacent) digitResults.push({ text: '1', confidence: minConf, blob: b });
     }
 
     if (!digitResults.length) return null;
@@ -1739,8 +1780,16 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params =
   let fontPtUsed, totalBlobs, candidateCount;
   const cascadeLog = debug ? [] : null;  // per-step diagnostics when debug=true
   for (const fontPt of OCR_FONT_PT_CANDIDATES) {
+    // Oversized fallback sizes run only when the primary sizes found nothing, so they
+    // never displace a good primary scale on the "most digits" rule.
+    if (OCR_FALLBACK_PT.has(fontPt) && digitResults && digitResults.length) continue;
     t = performance.now();
-    const s = Math.max(1, targetPx / (fontPt * pxPerPt));
+    // Primary sizes keep the >=1 clamp (never downscale — on high-res native images even
+    // 9/12pt scales compute s<1, and downscaling them shrank callouts out of the window,
+    // which regressed detection). ONLY the oversized fallback sizes may downscale (s<1),
+    // to bring a genuinely huge glyph down to targetPx.
+    const raw = targetPx / (fontPt * pxPerPt);
+    const s = OCR_FALLBACK_PT.has(fontPt) ? raw : Math.max(1, raw);
     const processed = upscale(binned, s);
     TIMING.binarizeUpscale += performance.now() - t;
 
@@ -1790,8 +1839,15 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params =
   // the center distance, which used to push "1X" callouts just past the threshold
   // and split them into separate digits. Whitespace between adjacent digits of one
   // number is small (well under a digit-width); between separate callouts it is a
-  // full digit-width or more.
-  const MAX_GAP = targetPx * 0.6, Y_TOL = targetPx * 0.1;
+  // full digit-width or more. Digits here are all ~targetPx tall (they passed the
+  // scale's height window), so targetPx-scaled thresholds are size-normalized.
+  // Two hard caps encode the domain: a callout is at most 2 digits and never exceeds
+  // OCR_MAX_CALLOUT — so two adjacent callouts can never fuse into "2021"/"252627".
+  // Keep the gap/row tolerances TIGHT (baseline-proven): loosening them merged adjacent
+  // single-digit callouts ("3"+"4"->"34", "4"+"5"->"45"). The 996 doubled-1 that looked
+  // like a grouping gap is really a detection gap (the 2nd stroke isn't always found),
+  // so a looser gap buys nothing and costs these false merges.
+  const MAX_GAP = targetPx * 0.6, Y_TOL = targetPx * 0.12;
   const numGroups = [];
   for (const dr of digitResults) {
     const b = dr.blob, yc = (b.y0 + b.y1) / 2;
@@ -1799,11 +1855,13 @@ async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params =
     for (const g of numGroups) {
       const last = g.digits[g.digits.length-1], lb = last.blob;
       const gap = b.x0 - g.x1;  // whitespace between this digit and the group's right edge
-      if (Math.abs(yc - (lb.y0+lb.y1)/2) < Y_TOL && gap < MAX_GAP) {
-        g.digits.push(dr);
-        g.x1 = Math.max(g.x1, b.x1); g.y0 = Math.min(g.y0, b.y0); g.y1 = Math.max(g.y1, b.y1);
-        placed = true; break;
-      }
+      if (Math.abs(yc - (lb.y0+lb.y1)/2) >= Y_TOL || gap >= MAX_GAP) continue;
+      if (g.digits.length >= 2) continue;                       // a callout is 1-2 digits
+      const merged = +(g.digits.map(d => d.text).join('') + dr.text);
+      if (merged > OCR_MAX_CALLOUT) continue;                   // never fuse into a big number
+      g.digits.push(dr);
+      g.x1 = Math.max(g.x1, b.x1); g.y0 = Math.min(g.y0, b.y0); g.y1 = Math.max(g.y1, b.y1);
+      placed = true; break;
     }
     if (!placed) numGroups.push({ digits: [dr], x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 });
   }
