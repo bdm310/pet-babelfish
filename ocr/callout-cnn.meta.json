@@ -1,0 +1,26 @@
+{
+  "model": "callout-cnn",
+  "input": {
+    "shape": [
+      1,
+      1,
+      48,
+      48
+    ],
+    "layout": "NCHW",
+    "dtype": "float32"
+  },
+  "preprocessing": "value = patch_uint8 / 255.0 (0=ink, 1=white); no mean/std normalization",
+  "output": "single sigmoid probability of class=callout",
+  "threshold": 0.064403,
+  "threshold_selected_on": "val cc-only (996 held-out sections), max-F1",
+  "params": 25521,
+  "onnx_opset": 13,
+  "onnx_size_bytes": 104792,
+  "test_cc": {
+    "precision": 0.9709443099273608,
+    "recall": 0.9989510947948079,
+    "f1": 0.9847486105725733,
+    "ap": 0.9998210563418053
+  }
+}

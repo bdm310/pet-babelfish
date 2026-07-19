@@ -15,3 +15,6 @@ verify-output/
 pet-source-pdf/
 css-export/
 catalogs.zip
+
+# Phase 1 callout patch dataset (large, regenerable via ocr/dataset.py)
+ocr/dataset/

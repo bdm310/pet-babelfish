@@ -25,11 +25,20 @@ if (typeof document === 'undefined') {
 }
 if (typeof window === 'undefined') self.window = self;
 
+const ORT_CDN = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/';
+
 importScripts(
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js',
-  'https://cdn.jsdelivr.net/npm/tesseract.js@7/dist/tesseract.min.js'
+  'https://cdn.jsdelivr.net/npm/tesseract.js@7/dist/tesseract.min.js',
+  ORT_CDN + 'ort.wasm.min.js'
 );
+
+// onnxruntime-web: single-threaded, no proxy, wasm from the same CDN dir. numThreads=1
+// avoids SharedArrayBuffer (the static server sets no COOP/COEP headers).
+ort.env.wasm.numThreads = 1;
+ort.env.wasm.proxy      = false;
+ort.env.wasm.wasmPaths  = ORT_CDN;
 
 // The applicability grammar, shared verbatim with the viewer so a part's scope
 // means the same thing when written as it does when read. The schema is shared
@@ -77,6 +86,39 @@ const OCR_MAX_CALLOUT = 99;
 // thinner blobs are leader-line fragments (kept out to protect precision).
 const OCR_ONE_AR_MIN = 0.24;
 const OCR_ONE_AR_MAX = 0.50;
+
+// ── Learned callout detector (Phase 3) ──────────────────────────────────────
+// A trained CNN decides accept/reject per candidate blob, replacing the multi-scale
+// font cascade + containment filter + narrow-1 recovery of the heuristic path.
+// Tesseract still reads the digit; the model only gates. Flag preserves the old path
+// for Phase 4 A/B. Threshold is precision-leaning; Phase 4 tunes it on 996 val.
+const OCR_USE_MODEL    = false;
+const OCR_MODEL_THRESH = 0.06;
+// Recall-safe precision gates on the model path's EMITTED groups, keyed on the CNN's own
+// probability (not a new heuristic — the learned signal already separates these). The
+// global 0.06 accept gate is kept low to admit the genuine low-prob callout tail; these
+// two gates then remove the specific low-prob shapes that tail does NOT contain. Both were
+// validated to drop ~0 real callouts on 996 AND 997TT (params fixed on 996 / general
+// geometry, never fitted to 997TT). See PHASE46_REPORT.md.
+//  - Lone "1": a thin vertical stroke (leader line / hatch / part edge) reads as "1"; real
+//    "1" callouts score ~0.997, spurious ones cluster near the accept floor.
+const OCR_ONE_PROB_MIN     = 0.20;
+//  - Legend / example block: a dense cluster of marginal-prob digits (VIN/option grids).
+//    A real callout never sits amid several sub-0.5-prob callouts (real callouts score
+//    ~0.99); so a marginal group with >= MIN_NB marginal neighbours within RADIUS median
+//    callout-heights is a legend member. Isolated marginal groups (a genuine low-prob lone
+//    callout) are protected — that is what keeps this recall-safe.
+const OCR_CLUSTER_PROB_MIN = 0.50;
+const OCR_CLUSTER_MIN_NB   = 2;
+const OCR_CLUSTER_RADIUS   = 6;
+const OCR_MODEL_URL    = new URL('./callout-cnn.onnx', self.location.href).href;
+// Candidate band — must match ocr/dataset.py candidates() exactly (Phase 1).
+const OCR_CC_MIN_H     = 8;      // drop blobs shorter than this
+const OCR_CC_MAX_FRAC  = 0.06;   // drop blobs taller/wider than this fraction of the crop
+const OCR_CC_MIN_AREA  = 12;     // drop specks below this ink-pixel count
+const OCR_PATCH        = 48;     // model input side
+const OCR_CTX          = 2.75;   // patch window side = OCR_CTX * max(bbox_w, bbox_h)
+
 // Tessdata served alongside the worker
 const TESSDATA_URL = new URL('./tessdata', self.location.href).href;
 
@@ -103,8 +145,36 @@ self.onmessage = async ({ data }) => {
   } else if (data.type === 'ocr-page') {
     try { await ocrPage(data); }
     catch (err) { post('error', { message: String(err) }); }
+  } else if (data.type === 'debug-patches') {
+    // Phase 3 patch-parity harness: decode a diagram blob, extract 48×48 patches for the
+    // given bboxes exactly as the model path does, and return them as uint8 rows.
+    try {
+      const { pixels } = CCITT.decode(data.blob, data.w, data.h);
+      const gray = new Uint8Array(data.w * data.h);
+      for (let i = 0; i < gray.length; i++) gray[i] = pixels[i] ? 0 : 255;
+      const patches = data.bboxes.map(bb =>
+        Array.from(extractPatch(gray, data.w, data.h, { x0: bb[0], y0: bb[1], x1: bb[2], y1: bb[3] }),
+                   v => Math.round(v * 255)));
+      post('debug-patches-result', { patches });
+    } catch (err) { post('error', { message: String(err) }); }
+  } else if (data.type === 'debug-detections') {
+    // Phase 4.5 miss-attribution harness: decode a stored diagram blob, run the REAL
+    // model path (candidate gen → CNN → grouping → recognition) with debug on, and
+    // return every candidate {box,prob,accepted}, the accepted-digit reads, and the
+    // final grouped callouts {box,number}. Driven per section over the GT sqlite blobs
+    // so A/B/C/D attribution uses the shipping grouper, not a Python reimplementation.
+    try {
+      const { blob, w, h } = data;
+      const rgba = CCITT.toRGBA(CCITT.decode(blob, w, h).pixels, w, h);
+      const cv = new OffscreenCanvas(w, h);
+      cv.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0);
+      if (!DEBUG_TWORKER) { DEBUG_TWORKER = await initTesseract(); await getOrtSession(); }
+      const { _debug } = await ocrDiagramModel(cv, null, null, DEBUG_TWORKER, {}, { debug: true });
+      post('debug-detections-result', { debug: _debug });
+    } catch (err) { post('error', { message: String(err) + '\n' + (err.stack || '') }); }
   }
 };
+let DEBUG_TWORKER = null;
 
 function post(type, payload = {}) {
   self.postMessage({ type, ...payload });
@@ -134,6 +204,7 @@ async function ingest(buffer, catalogId) {
   let pool = null;
   try {
     pool = await createWorkerPool(POOL_SIZE);
+    if (OCR_USE_MODEL) { await getOrtSession(); post('status', { message: 'Callout model loaded.' }); }
     post('status', { message: `${POOL_SIZE} OCR workers ready.` });
   } catch (e) {
     post('status', { message: `OCR unavailable (${e.message}) — callouts will be skipped.` });
@@ -282,6 +353,8 @@ async function ingest(buffer, catalogId) {
     `    ocrDiagram() total : ${fmt(T.totalOcr)} ${perDiag(T.totalOcr)}\n` +
     `      binarize+upscale   : ${fmt(T.binarizeUpscale)}\n` +
     `      findBlobs (BFS)    : ${fmt(T.findBlobs)}\n` +
+    `      patch extract×N    : ${fmt(T.patchExtract)}\n` +
+    `      ONNX inference     : ${fmt(T.ortInfer)} ${perDiag(T.ortInfer)}\n` +
     `      renderBlobCanvas×N : ${fmt(T.renderBlobs)}\n` +
     `      convertToBlob×N×2  : ${fmt(T.convertBlobs)} ${perCall(T.convertBlobs)}\n` +
     `      tesseract.setParams: ${fmt(T.tesseractSet)}\n` +
@@ -1546,9 +1619,10 @@ function findBlobs(canvas) {
   for (let start = 0; start < W * H; start++) {
     if (!ink[start] || seen[start]) continue;
     const stk = [start]; seen[start] = 1;
-    let x0 = start % W, y0 = (start / W)|0, x1 = x0, y1 = y0;
+    let x0 = start % W, y0 = (start / W)|0, x1 = x0, y1 = y0, area = 0;
     while (stk.length) {
       const p = stk.pop(), py = (p / W)|0, px_ = p % W;
+      area++;
       if (px_ < x0) x0 = px_; if (px_ > x1) x1 = px_;
       if (py  < y0) y0 = py;  if (py  > y1) y1 = py;
       if (px_ > 0   && ink[p-1] && !seen[p-1]) { seen[p-1] = 1; stk.push(p-1); }
@@ -1556,7 +1630,7 @@ function findBlobs(canvas) {
       if (py  > 0   && ink[p-W] && !seen[p-W]) { seen[p-W] = 1; stk.push(p-W); }
       if (py  < H-1 && ink[p+W] && !seen[p+W]) { seen[p+W] = 1; stk.push(p+W); }
     }
-    blobs.push({ x0, y0, x1: x1+1, y1: y1+1, w: x1-x0+1, h: y1-y0+1, seed: start });
+    blobs.push({ x0, y0, x1: x1+1, y1: y1+1, w: x1-x0+1, h: y1-y0+1, area, seed: start });
   }
   return { blobs, ink, W, H };
 }
@@ -1713,12 +1787,317 @@ function imgObjToOffscreenCanvas(obj) {
   return c;
 }
 
+// ── Learned callout detector (Phase 3) ───────────────────────────────────────
+
+// One InferenceSession, created once and reused. wasm EP, single-thread (see ort.env
+// config at top). getOrtSession() memoises so init() and the first diagram share it.
+let _ortSession = null, _ortInit = null;
+function getOrtSession() {
+  if (_ortSession) return Promise.resolve(_ortSession);
+  if (!_ortInit) _ortInit = ort.InferenceSession
+    .create(OCR_MODEL_URL, { executionProviders: ['wasm'] })
+    .then(s => (_ortSession = s));
+  return _ortInit;
+}
+
+// onnxruntime-web's single InferenceSession is NOT reentrant. Sections run under
+// Promise.all, so multiple diagrams call session.run() concurrently; the overlapping
+// calls clobber the shared output binding and res[out].data throws
+// "Reading data from non-tensor typed value" (ERROR_CODE 9). That exception bubbles out
+// of ocrDiagramModel and renderDiagram swallows it → EVERY callout in the section is
+// lost. It struck the largest/slowest sections (longest infer = most overlap), which is
+// the entire Phase-4 "recall regression". Serialise run() through a promise chain: infer
+// is ~0.1 s/diagram cumulatively and never the bottleneck (Tesseract stays parallel), so
+// this restores the dropped sections at negligible wall-cost.
+let _ortQueue = Promise.resolve();
+function runOrt(feeds) {
+  const r = _ortQueue.then(() => getOrtSession()).then(s => s.run(feeds));
+  _ortQueue = r.then(() => {}, () => {});   // keep the chain alive past a failure
+  return r;
+}
+
+// cv2 INTER_AREA decimation weights for one axis, ported verbatim from OpenCV's
+// computeResizeAreaTab. Returns per-dst-pixel list of {si, alpha} (area-weighted
+// average). Works for up- and downscale; for upscale each dst maps to a sub-pixel
+// source interval (nearest-like) — exactly what ocr/dataset.py's resize produces.
+function areaTab(ssize, dsize) {
+  const scale = ssize / dsize;
+  const tab = [];
+  for (let dx = 0; dx < dsize; dx++) {
+    const fsx1 = dx * scale, fsx2 = fsx1 + scale;
+    const cellWidth = Math.min(scale, ssize - fsx1);
+    let sx1 = Math.ceil(fsx1), sx2 = Math.floor(fsx2);
+    sx2 = Math.min(sx2, ssize - 1);
+    sx1 = Math.min(sx1, sx2);
+    const e = [];
+    if (sx1 - fsx1 > 1e-3) e.push({ si: sx1 - 1, alpha: (sx1 - fsx1) / cellWidth });
+    for (let sx = sx1; sx < sx2; sx++) e.push({ si: sx, alpha: 1 / cellWidth });
+    if (fsx2 - sx2 > 1e-3) e.push({ si: sx2, alpha: Math.min(Math.min(fsx2 - sx2, 1), cellWidth) / cellWidth });
+    tab.push(e);
+  }
+  return tab;
+}
+
+// Python round(): banker's rounding (half to even). dataset.py's crop bounds use it,
+// so replicate it to keep the patch window byte-identical.
+function pyRound(x) {
+  const f = Math.floor(x), d = x - f;
+  if (d < 0.5) return f;
+  if (d > 0.5) return f + 1;
+  return (f % 2 === 0) ? f : f + 1;
+}
+
+// Replicate ocr/dataset.py crop_patch(): square white-padded window centred on the
+// blob-bbox centre, side = OCR_CTX*max(w,h), resized to 48×48 with cv2 INTER_AREA.
+// gray: Uint8 ink=0/white=255, W×H. Returns Float32Array(48*48), value = px/255.
+function extractPatch(gray, W, H, blob) {
+  const { x0, y0, x1, y1 } = blob;
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const half = OCR_CTX * Math.max(x1 - x0, y1 - y0) / 2;
+  const wx0 = pyRound(cx - half), wy0 = pyRound(cy - half);
+  const wx1 = pyRound(cx + half), wy1 = pyRound(cy + half);
+  const winW = wx1 - wx0, winH = wy1 - wy0;
+  const win = new Uint8Array(winW * winH).fill(255);
+  const sx0 = Math.max(wx0, 0), sy0 = Math.max(wy0, 0);
+  const sxe = Math.min(wx1, W), sye = Math.min(wy1, H);
+  for (let y = sy0; y < sye; y++) {
+    const drow = (y - wy0) * winW - wx0, srow = y * W;
+    for (let x = sx0; x < sxe; x++) win[drow + x] = gray[srow + x];
+  }
+  // separable area resize winW×winH → 48×48; keep the horizontal pass in float and
+  // round to uint8 only at the very end (matches cv2's single saturate_cast).
+  const xt = areaTab(winW, OCR_PATCH), yt = areaTab(winH, OCR_PATCH);
+  const tmp = new Float32Array(winH * OCR_PATCH);
+  for (let y = 0; y < winH; y++) {
+    const srow = y * winW, orow = y * OCR_PATCH;
+    for (let ox = 0; ox < OCR_PATCH; ox++) {
+      let acc = 0;
+      for (const e of xt[ox]) acc += win[srow + e.si] * e.alpha;
+      tmp[orow + ox] = acc;
+    }
+  }
+  const out = new Float32Array(OCR_PATCH * OCR_PATCH);
+  for (let oy = 0; oy < OCR_PATCH; oy++) {
+    const orow = oy * OCR_PATCH;
+    for (let ox = 0; ox < OCR_PATCH; ox++) {
+      let acc = 0;
+      for (const e of yt[oy]) acc += tmp[e.si * OCR_PATCH + ox] * e.alpha;
+      out[orow + ox] = Math.round(acc) / 255;
+    }
+  }
+  return out;
+}
+
+// Model-based callout OCR. The CNN decides accept/reject per candidate blob (subsuming
+// the heuristic's font cascade, containment filter, and narrow-1 recovery); Tesseract
+// only reads the digit. Detection runs at native resolution (no upscale cascade).
+// Returns the same { callouts } 0–10000 shape as the heuristic path.
+async function ocrDiagramModel(canvas, opList, vp, tWorker, diagRect = null, params = {}) {
+  const { binThresh = OCR_BIN_THRESH, targetPx = OCR_TARGET_PX, minConf = OCR_MIN_CONF, debug = false } = params;
+  const t0 = performance.now();
+  const done = () => { TIMING.diagramCount++; TIMING.totalOcr += performance.now() - t0; };
+  const dbg = debug ? { candidates: [], accepted: [], digits: [], callouts: [] } : null;
+
+  let crop, cx, cy, cw, ch;
+  if (diagRect) {
+    crop = canvas; cx = 0; cy = 0; cw = canvas.width; ch = canvas.height;
+  } else {
+    const rects = imageRectsFromOpList(opList);
+    if (!rects.length) return { callouts: [] };
+    const rect = rects.reduce((a, b) => a.area >= b.area ? a : b);
+    cx = Math.round(rect.x0 * DIAGRAM_SCALE);
+    cy = Math.round(vp.height - rect.y1 * DIAGRAM_SCALE);
+    cw = Math.round((rect.x1 - rect.x0) * DIAGRAM_SCALE);
+    ch = Math.round((rect.y1 - rect.y0) * DIAGRAM_SCALE);
+    if (cw <= 0 || ch <= 0) return { callouts: [] };
+    crop = new OffscreenCanvas(cw, ch);
+    crop.getContext('2d').drawImage(canvas, cx, cy, cw, ch, 0, 0, cw, ch);
+  }
+
+  // 1-2: binarize at native res, connected components once.
+  let t = performance.now();
+  const binned = binarize(crop, binThresh);
+  TIMING.binarizeUpscale += performance.now() - t;
+  t = performance.now();
+  const { blobs, ink, W, H } = findBlobs(binned);
+  TIMING.findBlobs += performance.now() - t;
+
+  // 3: permissive band — identical to ocr/dataset.py candidates() (no aspect filter).
+  const cand = blobs.filter(b =>
+    b.h >= OCR_CC_MIN_H &&
+    b.h <= OCR_CC_MAX_FRAC * H && b.w <= OCR_CC_MAX_FRAC * W &&
+    b.area >= OCR_CC_MIN_AREA);
+  if (!cand.length) { done(); return { callouts: [], _debug: dbg }; }
+
+  // 4: extract 48×48 patches (ink=0/white=255), batch, run the CNN.
+  const gray = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) gray[i] = ink[i] ? 0 : 255;
+  t = performance.now();
+  const N = cand.length, PS = OCR_PATCH * OCR_PATCH;
+  const batch = new Float32Array(N * PS);
+  for (let i = 0; i < N; i++) batch.set(extractPatch(gray, W, H, cand[i]), i * PS);
+  TIMING.patchExtract += performance.now() - t;
+
+  t = performance.now();
+  const session = await getOrtSession();
+  const res = await runOrt({
+    [session.inputNames[0]]: new ort.Tensor('float32', batch, [N, 1, OCR_PATCH, OCR_PATCH]),
+  });
+  const prob = res[session.outputNames[0]].data;
+  TIMING.ortInfer += performance.now() - t;
+
+  const norm = (b) => [
+    Math.round((b.x0 + cx) / canvas.width  * 10000),
+    Math.round((b.y0 + cy) / canvas.height * 10000),
+    Math.round((b.x1 + cx) / canvas.width  * 10000),
+    Math.round((b.y1 + cy) / canvas.height * 10000),
+  ];
+  const accepted = [];
+  for (let i = 0; i < N; i++) {
+    const ok = prob[i] >= OCR_MODEL_THRESH;
+    if (ok) accepted.push({ blob: cand[i], prob: prob[i] });
+    if (dbg) dbg.candidates.push({ box: norm(cand[i]), prob: +prob[i].toFixed(4), accepted: ok });
+  }
+  if (dbg) dbg.accepted = accepted.map(a => norm(a.blob));
+  if (!accepted.length) { done(); return { callouts: [], _debug: dbg }; }
+
+  // 6: recognition — Tesseract reads each accepted blob (native ink upscaled to targetPx).
+  // No confidence gate: the model already decided it's a callout; Tesseract only supplies
+  // the value. A thin blob Tesseract can't read falls back to "1"; anything else is dropped.
+  // The CNN prob rides along (`prob`) for the two emitted-group precision gates below.
+  const blobItems = accepted.map(a => ({
+    blob:   a.blob,
+    prob:   a.prob,
+    canvas: upscale(renderBlobCanvas(ink, W, H, a.blob, Math.round(a.blob.h * 0.3)), targetPx / a.blob.h),
+  }));
+  async function runPass(psm) {
+    await tWorker.setParameters({ tessedit_char_whitelist: '0123456789', tessedit_pageseg_mode: psm, user_defined_dpi: '300' });
+    const out = [];
+    for (const it of blobItems) {
+      const blob = await it.canvas.convertToBlob({ type: 'image/png' });
+      const { data } = await tWorker.recognize(blob);
+      out.push({ text: (data.text || '').replace(/\s/g, ''), conf: Math.round(data.confidence || 0) });
+    }
+    return out;
+  }
+  t = performance.now();
+  const pass10 = await runPass('10');
+  const pass8  = await runPass('8');
+  TIMING.tesseractOcr += performance.now() - t;
+  TIMING.recognizeCount += N * 2;
+
+  const digitResults = [];
+  for (let i = 0; i < blobItems.length; i++) {
+    const b = blobItems[i].blob, pr = blobItems[i].prob, r10 = pass10[i], r8 = pass8[i];
+    const ok10 = /^\d$/.test(r10.text), ok8 = /^\d$/.test(r8.text);
+    if (ok10 || ok8) {
+      const pick = !ok10 ? r8 : !ok8 ? r10 : r10.conf >= r8.conf ? r10 : r8;
+      digitResults.push({ text: pick.text, confidence: pick.conf, blob: b, prob: pr });
+      continue;
+    }
+    const ar = b.w / b.h;
+    if (ar >= OCR_ONE_AR_MIN && ar <= OCR_ONE_AR_MAX)
+      digitResults.push({ text: '1', confidence: minConf, blob: b, prob: pr });
+  }
+  if (dbg) dbg.digits = digitResults.map(d => ({ box: norm(d.blob), text: d.text }));
+  if (!digitResults.length) { done(); return { callouts: [], _debug: dbg }; }
+
+  // 5: group into 1-2 digit numbers. Blobs are native size (not targetPx-normalised),
+  // so the gap/row tolerances are re-expressed relative to the pair's native digit
+  // height. Same hard caps as the heuristic: ≤2 digits, value ≤ OCR_MAX_CALLOUT.
+  digitResults.sort((a, b) => a.blob.x0 - b.blob.x0);
+  const numGroups = [];
+  for (const dr of digitResults) {
+    const b = dr.blob, yc = (b.y0 + b.y1) / 2;
+    let placed = false;
+    for (const g of numGroups) {
+      const lb = g.digits[g.digits.length - 1].blob;
+      const h = (lb.h + b.h) / 2, gap = b.x0 - g.x1;
+      if (Math.abs(yc - (lb.y0 + lb.y1) / 2) >= 0.12 * h || gap >= 0.6 * h) continue;
+      if (g.digits.length >= 2) continue;
+      const merged = +(g.digits.map(d => d.text).join('') + dr.text);
+      if (merged > OCR_MAX_CALLOUT) continue;
+      g.digits.push(dr);
+      g.x1 = Math.max(g.x1, b.x1); g.y0 = Math.min(g.y0, b.y0); g.y1 = Math.max(g.y1, b.y1);
+      placed = true; break;
+    }
+    if (!placed) numGroups.push({ digits: [dr], x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 });
+  }
+
+  // Containment filter — reused verbatim from the heuristic (containmentDepth), the ONE
+  // geometric gate the CNN doesn't subsume: a number read from a feature enclosed inside a
+  // closed part outline nests deeper than a real callout, which floats free on the drawing.
+  // Native detection here (scale = 1), so group coords index `binned` directly (no /scale).
+  const { depth: depthArr, W: dW, H: dH } = containmentDepth(binned);
+  const groupDepth = (g) => {
+    const bx0 = Math.max(0, Math.floor(g.x0)), by0 = Math.max(0, Math.floor(g.y0));
+    const bx1 = Math.min(dW - 1, Math.ceil(g.x1)), by1 = Math.min(dH - 1, Math.ceil(g.y1));
+    const ds = [];
+    for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) {
+      const d = depthArr[y*dW + x];
+      if (d > 0) ds.push(d);                     // ink pixels only
+    }
+    if (!ds.length) return 1;
+    ds.sort((a, b) => a - b);
+    return ds[ds.length >> 1];                   // median
+  };
+  for (const g of numGroups) g.depth = groupDepth(g);
+  const minDepth = numGroups.reduce((m, g) => Math.min(m, g.depth), Infinity);
+  let kept = numGroups.filter(g => g.depth <= minDepth);
+
+  // CNN-prob precision gates (see OCR_ONE_PROB_MIN / OCR_CLUSTER_* above). A group's prob
+  // is its weakest digit's CNN prob (a two-digit run both clearing the accept floor is
+  // self-validating; a lone digit is the ambiguous case). Native coords → centres/radius
+  // in native pixels, radius scaled by the diagram's median callout height.
+  for (const g of kept) {
+    g.prob = g.digits.reduce((m, d) => Math.min(m, d.prob), Infinity);
+    g.cx = (g.x0 + g.x1) / 2; g.cy = (g.y0 + g.y1) / 2; g.num = g.digits.map(d => d.text).join('');
+  }
+  const gh = kept.map(g => g.y1 - g.y0).sort((a, b) => a - b);
+  const medH = gh.length ? gh[gh.length >> 1] : 1;
+  const rad = OCR_CLUSTER_RADIUS * medH;
+  const marginal = kept.filter(g => g.prob < OCR_CLUSTER_PROB_MIN);
+  kept = kept.filter(g => {
+    if (g.num === '1' && g.prob < OCR_ONE_PROB_MIN) return false;      // isolated thin-"1"
+    if (g.prob < OCR_CLUSTER_PROB_MIN) {                              // legend / dense block
+      let nb = 0;
+      for (const q of marginal)
+        if (q !== g && Math.abs(g.cx - q.cx) < rad && Math.abs(g.cy - q.cy) < rad) nb++;
+      if (nb >= OCR_CLUSTER_MIN_NB) return false;
+    }
+    return true;
+  });
+
+  // 7: emit 0–10000 in PNG pixel space. Native detection → scale is 1; only the crop
+  // offset (cx,cy) maps back into the full canvas.
+  const pngW = canvas.width, pngH = canvas.height;
+  const callouts = kept.map(g => ({
+    number:     g.digits.map(d => d.text).join(''),
+    confidence: Math.round(g.digits.reduce((s, d) => s + d.confidence, 0) / g.digits.length),
+    x0: Math.round((g.x0 + cx) / pngW * 10000),
+    y0: Math.round((g.y0 + cy) / pngH * 10000),
+    x1: Math.round((g.x1 + cx) / pngW * 10000),
+    y1: Math.round((g.y1 + cy) / pngH * 10000),
+  })).filter(c => !/^0+$/.test(c.number));
+
+  if (dbg) dbg.callouts = callouts.map(c => ({ box: [c.x0, c.y0, c.x1, c.y1], number: c.number, conf: c.confidence }));
+  done();
+  return { callouts, strip: null, stripTiles: null, stats: null, _debug: dbg };
+}
+
+// Dispatch to the learned detector or the heuristic cascade behind OCR_USE_MODEL.
+function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params = {}) {
+  return OCR_USE_MODEL
+    ? ocrDiagramModel(canvas, opList, vp, tWorker, diagRect, params)
+    : ocrDiagramHeuristic(canvas, opList, vp, tWorker, diagRect, params);
+}
+
 // Extract callout numbers from a rendered diagram canvas.
 // Returns { callouts, strip, stats } where callouts are normalized 0–10000 in PNG pixel space.
 // diagRect: if provided, canvas is already cropped to that rect (skip internal crop step).
 // params: { binThresh, targetPx, minConf, debug } — fall back to module constants when omitted.
 //   debug: when true, builds a strip canvas of blobs fed to Tesseract and populates stats.
-async function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params = {}) {
+async function ocrDiagramHeuristic(canvas, opList, vp, tWorker, diagRect = null, params = {}) {
   const {
     binThresh = OCR_BIN_THRESH,
     targetPx  = OCR_TARGET_PX,
@@ -2067,6 +2446,7 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
     const POOL_SIZE = navigator.hardwareConcurrency || 4;
     try {
       pool = await createWorkerPool(POOL_SIZE);
+      if (OCR_USE_MODEL) await getOrtSession();
     } catch (e) {
       post('status', { message: `OCR unavailable (${e.message}) — callouts will be skipped.` });
     }
@@ -2181,6 +2561,8 @@ const TIMING = {
   convertDiagram:  0,  // binarize + CCITT.encode → G4 bytes for section.diagram_blob
   binarizeUpscale: 0,  // binarize + upscale
   findBlobs:       0,  // connected-component labeling
+  patchExtract:    0,  // 48×48 patch extraction for the model (model path)
+  ortInfer:        0,  // ONNX callout-CNN inference (model path)
   renderBlobs:     0,  // renderBlobCanvas × N candidates
   convertBlobs:    0,  // canvas.convertToBlob per blob (both passes)
   tesseractSet:    0,  // tWorker.setParameters (both passes)
@@ -2470,7 +2852,9 @@ async function ocrPage({ buffer, pageNum, binThresh = OCR_BIN_THRESH, targetPx =
   page.cleanup();
 
   const tWorker = await getSpikeOcrWorker();
-  const { callouts, strip, stripTiles, stats } = await ocrDiagram(
+  // Debug/lab path stays on the heuristic: it builds the blob strip + cascade stats the
+  // ocr-lab UI renders, which the model path does not produce.
+  const { callouts, strip, stripTiles, stats } = await ocrDiagramHeuristic(
     ocrCanvas, null, null, tWorker, diagRect, { binThresh, targetPx, minConf, debug: true }
   );
   pdf.destroy();
