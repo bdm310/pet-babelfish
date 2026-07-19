@@ -1054,7 +1054,9 @@ const MARKET_NAME_CODE = { AUSTRALIEN: 'AUS' };
 const CUT_LENGTH_RE = /^shorten to:/i;
 
 // A Pos value: plain "5", or "(5)" when the part differs from the illustration.
-const POS_RE = /^(?:\d{1,3}|\(\d{1,3}\))$/;
+// Old catalogs (911 1975) add a compound sub-position: "3/2", "(3/1)" — one
+// optional "/<num>" after the base, still a real part with a diagram callout.
+const POS_RE = /^(?:\d{1,3}(?:\/\d{1,3})?|\(\d{1,3}(?:\/\d{1,3})?\))$/;
 
 // Part-Number sub-column: the colour/trim code ("FSA") sits at x≈132/138, right of
 // the part number groups (57/78/100/121) but left of the Description origin (162).
