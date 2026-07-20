@@ -261,16 +261,19 @@ async function ingest(buffer, catalogId) {
   );
 
   // ── Phase 1: parallel — render diagrams (with OCR) and extract parts ─────────
+  // This whole map fans out over POOL_SIZE workers, so the internal TIMING.*
+  // accumulators sum CPU-seconds across all workers (they overlap in wall time).
+  // The only honest wall figure for the phase is this single bracket around it.
   let doneCount = 0;
   const sectionResults = new Array(sections.length);
 
+  const tPhase = performance.now();
   await Promise.all(sections.map(async (sec, i) => {
     const tWorker = pool ? await pool.acquire() : null;
     try {
       const nextDiagramPage = sections[i + 1]?.diagramPage ?? (pdf.numPages + 1);
       const firstPartsPage  = sec.diagramPage + 1;
 
-      const tDiag = performance.now();
       const [diagramResult, partsResults] = await Promise.all([
         renderDiagram(pdf, sec.diagramPage, tWorker)
           .catch(e => {
@@ -279,7 +282,6 @@ async function ingest(buffer, catalogId) {
           }),
         extractSectionParts(pdf, firstPartsPage, nextDiagramPage),
       ]);
-      TIMING.renderDiagram += performance.now() - tDiag;
 
       sectionResults[i] = { sec, diagramResult, partsResults };
     } finally {
@@ -291,6 +293,7 @@ async function ingest(buffer, catalogId) {
       });
     }
   }));
+  TIMING.diagramPhaseWall = performance.now() - tPhase;
 
   // ── Phase 2: sequential — insert collected results into the database ──────────
   for (let i = 0; i < sections.length; i++) {
@@ -341,14 +344,20 @@ async function ingest(buffer, catalogId) {
 
   // ── Timing summary ────────────────────────────────────────────────────────
   const T = TIMING;
+  // The diagram phase runs across `workers` threads in parallel, so every TIMING.*
+  // accumulated inside it is CPU-seconds summed across all of them — it can (and
+  // does) exceed wall time. Only serial stages and the phase-wall bracket are
+  // meaningful as a % of TOTAL; the parallel internals get a ÷workers wall estimate.
+  const workers = pool ? POOL_SIZE : 1;
   const fmt     = ms  => `${(ms/1000).toFixed(2)}s`;
   const pct     = ms  => `${((ms/totalMs)*100).toFixed(1)}%`;
-  const perSec  = n   => T.sectionCount   ? `(${(n/T.sectionCount).toFixed(0)}ms/sec)` : '';
+  const cpu     = ms  => `${fmt(ms)} cpu (≈${fmt(ms/workers)} wall)`;
   const perPage = n   => T.partsPagesCount? `(${(n/T.partsPagesCount).toFixed(0)}ms/pg)` : '';
   const perDiag = n   => T.diagramCount   ? `(${(n/T.diagramCount).toFixed(0)}ms/diag)` : '';
   const perCall = n   => T.recognizeCount ? `(${(n/T.recognizeCount).toFixed(1)}ms/call)` : '';
+  const diagCpu = T.render + T.convertDiagram + T.totalOcr;
   post('status', { message:
-    `\n── Ingest Perf (${T.sectionCount} sections, ${T.partsPagesCount} parts pages, ${T.diagramCount} OCR diagrams) ──\n` +
+    `\n── Ingest Perf (${T.sectionCount} sections, ${T.partsPagesCount} parts pages, ${T.diagramCount} OCR diagrams, ${workers} workers) ──\n` +
     `  TOTAL              : ${fmt(totalMs)}\n` +
     `  PDF load           : ${fmt(T.pdfLoad)} [${pct(T.pdfLoad)}]\n` +
     `  DB init (sql.js)   : ${fmt(T.dbInit)} [${pct(T.dbInit)}]\n` +
@@ -356,7 +365,9 @@ async function ingest(buffer, catalogId) {
     `  OPFS setup         : ${fmt(T.opfsSetup)} [${pct(T.opfsSetup)}]\n` +
     `  TOC parse          : ${fmt(T.tocParse)} [${pct(T.tocParse)}]\n` +
     `  V-page parse       : ${fmt(T.vPageParse)} [${pct(T.vPageParse)}]\n` +
-    `  renderDiagram()    : ${fmt(T.renderDiagram)} [${pct(T.renderDiagram)}] ${perSec(T.renderDiagram)}\n` +
+    `  Diagram+parts phase: ${fmt(T.diagramPhaseWall)} [${pct(T.diagramPhaseWall)}] wall (parallel, ${workers} workers)\n` +
+    `    ── below: CPU-seconds summed across all workers; not additive with wall ──\n` +
+    `    renderDiagram()    : ${cpu(diagCpu)}\n` +
     `    page render+oplist : ${fmt(T.render)} ${perDiag(T.render)}\n` +
     `    G4 encode          : ${fmt(T.convertDiagram)} ${perDiag(T.convertDiagram)}\n` +
     `    ocrDiagram() total : ${fmt(T.totalOcr)} ${perDiag(T.totalOcr)}\n` +
@@ -367,8 +378,8 @@ async function ingest(buffer, catalogId) {
     `      renderBlobCanvas×N : ${fmt(T.renderBlobs)}\n` +
     `      convertToBlob×N×2  : ${fmt(T.convertBlobs)} ${perCall(T.convertBlobs)}\n` +
     `      tesseract.setParams: ${fmt(T.tesseractSet)}\n` +
-    `      tesseract.recognize: ${fmt(T.tesseractOcr)} ${perCall(T.tesseractOcr)} [${pct(T.tesseractOcr)}]\n` +
-    `  extractParts()     : ${fmt(T.extractParts)} [${pct(T.extractParts)}] ${perPage(T.extractParts)}\n` +
+    `      tesseract.recognize: ${cpu(T.tesseractOcr)} ${perCall(T.tesseractOcr)}\n` +
+    `    extractParts()     : ${cpu(T.extractParts)} ${perPage(T.extractParts)}\n` +
     `  DB inserts         : ${fmt(T.dbInserts)} [${pct(T.dbInserts)}]\n` +
     `  FTS rebuild        : ${fmt(T.ftsBuild)} [${pct(T.ftsBuild)}]\n` +
     `  DB save (OPFS)     : ${fmt(T.dbSave)} [${pct(T.dbSave)}]\n`
@@ -2624,8 +2635,8 @@ const TIMING = {
   opfsSetup:       0,  // navigator.storage.getDirectory + handle setup
   tocParse:        0,  // pdf.getOutline + parseOutline
   vPageParse:      0,  // parseVPages() — PR codes, sales types, VIN ranges
-  renderDiagram:   0,  // renderDiagram() wall time (includes OCR and G4 encode)
-  extractParts:    0,  // extractParts() across all pages of all sections
+  diagramPhaseWall:0,  // wall time of the whole parallel diagram+parts fan-out
+  extractParts:    0,  // extractParts() across all pages of all sections (CPU-s, summed across workers)
   dbInserts:       0,  // calloutStmt.run + partStmt.run + insertSection
   ftsBuild:        0,  // FTS index rebuild
   dbSave:          0,  // db.export + writeOpfsFile
