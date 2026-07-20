@@ -92,8 +92,17 @@ const OCR_ONE_AR_MAX = 0.50;
 // font cascade + containment filter + narrow-1 recovery of the heuristic path.
 // Tesseract still reads the digit; the model only gates. Flag preserves the old path
 // for Phase 4 A/B. Threshold is precision-leaning; Phase 4 tunes it on 996 val.
-const OCR_USE_MODEL    = false;
-const OCR_MODEL_THRESH = 0.06;
+const OCR_USE_MODEL    = true;
+// 5-gold model (996+997TT+356+Boxster+911). The meta max-F1 threshold is 0.9336, but that
+// is tuned on IN-distribution val and is the wrong bias for this model's job: SEEDING unseen
+// catalogs, where a missed callout is an expensive hand-add and an extra is a cheap delete.
+// On an unseen old typeface, recall at a high fixed threshold collapses (911 LOCO cc-only R
+// 0.688) because out-of-distribution positives don't cluster near prob=1. The in-distribution
+// PR curve is flat (recall ≥0.998 down to thr 0.2), so a recall-favouring 0.35 costs almost
+// nothing on trained catalogs while generalising far better to new ones. Tune per-catalog when
+// seeding. (911's OLD-typeface under-detection was classifier-side, NOT a candidate-generation
+// ceiling: non-compound candidate-recall 0.9952. See ocr/RETRAIN5_REPORT.md.)
+const OCR_MODEL_THRESH = 0.35;
 // Recall-safe precision gates on the model path's EMITTED groups, keyed on the CNN's own
 // probability (not a new heuristic — the learned signal already separates these). The
 // global 0.06 accept gate is kept low to admit the genuine low-prob callout tail; these
@@ -636,7 +645,22 @@ function parseSummaryTypesPage(rows, vinRanges, state) {
 
     // Find the VIN range token
     const vinIdx = ts.findIndex(t => VIN_RE.test(t));
-    if (vinIdx === -1) continue;
+    if (vinIdx === -1) {
+      // 911 dialect: "<vehicle> <MY> <d> <prefix> <serial>>> <engine d.dd>".
+      const m = ts.join(' ').match(OLD911_TYPES_RE);
+      if (m) {
+        const [, vehicle, my, pfx, serial, engine] = m;
+        state.lastVehicle = vehicle; state.lastMY = my;
+        vinRanges.push({
+          modelYear: parseInt(my),
+          startDate: null,
+          vinFrom:   `${pfx} ${serial}`,
+          vinTo:     null,   // open-ended ">>"
+          remark:    [vehicle, engine].filter(Boolean).join(' — '),
+        });
+      }
+      continue;
+    }
 
     // Tokens before the VIN range: [...vehicleWords, MY_2digit, ?myCode, ?vinPfx]
     const pre = ts.slice(0, vinIdx);
@@ -850,6 +874,18 @@ const SUMM_356_RE = /^\d{3}(?:\/\d)?$/;            // 369, 506/1, 547/1, 519
 const SUMM_GT_RE  = t => t.includes('>') && /\d/.test(t) && /^[A-Z0-9]*\d*>[A-Z0-9]*\d*$/.test(t);
 const undot = code => code.replace(/^[A-Z]/, '').replace('.', '');
 
+// 911-era (930) summary dialect. Every row prints the vehicle, a dotted 3.2 code
+// (930.50 engine/930.30 gearbox), the 2-digit MY, its redundant last-digit, then a
+// "<prefix> <serial>>>" open-ended range and a tech/engine tail. The doubled ">>"
+// and the leading-digit dotted code are absent from every other dialect (356 uses
+// bare 3-digit types + single ">", the 996 family uses letter-prefixed M96.xx), so
+// these are safe to try before the other branches.
+//   TYPES:  911 TURBO           75 5 93057 0001>> 930.50
+//   ENG:    911 TURBO 930.50 75 5 675   0001>> 6ZYL/3,0L/191KW
+//   TRANS:  911 TURBO 930.30 75 5 775   0001>> 4-SPEED
+const OLD911_TYPES_RE = /^(.+?)\s+(\d{2})\s+\d\s+(\d{4,6})\s+(\d{3,6})\s*(?:>|»)+\s*(\d{3}\.\d{2})$/;
+const OLD911_CODE_RE  = /^(.+?)\s+(\d{3}\.\d{2})\s+(\d{2})\s+\d\s+(\d{3,6})\s+(\d{3,6})\s*(?:>|»)+\s*(.+)$/;
+
 function isVPageChrome(texts) {
   return texts[0] === 'V-Pages' ||
          texts.some(t => t.startsWith('Model:') || /^\d{2}\.\d{2}\.\d{4}/.test(t));
@@ -861,6 +897,22 @@ function parseSummaryEnginesPage(rows, engineCodes, engineNumbers, state, pivot)
     if (!texts.length || isVPageChrome(texts)) continue;
     if (!state.inData) { if (texts.includes('MY')) state.inData = true; continue; }
     if (texts.includes('SUMMARY') && texts.includes('ENGINES')) continue;
+
+    // 911 dialect: dotted 930.xx engine code + open-ended ">>" range.
+    const m911 = texts.join(' ').match(OLD911_CODE_RE);
+    if (m911) {
+      const [, vehicle, ec, my, pfx, serial, techStr] = m911;
+      const tech = parseSummaryTech(techStr);
+      if (!seen.has(ec)) {
+        seen.add(ec);
+        engineCodes.push({ ec, displacementL: tech.displacementL, powerKw: tech.powerKw,
+          powerHp: null, cylinders: tech.cylinders, mountFrom: null, mountTo: null, remark: null });
+      }
+      engineNumbers.push({ numberFrom: `${pfx} ${serial}`, numberTo: null,
+        modelYear: pivotYear(my, pivot), vehicleType: vehicle, engineType: ec });
+      state.last = { vehicle, my4: pivotYear(my, pivot), type: ec };
+      continue;
+    }
 
     const eIdx = texts.findIndex(t => SUMM_EC_RE.test(t));
     if (eIdx >= 0) {
@@ -920,6 +972,21 @@ function parseSummaryTransmissionsPage(rows, transmCodes, transmNumbers, state, 
     if (!state.inData) { if (texts.includes('MY')) state.inData = true; continue; }
     if (texts.includes('SUMM.TRANSMISS.') || (texts.includes('SUMMARY') && texts.includes('TRANSMISS'))) continue;
 
+    // 911 dialect: dotted 930.xx gearbox code + open-ended ">>" range.
+    const m911 = texts.join(' ').match(OLD911_CODE_RE);
+    if (m911) {
+      const [, vehicle, tc, my, pfx, serial, techStr] = m911;
+      if (!seen.has(tc)) {
+        seen.add(tc);
+        transmCodes.push({ tc, typeCode: techStr.trim(), mountFrom: null, mountTo: null, remark: null });
+      }
+      const num = { numberFrom: `${pfx} ${serial}`, numberTo: null,
+        modelYear: pivotYear(my, pivot), vehicleType: vehicle, gearboxType: tc };
+      transmNumbers.push(num);
+      state.lastNum = num;
+      continue;
+    }
+
     const tcIdx = texts.findIndex(t => SUMM_TC_RE.test(t));
     if (tcIdx >= 0) {
       // General: dotted TC + year-code + undotted TN-prefix + variant index + range.
@@ -963,9 +1030,13 @@ function parseSummaryTransmissionsPage(rows, transmCodes, transmNumbers, state, 
         modelYear: my4, vehicleType: vehicle, gearboxType: type };
       transmNumbers.push(num);
       state.lastNum = num;
-    } else if (state.lastNum && texts.every(t => /^[A-Z]+$/.test(t))) {
-      // 356 continuation: lone body words (SPEEDSTER, CONVERTIBLE) extend the row.
-      state.lastNum.vehicleType = `${state.lastNum.vehicleType} ${texts.join(' ')}`.trim();
+    } else if (state.lastNum && texts.length === 1 &&
+               /^(?:SPEEDSTER|CONVERTIBLE|CABRIO(?:LET)?|COUPE|HARDTOP|ROADSTER|\([A-Z]{1,4}\))$/.test(texts[0])) {
+      // Continuation: a lone body word (356: SPEEDSTER, CONVERTIBLE) or market
+      // token (911: "(CDN)") on its own line extends the previous row's vehicle.
+      // Whitelisted so the LEGENDS/NOTICES page the open table spills onto — all
+      // caps too — cannot bleed its prose into the last row's vehicle_type.
+      state.lastNum.vehicleType = `${state.lastNum.vehicleType} ${texts[0]}`.trim();
     }
   }
 }

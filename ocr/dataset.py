@@ -4,10 +4,14 @@ Decodes each section's CCITT diagram, generates candidate connected-component bl
 labels each against GT callout boxes, crops 48x48 context patches, and writes them
 plus a manifest, report, and sample renders under ocr/dataset/.
 
+Builds patches for every GOLD catalog and stores each patch's catalog + section so the
+trainer can assign train/val/test splits at train time (leave-one-catalog-out or final
+all-catalog). This script does NOT bake in a split.
+
     uv run --with numpy --with scipy --with opencv-python-headless --with pillow \
         python ocr/dataset.py [--catalog-id X] [--limit N]
 """
-import sys, json, sqlite3, argparse, random
+import sys, json, sqlite3, argparse
 from pathlib import Path
 import numpy as np
 import cv2
@@ -19,12 +23,13 @@ from ccitt_decode import decode
 REPO = Path(__file__).parent.parent
 GT_DIR = REPO / 'groundtruth'
 OUT = Path(__file__).parent / 'dataset'
-CATALOGS = ['996_1998-2005', '997-1Turbo-GT2_2007-2009']
-TEST_CATALOG = '997-1Turbo-GT2_2007-2009'
+# The 5 hand-verified GOLD catalogs we train on. Cayenne-955(E1)_2003-2006 is
+# deliberately held out as a downstream seed target.
+CATALOGS = ['996_1998-2005', '997-1Turbo-GT2_2007-2009',
+            '356_356A_1950-1959', 'Boxster(987-1)_2005-2008',
+            '911Turbo_1975-1977']
 PATCH = 48
 CTX = 2.75          # window side = CTX * max(bbox_w, bbox_h)
-VAL_FRAC = 0.15
-SEED = 1998
 
 
 def candidates(img):
@@ -67,6 +72,17 @@ def contained_frac(cc, gt):
     return (iw * ih) / ca
 
 
+def is_compound(num):
+    """A compound callout ('2/1') whose box bounds digits AND a '/' slash."""
+    return '/' in str(num)
+
+
+def center_in(cc, g):
+    """cc center lies inside GT box g=(num,x0,y0,x1,y1)."""
+    cx = (cc[0] + cc[2]) / 2; cy = (cc[1] + cc[3]) / 2
+    return g[1] <= cx <= g[3] and g[2] <= cy <= g[4]
+
+
 def label_cc(cc, gts):
     """Positive if cc center in some GT box AND >=60% area-contained in it."""
     cx = (cc[0] + cc[2]) / 2; cy = (cc[1] + cc[3]) / 2
@@ -97,13 +113,13 @@ def crop_patch(gray, bbox):
     return cv2.resize(win, (PATCH, PATCH), interpolation=cv2.INTER_AREA)
 
 
-def build_catalog(cat, limit, val_sections):
+def build_catalog(cat, limit):
     db = GT_DIR / cat / 'catalog.sqlite'
     gt = json.loads((GT_DIR / cat / 'groundtruth.json').read_text())
     con = sqlite3.connect(db)
-    rows = []             # (patch, label, source, gt_num, section_number, rowid, bbox, split)
-    stats = dict(sections=0, candidates=0, pos_cc=0, pos_gt=0, neg=0,
-                 gt_boxes=0, gt_unmatched=0)
+    rows = []             # (patch, label, source, gt_num, section_number, rowid, bbox)
+    stats = dict(sections=0, candidates=0, pos_cc=0, pos_gt=0, neg=0, dropped=0,
+                 gt_boxes=0, gt_boxes_noncomp=0, gt_boxes_compound=0, gt_unmatched=0)
     items = list(gt.items())
     if limit:
         items = items[:limit]
@@ -116,27 +132,35 @@ def build_catalog(cat, limit, val_sections):
         img = decode(blob, W, H)                       # 0/1 ink
         gray = ((1 - img) * 255).astype(np.uint8)      # white=255, ink=0
         num = entry['number']
-        is_test = cat == TEST_CATALOG
-        split = 'test' if is_test else ('val' if rowid in val_sections else 'train')
         stats['sections'] += 1
         gts = gt_boxes_px(entry, W, H)
+        # Split GT boxes: compound ('2/1') boxes are IGNORE regions, not positives.
+        gts_noncomp = [g for g in gts if not is_compound(g[0])]
+        gts_comp = [g for g in gts if is_compound(g[0])]
         stats['gt_boxes'] += len(gts)
+        stats['gt_boxes_noncomp'] += len(gts_noncomp)
+        stats['gt_boxes_compound'] += len(gts_comp)
         ccs = candidates(img)
         stats['candidates'] += len(ccs)
         matched_gt = set()
         for cc in ccs:
-            g = label_cc(cc, gts)
+            g = label_cc(cc, gts_noncomp)              # positive only vs non-compound
             if g is not None:
                 matched_gt.add((g[0], round(g[1]), round(g[2])))
                 stats['pos_cc'] += 1
                 rows.append((crop_patch(gray, cc), 1, 'cc', g[0], num, int(rowid),
-                             [cc[0], cc[1], cc[2], cc[3]], split))
+                             [cc[0], cc[1], cc[2], cc[3]]))
+            elif any(center_in(cc, gc) for gc in gts_comp):
+                # overlaps ONLY a compound box (no non-compound positive): DROP entirely
+                # so its '/'/partial-digit pieces pollute neither class.
+                stats['dropped'] += 1
             else:
                 stats['neg'] += 1
                 rows.append((crop_patch(gray, cc), 0, 'cc', None, num, int(rowid),
-                             [cc[0], cc[1], cc[2], cc[3]], split))
-        # positives safety net: one patch per GT box, plus candidate-recall accounting
-        for g in gts:
+                             [cc[0], cc[1], cc[2], cc[3]]))
+        # positives safety net: one patch per NON-compound GT box (compound boxes emit
+        # no positive), plus candidate-recall accounting over non-compound boxes.
+        for g in gts_noncomp:
             gnum, gx0, gy0, gx1, gy1 = g
             key = (gnum, round(gx0), round(gy0))
             if key not in matched_gt:
@@ -144,7 +168,7 @@ def build_catalog(cat, limit, val_sections):
             bb = [int(gx0), int(gy0), int(np.ceil(gx1)), int(np.ceil(gy1))]
             stats['pos_gt'] += 1
             rows.append((crop_patch(gray, (gx0, gy0, gx1, gy1)), 1, 'gt', gnum, num,
-                         int(rowid), bb, split))
+                         int(rowid), bb))
     con.close()
     return rows, stats
 
@@ -161,26 +185,17 @@ def main():
 
     all_rows = []; all_stats = {}
     for cat in cats:
-        # choose val sections (996 only): hold out ~15% of sections
         gt = json.loads((GT_DIR / cat / 'groundtruth.json').read_text())
-        val_sections = set()
-        if cat != TEST_CATALOG:
-            secs = sorted(gt.keys(), key=int)
-            rng = random.Random(SEED)
-            rng.shuffle(secs)
-            k = max(1, round(len(secs) * VAL_FRAC))
-            val_sections = set(secs[:k])
-        rows, stats = build_catalog(cat, args.limit, val_sections)
-        stats['val_sections'] = len(val_sections)
+        rows, stats = build_catalog(cat, args.limit)
         all_stats[cat] = stats
         for row in rows:
             all_rows.append((cat,) + row)
-        render_samples(cat, gt, val_sections, args.limit)
+        render_samples(cat, gt, args.limit)
 
     write_outputs(all_rows, all_stats, cats)
 
 
-def render_samples(cat, gt, val_sections, limit, n=3):
+def render_samples(cat, gt, limit, n=3):
     """Render a few diagrams with candidate + GT boxes drawn."""
     from PIL import Image, ImageDraw
     db = GT_DIR / cat / 'catalog.sqlite'
@@ -201,12 +216,21 @@ def render_samples(cat, gt, val_sections, limit, n=3):
         pim = Image.fromarray(rgb)
         dr = ImageDraw.Draw(pim)
         gts = gt_boxes_px(entry, W, H)
+        gts_noncomp = [g for g in gts if not is_compound(g[0])]
+        gts_comp = [g for g in gts if is_compound(g[0])]
         for cc in candidates(img):
-            g = label_cc(cc, gts)
-            color = (0, 170, 0) if g is not None else (220, 0, 0)
+            g = label_cc(cc, gts_noncomp)
+            if g is not None:
+                color = (0, 170, 0)          # positive
+            elif any(center_in(cc, gc) for gc in gts_comp):
+                color = (255, 165, 0)        # dropped (compound ignore region)
+            else:
+                color = (220, 0, 0)          # negative
             dr.rectangle([cc[0], cc[1], cc[2] - 1, cc[3] - 1], outline=color, width=2)
-        for _, gx0, gy0, gx1, gy1 in gts:
-            dr.rectangle([gx0, gy0, gx1, gy1], outline=(0, 90, 255), width=1)
+        for g in gts_noncomp:
+            dr.rectangle([g[1], g[2], g[3], g[4]], outline=(0, 90, 255), width=1)
+        for g in gts_comp:                    # compound ignore boxes in magenta
+            dr.rectangle([g[1], g[2], g[3], g[4]], outline=(200, 0, 200), width=2)
         pim.save(OUT / 'samples' / f"{cat}_{entry['number']}.png")
     con.close()
 
@@ -215,44 +239,49 @@ def write_outputs(all_rows, all_stats, cats):
     patches = np.stack([r[1] for r in all_rows]).astype(np.uint8)
     labels = np.array([r[2] for r in all_rows], np.uint8)
     sources = np.array([r[3] for r in all_rows])
-    splits = np.array([r[8] for r in all_rows])
+    catalogs = np.array([r[0] for r in all_rows])
+    sections = np.array([r[6] for r in all_rows], np.int64)   # section rowid
     np.savez_compressed(OUT / 'patches.npz', patches=patches, label=labels,
-                        source=sources, split=splits)
+                        source=sources, catalog=catalogs, section=sections)
     with open(OUT / 'manifest.jsonl', 'w') as f:
-        for cat, patch, label, source, gt_num, sec_num, rowid, bbox, split in all_rows:
+        for cat, patch, label, source, gt_num, sec_num, rowid, bbox in all_rows:
             f.write(json.dumps({'catalog': cat, 'section_number': sec_num,
                                 'section_rowid': rowid, 'bbox': bbox, 'label': int(label),
-                                'gt_num': gt_num, 'source': source, 'split': split}) + '\n')
-    write_report(all_stats, splits, labels, sources, cats)
+                                'gt_num': gt_num, 'source': source}) + '\n')
+    write_report(all_stats, catalogs, labels, sources, cats)
     print(f"Wrote {len(all_rows)} patches to {OUT}")
 
 
-def write_report(all_stats, splits, labels, sources, cats):
-    lines = ["# Phase 1 dataset — callout patch training set", ""]
-    lines.append("Decode validation: 9843/9843 GT boxes contain >5% ink (1.000). "
-                 "Ink density per section 1-14% (sane line-art range). Decoder gate PASSED.")
+def write_report(all_stats, catalogs, labels, sources, cats):
+    lines = ["# Phase 1 dataset — callout patch training set (5 GOLD catalogs)", ""]
+    lines.append("Patches built for every gold catalog; the trainer assigns train/val/test "
+                 "at train time (this file bakes in no split).")
+    lines.append("Compound callouts ('2/1') are IGNORE regions: no positive patch, and CC "
+                 "candidates overlapping only a compound box are dropped (neither class).")
     lines.append("")
     for cat in cats:
         s = all_stats[cat]
-        gtb = s['gt_boxes'] or 1
+        gtb = s['gt_boxes_noncomp'] or 1
         recall = (gtb - s['gt_unmatched']) / gtb
         tot = s['pos_cc'] + s['neg']
         lines += [f"## {cat}", "",
-                  f"- sections processed: {s['sections']}  (val sections held out: {s['val_sections']})",
+                  f"- sections processed: {s['sections']}",
                   f"- candidate CC blobs: {s['candidates']}",
                   f"- positives (cc): {s['pos_cc']}   positives (gt safety-net): {s['pos_gt']}",
-                  f"- negatives: {s['neg']}",
+                  f"- negatives: {s['neg']}   dropped (compound overlap): {s['dropped']}",
                   f"- CC class balance: {s['pos_cc']}/{tot} positive = {s['pos_cc']/max(1,tot):.3f}",
-                  f"- GT boxes: {s['gt_boxes']}   GT boxes with NO matching CC: {s['gt_unmatched']}",
-                  f"- **candidate-recall (GT boxes hit by a CC): {recall:.4f}**", ""]
-    lines += ["## Splits (all patches, cc+gt)", ""]
-    for sp in ['train', 'val', 'test']:
-        m = splits == sp
-        if m.sum() == 0:
-            continue
+                  f"- GT boxes: {s['gt_boxes']} (non-compound {s['gt_boxes_noncomp']}, "
+                  f"compound-ignore {s['gt_boxes_compound']})",
+                  f"- non-compound GT boxes with NO matching CC: {s['gt_unmatched']}",
+                  f"- **candidate-recall (non-compound GT boxes hit by a CC): {recall:.4f}**", ""]
+    lines += ["## Totals (all patches, cc+gt)", ""]
+    for cat in cats:
+        m = catalogs == cat
         pos = int(labels[m].sum()); n = int(m.sum())
         cc = int((sources[m] == 'cc').sum()); g = int((sources[m] == 'gt').sum())
-        lines.append(f"- {sp}: {n} patches, {pos} pos ({pos/n:.3f}), {n-pos} neg; source cc={cc} gt={g}")
+        lines.append(f"- {cat}: {n} patches, {pos} pos ({pos/n:.3f}), {n-pos} neg; source cc={cc} gt={g}")
+    n = len(labels); pos = int(labels.sum())
+    lines.append(f"- **ALL: {n} patches, {pos} pos ({pos/n:.3f}), {n-pos} neg**")
     lines += ["", "## Notes",
               "- Labeling: CC positive iff its center lies in a GT box AND >=60% of its area "
               "is inside that box; else negative.",

@@ -18,3 +18,7 @@ catalogs.zip
 
 # Phase 1 callout patch dataset (large, regenerable via ocr/dataset.py)
 ocr/dataset/
+
+__pycache__/
+*.log
+*credentials*

@@ -16,6 +16,12 @@ Options:
 import sys
 from pathlib import Path
 
+# Page text and the rule lines contain characters cp1252 can't encode; without this
+# a piped or redirected run raises UnicodeEncodeError instead of printing.
+for _s in (sys.stdout, sys.stderr):
+    try: _s.reconfigure(encoding='utf-8', errors='replace')
+    except Exception: pass
+
 args = sys.argv[1:]
 
 

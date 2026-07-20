@@ -19,6 +19,13 @@ import sys, subprocess, time, urllib.request, base64, sqlite3, tempfile, os
 from pathlib import Path
 from datetime import datetime
 
+# This script prints box-drawing and arrow characters. When stdout is a pipe or a
+# redirect, Python picks the locale encoding (cp1252 on Windows) and those raise
+# UnicodeEncodeError mid-run, so a redirected run dies after the work is done.
+for _s in (sys.stdout, sys.stderr):
+    try: _s.reconfigure(encoding='utf-8', errors='replace')
+    except Exception: pass
+
 # ── Arg parsing ──────────────────────────────────────────────────────────────
 
 args = sys.argv[1:]
@@ -290,5 +297,5 @@ finally:
 
 note(f"\nDone. Output: {run_dir}")
 summary_path = run_dir / 'summary.txt'
-summary_path.write_text('\n'.join(lines))
+summary_path.write_text('\n'.join(lines), encoding='utf-8')
 print(f"Summary written to {summary_path}")
