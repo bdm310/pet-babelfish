@@ -13,7 +13,7 @@ param(
     [int]$BridgePort = 9876
 )
 
-$docsPath = Join-Path $PSScriptRoot "docs"
+$docsPath = Join-Path $PSScriptRoot "..\docs"
 
 # Start Python HTTP server in a hidden window
 $server = Start-Process python `

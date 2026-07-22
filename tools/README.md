@@ -54,7 +54,7 @@ The DB lives in the browser (sql.js + OPFS). To query it live, run the bridge an
 in `catalog-browser.html` or `viewer.html`:
 
 ```powershell
-.\serve.ps1          # static server :8080 + query bridge :9876 together
+.\tools\serve.ps1    # static server :8080 + query bridge :9876 together
 ```
 The browser polls `/query`, executes against the live DB, and POSTs JSON back to `/result`
 (idles silently when no catalog is open). Then:
@@ -62,7 +62,7 @@ The browser polls `/query`, executes against the live DB, and POSTs JSON back to
 .\tools\db-query.ps1 "SELECT COUNT(*) FROM part WHERE applicability != ''"
 .\tools\export-sqlite.ps1 -Out my-catalog.sqlite    # dump to a file for any SQL tool
 ```
-`query-bridge.ps1` runs the bridge alone. `export-opfs.py` / `export-all.py` export catalog
+`.\tools\query-bridge.ps1` runs the bridge alone. `export-opfs.py` / `export-all.py` export catalog
 SQLite(s) from OPFS to disk (used by the OCR eval tools, which read the exported file directly).
 
 ## Applicability tests
