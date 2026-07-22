@@ -23,7 +23,11 @@ We don't distribute the PDFs (copyright); you supply your own via the file picke
 
 ## Quickstart
 
-WASM and OPFS require HTTP — serve `docs/`, don't open it as `file://`:
+Hosted at **https://bdm310.github.io/pet-babelfish/** — the 13 pre-ingested catalogs
+load on demand, so you can browse without ingesting anything. (Deployed from `docs/`
+by [.github/workflows/pages.yml](.github/workflows/pages.yml) on every push to `main`.)
+
+To run it locally, WASM and OPFS require HTTP — serve `docs/`, don't open it as `file://`:
 
 ```
 npx serve docs
