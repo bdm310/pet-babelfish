@@ -732,6 +732,7 @@
         vfGearbox:        '',
         vfChassis:        '',
         vfEngineNo:       '',
+        vfGearboxNo:      '',
         vfPrCodes:        [],
         allPrCodes:       [],   // pr_code labels for the spec summary
         prUnknown:        [],   // spec codes not in this catalog's pr_code
@@ -808,8 +809,9 @@
           if (this.vfEngine)   push(this.vfEngine, 'Engine code');
           if (this.vfGearbox)  push(this.vfGearbox, 'Gearbox code');
           if (this.vfMarket)   push(this.vfMarket, 'Market');
-          if (this.vfChassis)  push(this.vfChassis, 'Chassis number');
-          if (this.vfEngineNo) push('Eng# ' + this.vfEngineNo, 'Engine number');
+          if (this.vfChassis)   push(this.vfChassis, 'Chassis number');
+          if (this.vfEngineNo)  push('Eng# ' + this.vfEngineNo, 'Engine number');
+          if (this.vfGearboxNo) push('Gbx# ' + this.vfGearboxNo, 'Gearbox number');
           if (this.vfPrCodes.length)
             push('+' + this.vfPrCodes.length + ' option' + (this.vfPrCodes.length === 1 ? '' : 's'),
                  this.vfPrCodes.join(', '));
@@ -820,7 +822,8 @@
         // to the form and silently skipped by the filter, the watchers or the reset.
         get _specValues() {
           return [this.vfYear, this.vfMarket, this.vfLine, this.vfBody, this.vfDrive,
-                  this.vfTrim, this.vfEngine, this.vfGearbox, this.vfChassis, this.vfEngineNo];
+                  this.vfTrim, this.vfEngine, this.vfGearbox, this.vfChassis, this.vfEngineNo,
+                  this.vfGearboxNo];
         },
 
         get filterActive() { return !!(this._specValues.some(Boolean) || this.vfPrCodes.length); },
@@ -853,7 +856,8 @@
           // sections the sidebar lists at all, which parts a section's Ok rollup
           // counts, and which callouts belong on the car's diagram.
           for (const f of ['vfYear', 'vfMarket', 'vfLine', 'vfBody', 'vfDrive', 'vfTrim',
-                           'vfEngine', 'vfGearbox', 'vfChassis', 'vfEngineNo', 'vfPrCodes'])
+                           'vfEngine', 'vfGearbox', 'vfChassis', 'vfEngineNo', 'vfGearboxNo',
+                           'vfPrCodes'])
             this.$watch(f, () => {
               this._rebuildDisplayRows(); this._scheduleRollups(); this.drawCallouts();
             });
@@ -900,8 +904,9 @@
           this.vfTrim     = s.vfTrim || '';
           this.vfEngine   = s.vfEngine || '';
           this.vfGearbox  = s.vfGearbox || '';
-          this.vfChassis  = s.vfChassis || '';
-          this.vfEngineNo = s.engineNo || '';   // the garage's own key for it
+          this.vfChassis   = s.vfChassis || '';
+          this.vfEngineNo  = s.engineNo || '';    // the garage's own key for it
+          this.vfGearboxNo = s.gearboxNo || '';
           this.vfPrCodes  = Array.isArray(s.vfPrCodes) ? [...s.vfPrCodes] : [];
           this.prUnknown  = this._unknownPrCodes(this.vfPrCodes);
         },
@@ -1917,7 +1922,7 @@
           this.vfYear = ''; this.vfMarket = ''; this.vfPrCodes = [];
           this.vfLine = ''; this.vfBody = ''; this.vfDrive = ''; this.vfTrim = '';
           this.vfEngine = ''; this.vfGearbox = '';
-          this.vfChassis = ''; this.vfEngineNo = '';
+          this.vfChassis = ''; this.vfEngineNo = ''; this.vfGearboxNo = '';
           this.prUnknown = [];
         },
 
@@ -1954,7 +1959,8 @@
               s.line === this.vfLine && s.body === this.vfBody &&
               s.drive === this.vfDrive && s.trim === this.vfTrim &&
               s.engine === this.vfEngine && s.gearbox === this.vfGearbox &&
-              s.chassis === this.vfChassis && s.engineNum === this.vfEngineNo) return s;
+              s.chassis === this.vfChassis && s.engineNum === this.vfEngineNo &&
+              s.transmissionNum === this.vfGearboxNo) return s;
           return (this._spec = {
             line:    this.vfLine,
             body:    this.vfBody,
@@ -1971,6 +1977,12 @@
             chassisBlock:   this._numberBlock(this._vinRanges, this.vfChassis),
             engineNum:      this.vfEngineNo,
             engineNumBlock: this._numberBlock(this._engineNumRanges, this.vfEngineNo),
+            // Gearbox serial breakpoints (356 gearbox numbers, PDK serials). The
+            // transmission ranges can't NAME the gearbox (A9750/G9750 print alike),
+            // but a part's changeover printed against a gearbox number still gates
+            // on the number itself, in its own block. See ARCHITECTURE.md.
+            transmissionNum:   this.vfGearboxNo,
+            transmissionBlock: this._numberBlock(this._transmissRanges, this.vfGearboxNo),
             // The market the year segment leads with ("D - MJ 2008>>") is only ever
             // D or absent, so it says nothing and APPL does not enforce it. This is
             // the QUOTED market code ('"ROK"', '-"CN."'), which genuinely splits

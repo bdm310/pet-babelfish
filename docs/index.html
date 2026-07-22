@@ -385,7 +385,13 @@
                     <option :value="g.code" x-text="g.label" :selected="g.code === form.vfGearbox"></option>
                   </template>
                 </select>
-                <span class="hint" x-show="!form.vfGearbox">the transmission serial ranges cannot tell these apart — pick or leave open</span>
+                <label class="flabel" style="width:auto">Gearbox no.</label>
+                <input type="text" class="inp mono" x-model="form.gearboxNo"
+                       placeholder="7803214" style="width:8rem"
+                       title="Stamped on the gearbox — filters parts whose changeover is printed against a gearbox number (356, PDK). It cannot name the gearbox type; pick that above.">
+              </div>
+              <div class="frow" x-show="opts.gearboxes.length && !form.vfGearbox">
+                <span class="hint">the transmission serial ranges cannot tell the gearbox types apart — pick one above or leave open</span>
               </div>
             </div>
 
@@ -566,7 +572,7 @@
         blankForm() {
           return { id: null, nickname: '', vin: '', catalogId: '',
                    vfYear: '', vfMarket: '', vfLine: '', vfBody: '', vfDrive: '', vfTrim: '',
-                   vfEngine: '', vfGearbox: '', engineNo: '', vfChassis: '', prText: '' };
+                   vfEngine: '', vfGearbox: '', engineNo: '', gearboxNo: '', vfChassis: '', prText: '' };
         },
         newVehicle(catalogId = '', ret = '') {
           this.form = this.blankForm();
@@ -586,7 +592,7 @@
             vfLine: s.vfLine || '', vfBody: s.vfBody || '',
             vfDrive: s.vfDrive || '', vfTrim: s.vfTrim || '',
             vfEngine: s.vfEngine || '', vfGearbox: s.vfGearbox || '',
-            engineNo: s.engineNo || '', vfChassis: s.vfChassis || '',
+            engineNo: s.engineNo || '', gearboxNo: s.gearboxNo || '', vfChassis: s.vfChassis || '',
             prText: (s.vfPrCodes || []).join(' '),
           };
           this.vinMsg = '';
@@ -807,6 +813,9 @@
               // and read directly: it is the number engine breakpoints are printed
               // against, not just the way in to the engine code.
               engineNo: (this.form.engineNo || '').trim(),
+              // Filtered on directly (transmission serial breakpoints); never derives
+              // the gearbox code — the A/G serial ranges are printed byte-identical.
+              gearboxNo: (this.form.gearboxNo || '').trim(),
               vfChassis: (this.form.vfChassis || '').trim().toUpperCase(),
               vfPrCodes: prCodes,
             },
