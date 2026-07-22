@@ -1182,7 +1182,9 @@
         // ── Catalog list ─────────────────────────────────────────────
 
         async listCatalogs() {
-          this.catalogs = await CATALOGS.list(this.SQL);
+          // OPFS catalogs plus bundled ones (docs/catalogs/), the latter copied into
+          // OPFS the first time they're opened. See catalogs.js listAll/install.
+          this.catalogs = await CATALOGS.listAll(this.SQL);
         },
 
         // ── Load catalog ─────────────────────────────────────────────
@@ -1198,6 +1200,13 @@
           this._setDiagram(null);
 
           try {
+            // Bundled-but-not-yet-installed catalog? Copy it into OPFS first.
+            const entry = this.catalogs.find(c => c.id === this.catalogId);
+            if (entry && entry.installed === false) {
+              this.status = 'Fetching catalog…';
+              await CATALOGS.install({ id: entry.id, file: entry.file });
+              entry.installed = true;
+            }
             const root = await navigator.storage.getDirectory();
             const dir  = await root.getDirectoryHandle(this.catalogId);
             const fh   = await dir.getFileHandle('catalog.sqlite');

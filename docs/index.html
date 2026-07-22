@@ -507,6 +507,7 @@
         _transmCodes: [],
         _derived:  {},        // field -> the value deriveSpec last put there
         _vinIndex: null,
+        _bundled:  null,      // manifest of bundled catalogs (vin_range rides along)
 
         async init() {
           this.status = 'Loading…';
@@ -550,7 +551,23 @@
 
         // ── OPFS catalog discovery ─────────────────────────────────
         async listCatalogs() {
-          this.catalogs = await CATALOGS.list(this.SQL);
+          // Bundled catalogs (docs/catalogs/) are offered alongside OPFS ones and
+          // copied into OPFS on first open. Their vin_range rows ride in the manifest
+          // so a VIN can pick one before it is downloaded (see _buildVinIndex).
+          this.catalogs = await CATALOGS.listAll(this.SQL);
+          this._bundled = await CATALOGS.bundled();
+        },
+
+        // Copy a not-yet-installed bundled catalog into OPFS before anything opens it.
+        async ensureInstalled(id) {
+          const c = this.catalogs.find(x => x.id === id);
+          if (!c || c.installed) return;
+          this.status = 'Fetching catalog…';
+          try {
+            await CATALOGS.install({ id: c.id, file: c.file });
+            c.installed = true;
+            this._vinIndex = null;   // its ranges now read from OPFS
+          } finally { this.status = ''; }
         },
 
         // A vehicle stores the catalog id; the card should still show the name.
@@ -561,6 +578,7 @@
         },
 
         async _openCatalogDb(id) {
+          await this.ensureInstalled(id);
           const rootDir = await navigator.storage.getDirectory();
           const dir = await rootDir.getDirectoryHandle(id);
           const fh  = await dir.getFileHandle('catalog.sqlite');
@@ -605,6 +623,15 @@
           if (this._vinIndex) return this._vinIndex;
           const idx = [];
           for (const c of this.catalogs) {
+            if (!c.installed) {
+              // Not downloaded yet — match against the manifest's vin_range rows so a
+              // VIN can select a bundled catalog before its (multi-MB) DB is fetched.
+              const b = (this._bundled || []).find(x => x.id === c.id);
+              for (const r of (b?.vinRanges ?? []))
+                idx.push({ catalogId: c.id, modelYear: r.model_year,
+                           from: r.vin_from, to: r.vin_to, remark: r.remark });
+              continue;
+            }
             let db = null;
             try {
               db = await this._openCatalogDb(c.id);

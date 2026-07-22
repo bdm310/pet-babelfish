@@ -260,11 +260,15 @@
         },
 
         async deleteAll() {
-          if (!this.catalogs.length) return;
-          if (!confirm(`Delete all ${this.catalogs.length} catalog(s)? This cannot be undone.`)) return;
+          // Only OPFS-resident catalogs can be deleted; a bundled one not yet
+          // installed has no OPFS directory to remove (and re-appears from the
+          // manifest anyway).
+          const installed = this.catalogs.filter(c => c.installed !== false);
+          if (!installed.length) return;
+          if (!confirm(`Delete all ${installed.length} catalog(s)? This cannot be undone.`)) return;
           const root = await navigator.storage.getDirectory();
-          for (const c of this.catalogs)
-            await root.removeEntry(c.id, { recursive: true });
+          for (const c of installed)
+            try { await root.removeEntry(c.id, { recursive: true }); } catch {}
           this.db        = null;
           this.catalogId = '';
           this.columns   = [];
@@ -309,7 +313,9 @@
         },
 
         async listCatalogs() {
-          this.catalogs = await CATALOGS.list(this.SQL);
+          // Bundled catalogs (docs/catalogs/) show alongside OPFS ones; opening one
+          // copies it into OPFS first. See catalogs.js listAll/install.
+          this.catalogs = await CATALOGS.listAll(this.SQL);
         },
 
         async onCatalogChange() {
@@ -324,6 +330,12 @@
           this.loading = true;
           this.status  = 'Opening database…';
           try {
+            const entry = this.catalogs.find(c => c.id === this.catalogId);
+            if (entry && entry.installed === false) {
+              this.status = 'Fetching catalog…';
+              await CATALOGS.install({ id: entry.id, file: entry.file });
+              entry.installed = true;
+            }
             const root = await navigator.storage.getDirectory();
             const dir  = await root.getDirectoryHandle(this.catalogId);
             const fh   = await dir.getFileHandle('catalog.sqlite');

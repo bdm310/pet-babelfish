@@ -1,0 +1,3299 @@
+[
+  {
+    "id": "356_356A_1950-1959",
+    "file": "356_356A_1950-1959.sqlite",
+    "title": "Porsche 356/356A",
+    "model": "356 50",
+    "bytes": 4005888,
+    "vinRanges": [
+      {
+        "model_year": 50,
+        "vin_from": "05001",
+        "vin_to": "05410",
+        "remark": "356 COUPE/CABRIO — 369/1100"
+      },
+      {
+        "model_year": 51,
+        "vin_from": "05132",
+        "vin_to": "05162",
+        "remark": "356 COUPE/CABRIO — 369/1100"
+      },
+      {
+        "model_year": 51,
+        "vin_from": "05411",
+        "vin_to": "05600",
+        "remark": "356 COUPE/CABRIO"
+      },
+      {
+        "model_year": 51,
+        "vin_from": "10001",
+        "vin_to": "10170",
+        "remark": "356 COUPE/CABRIO — 506/1300"
+      },
+      {
+        "model_year": 51,
+        "vin_from": "10350",
+        "vin_to": "10432",
+        "remark": "356 COUPE/CABRIO"
+      },
+      {
+        "model_year": 51,
+        "vin_from": "10531",
+        "vin_to": "11125",
+        "remark": "356 COUPE/CABRIO — 527/1500"
+      },
+      {
+        "model_year": 52,
+        "vin_from": "10433",
+        "vin_to": "10469",
+        "remark": "356 CABRIO — 367/1100"
+      },
+      {
+        "model_year": 52,
+        "vin_from": "11128",
+        "vin_to": "12084",
+        "remark": "356 COUPE — 506/1300"
+      },
+      {
+        "model_year": 52,
+        "vin_from": "12301",
+        "vin_to": "12387",
+        "remark": "356 CABRIO — 527/1500"
+      },
+      {
+        "model_year": 53,
+        "vin_from": "50001",
+        "vin_to": "50098",
+        "remark": "356 COUPE — 546/1500"
+      },
+      {
+        "model_year": 53,
+        "vin_from": "15001",
+        "vin_to": "15116",
+        "remark": "356 CABRIO — 528/1500 S"
+      },
+      {
+        "model_year": 53,
+        "vin_from": "50099",
+        "vin_to": "51645",
+        "remark": "356 COUPE — 369/1100"
+      },
+      {
+        "model_year": 53,
+        "vin_from": "60001",
+        "vin_to": "60394",
+        "remark": "356 CABRIO — 369/1100"
+      },
+      {
+        "model_year": 53,
+        "vin_from": "50099",
+        "vin_to": "51645",
+        "remark": "356 COUPE — 506/1300"
+      },
+      {
+        "model_year": 53,
+        "vin_from": "60001",
+        "vin_to": "60394",
+        "remark": "356 CABRIO — 506/1300"
+      },
+      {
+        "model_year": 53,
+        "vin_from": "50099",
+        "vin_to": "51645",
+        "remark": "356 COUPE — 546/1500"
+      },
+      {
+        "model_year": 53,
+        "vin_from": "60001",
+        "vin_to": "60394",
+        "remark": "356 CABRIO — 546/1500"
+      },
+      {
+        "model_year": 53,
+        "vin_from": "50099",
+        "vin_to": "51645",
+        "remark": "356 COUPE — 528/1500 S"
+      },
+      {
+        "model_year": 53,
+        "vin_from": "60001",
+        "vin_to": "60394",
+        "remark": "356 CABRIO — 528/1500 S"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "50099",
+        "vin_to": "51645",
+        "remark": "356 COUPE — 589/1300 S"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "60001",
+        "vin_to": "60394",
+        "remark": "356 CABRIO — 589/1300 S"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "51648",
+        "vin_to": "53008",
+        "remark": "356 COUPE — 369/1100"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "60395",
+        "vin_to": "60722",
+        "remark": "356 CABRIO — 369/1100"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "80001",
+        "vin_to": "80200",
+        "remark": "356 SPEEDSTER 540 — 369/1100"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "51648",
+        "vin_to": "53008",
+        "remark": "356 COUPE — 506/1300"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "60395",
+        "vin_to": "60722",
+        "remark": "356 CABRIO — 506/1300"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "80001",
+        "vin_to": "80200",
+        "remark": "356 SPEEDSTER 540 — 506/1300"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "51648",
+        "vin_to": "53008",
+        "remark": "356 COUPE — 589/1300 S"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "60395",
+        "vin_to": "60722",
+        "remark": "356 CABRIO — 589/1300 S"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "80001",
+        "vin_to": "80200",
+        "remark": "356 SPEEDSTER 540 — 589/1300 S"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "51648",
+        "vin_to": "53008",
+        "remark": "356 COUPE — 506/1/1300 A"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "60395",
+        "vin_to": "60722",
+        "remark": "356 CABRIO — 506/1/1300 A"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "80001",
+        "vin_to": "80200",
+        "remark": "356 SPEEDSTER 540 — 506/1/1300 A"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "51648",
+        "vin_to": "53008",
+        "remark": "356 COUPE — 546/1500"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "60395",
+        "vin_to": "60722",
+        "remark": "356 CABRIO — 546/1500"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "80001",
+        "vin_to": "80200",
+        "remark": "356 SPEEDSTER 540 — 546/1500"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "51648",
+        "vin_to": "53008",
+        "remark": "356 COUPE — 528/1500 S"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "60395",
+        "vin_to": "60722",
+        "remark": "356 CABRIO — 528/1500 S"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "80001",
+        "vin_to": "80200",
+        "remark": "356 SPEEDSTER 540 — 528/1500 S"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "51648",
+        "vin_to": "53008",
+        "remark": "356 COUPE — 506/2/1300"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "60395",
+        "vin_to": "60722",
+        "remark": "356 CABRIO — 506/2/1300"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "80001",
+        "vin_to": "80200",
+        "remark": "356 SPEDDSTER 540.1(T.1) — 506/2/1300"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "51648",
+        "vin_to": "53008",
+        "remark": "356 COUPE — 589/2/1300 S"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "60395",
+        "vin_to": "60722",
+        "remark": "356 CABRIO — 589/2/1300 S"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "80001",
+        "vin_to": "80200",
+        "remark": "356 SPEEDSTER 540.1(T.1) — 589/2/1300 S"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "51648",
+        "vin_to": "53008",
+        "remark": "356 COUPE — 546/2/1500"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "60395",
+        "vin_to": "60722",
+        "remark": "356 CABRIO — 546/2/1500"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "80001",
+        "vin_to": "80200",
+        "remark": "356 SPEEDSTER 540.1(T.1) — 546/2/1500"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "51648",
+        "vin_to": "53008",
+        "remark": "356 COUPE — 528/2/1500 S"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "60395",
+        "vin_to": "60722",
+        "remark": "356 CABRIO — 528/2/1500 S"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "80001",
+        "vin_to": "80200",
+        "remark": "356 SPEEDSTER 540.1(T.1) — 528/2/1500 S"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "53009",
+        "vin_to": "55000",
+        "remark": "356 COUPE — 506/2/1300"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "60723",
+        "vin_to": "61000",
+        "remark": "356 CABRIO — 506/2/1300"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "80201",
+        "vin_to": "81900",
+        "remark": "356 SPEEDSTER 540.1(T.1) — 506/2/1300"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "53009",
+        "vin_to": "55000",
+        "remark": "356 COUPE — 589/2/1300 S"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "60723",
+        "vin_to": "61000",
+        "remark": "356 CABRIO — 589/2/1300 S"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "80201",
+        "vin_to": "81900",
+        "remark": "356 SPEEDSTER 540.1(T.1) — 589/2/1300 S"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "53009",
+        "vin_to": "55000",
+        "remark": "356 COUPE — 546/2/1500"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "60723",
+        "vin_to": "61000",
+        "remark": "356 CABRIO — 546/2/1500"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "80201",
+        "vin_to": "81900",
+        "remark": "356 SPEEDSTER 540.1(T.1) — 546/2/1500"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "53009",
+        "vin_to": "55000",
+        "remark": "356 COUPE — 528/2/1500 S"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "60723",
+        "vin_to": "61000",
+        "remark": "356 CABRIO — 528/2/1500 S"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "80201",
+        "vin_to": "81900",
+        "remark": "356 SPEEDSTER 540.1(T.1) — 528/2/1500 S"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "55001",
+        "vin_to": "55390",
+        "remark": "356 A COUPE — 506/2/1300"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "61001",
+        "vin_to": "61069",
+        "remark": "356 A CABRIO — 506/2/1300"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "81901",
+        "vin_to": "82000",
+        "remark": "356 A SPEEDSTER 540.1(T.1) — 506/2/1300"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "55001",
+        "vin_to": "55390",
+        "remark": "356 A COUPE — 589/2/1300 S"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "61001",
+        "vin_to": "61069",
+        "remark": "356 A CABRIO — 589/2/1300 S"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "81901",
+        "vin_to": "82000",
+        "remark": "356 A SPEEDSTER 540.1(T.1) — 589/2/1300 S"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "55001",
+        "vin_to": "55390",
+        "remark": "356 A COUPE — 616/1/1600"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "61001",
+        "vin_to": "61069",
+        "remark": "356 A CABRIO — 616/1/1600"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "81901",
+        "vin_to": "82000",
+        "remark": "356 A SPEEDSTER 540.1(T.1) — 616/1/1600"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "55001",
+        "vin_to": "55390",
+        "remark": "356 A COUPE — 616/2/1600 S"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "61001",
+        "vin_to": "61069",
+        "remark": "356 A CABRIO — 616/2/1600 S"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "81901",
+        "vin_to": "82000",
+        "remark": "356 A SPEEDSTER 540.1(T.1) — 616/2/1600 S"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "55391",
+        "vin_to": "58311",
+        "remark": "356 A COUPE — 506/2/1300"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "61070",
+        "vin_to": "61499",
+        "remark": "356 A CABRIO — 506/2/1300"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "82001",
+        "vin_to": "82850",
+        "remark": "356 A SPEEDSTER 540.1(T.1) — 506/2/1300"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "55391",
+        "vin_to": "58311",
+        "remark": "356 A COUPE — 589/2/1300 S"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "61070",
+        "vin_to": "61499",
+        "remark": "356 A CABRIO — 589/2/1300 S"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "82001",
+        "vin_to": "82850",
+        "remark": "356 A SPEEDSTER 540.1(T.1) — 589/2/1300 S"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "55391",
+        "vin_to": "58311",
+        "remark": "356 A COUPE — 616/1/1600"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "61070",
+        "vin_to": "61499",
+        "remark": "356 A CABRIO — 616/1/1600"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "82001",
+        "vin_to": "82850",
+        "remark": "356 A SPEEDSTER 540.1(T.1) — 616/1/1600"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "55391",
+        "vin_to": "58311",
+        "remark": "356 A COUPE — 616/2/1600 S"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "61070",
+        "vin_to": "61499",
+        "remark": "356 A CABRIO — 616/2/1600 S"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "82001",
+        "vin_to": "82850",
+        "remark": "356 A SPEEDSTER 540.1(T.1) — 616/2/1600 S"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "058312",
+        "vin_to": "059090",
+        "remark": "356 A COUPE — 506/2/1300"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "061500",
+        "vin_to": "061700",
+        "remark": "356 A CABRIO — 506/2/1300"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "082851",
+        "vin_to": "083691",
+        "remark": "356 A SPEDDSTER 540.1/T.2) — 506/2/1300"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "058312",
+        "vin_to": "059090",
+        "remark": "356 A COUPE — 589/2/1300 S"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "061500",
+        "vin_to": "061700",
+        "remark": "356 A CABRIO — 589/2/1300 S"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "082851",
+        "vin_to": "083691",
+        "remark": "356 A SPEEDSTER 540.1(T.2) — 589/2/1300 S"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "100001",
+        "vin_to": "101892",
+        "remark": "356 A COUPE — 616/1/1600"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "061701",
+        "vin_to": "061892",
+        "remark": "356 A CABRIO — 616/1/1600"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "083692",
+        "vin_to": "083791",
+        "remark": "356 A SPEEDSTER 540.1(T.2) — 616/1/1600"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "100001",
+        "vin_to": "101892",
+        "remark": "356 A COUPE — 616/2/1600 S"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "061701",
+        "vin_to": "061892",
+        "remark": "356 A CABRIO — 616/2/1600 S"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "083692",
+        "vin_to": "083791",
+        "remark": "356 A SPEEDSTER 540.1(T.2) — 616/2/1600 S"
+      },
+      {
+        "model_year": 58,
+        "vin_from": "102505",
+        "vin_to": "106174",
+        "remark": "356 A COUPE — 616/1/1600"
+      },
+      {
+        "model_year": 58,
+        "vin_from": "150150",
+        "vin_to": "151531",
+        "remark": "356 A CABRIO — 616/1/1600"
+      },
+      {
+        "model_year": 58,
+        "vin_from": "084367",
+        "vin_to": "084922",
+        "remark": "356 A SPEEDSTER — 616/1/1600"
+      },
+      {
+        "model_year": 58,
+        "vin_from": "102505",
+        "vin_to": "106174",
+        "remark": "356 A COUPE — 616/2/1600 S"
+      },
+      {
+        "model_year": 58,
+        "vin_from": "150150",
+        "vin_to": "151531",
+        "remark": "356 A CABRIO — 616/2/1600 S"
+      },
+      {
+        "model_year": 58,
+        "vin_from": "085501",
+        "vin_to": "085886",
+        "remark": "356 A CONVERTIBLE D — 616/2/1600 S"
+      },
+      {
+        "model_year": 59,
+        "vin_from": "106175",
+        "vin_to": "108917",
+        "remark": "356 A COUPE — 616/1/1600"
+      },
+      {
+        "model_year": 59,
+        "vin_from": "151532",
+        "vin_to": "152475",
+        "remark": "356 A CABRIO — 616/1/1600"
+      },
+      {
+        "model_year": 59,
+        "vin_from": "085887",
+        "vin_to": "086830",
+        "remark": "356 A CONVERTIBLE D — 616/1/1600"
+      },
+      {
+        "model_year": 59,
+        "vin_from": "106175",
+        "vin_to": "108917",
+        "remark": "356 A COUPE — 616/2/1600 S"
+      },
+      {
+        "model_year": 59,
+        "vin_from": "151532",
+        "vin_to": "152475",
+        "remark": "356 A CABRIO — 616/2/1600 S"
+      },
+      {
+        "model_year": 59,
+        "vin_from": "085887",
+        "vin_to": "086830",
+        "remark": "356 A CONVERTIBLE D — 616/2/1600 S"
+      },
+      {
+        "model_year": 50,
+        "vin_from": "005001",
+        "vin_to": "005600",
+        "remark": "356 COUPE"
+      },
+      {
+        "model_year": 50,
+        "vin_from": "005131",
+        "vin_to": "005138",
+        "remark": "356 CABRIO"
+      },
+      {
+        "model_year": 50,
+        "vin_from": "005027",
+        "vin_to": "005028",
+        "remark": "356 CABRIO (GLAESER-HEUER)"
+      },
+      {
+        "model_year": 50,
+        "vin_from": "005105",
+        "vin_to": "005130",
+        "remark": "356 CABRIO (GLAESER-HEUER)"
+      },
+      {
+        "model_year": 50,
+        "vin_from": "005139",
+        "vin_to": "005162",
+        "remark": "356 CABRIO (GLAESER-HEUER)"
+      },
+      {
+        "model_year": 51,
+        "vin_from": "010531",
+        "vin_to": "011360",
+        "remark": "356 COUPE"
+      },
+      {
+        "model_year": 51,
+        "vin_from": "010001",
+        "vin_to": "010270",
+        "remark": "356 CABRIO"
+      },
+      {
+        "model_year": 51,
+        "vin_from": "010351",
+        "vin_to": "010469",
+        "remark": "356 CABRIO (GLAESER-HEUER)"
+      },
+      {
+        "model_year": 52,
+        "vin_from": "011361",
+        "vin_to": "011778",
+        "remark": "356 COUPE"
+      },
+      {
+        "model_year": 52,
+        "vin_from": "010271",
+        "vin_to": "010350",
+        "remark": "356 CABRIO"
+      },
+      {
+        "model_year": 52,
+        "vin_from": "015001",
+        "vin_to": "015072",
+        "remark": "356 CABRIO"
+      },
+      {
+        "model_year": 52,
+        "vin_from": "012301",
+        "vin_to": "012385",
+        "remark": "356 CABRIO (GLAESER-HEUER)"
+      },
+      {
+        "model_year": 53,
+        "vin_from": "011779",
+        "vin_to": "012084",
+        "remark": "356 COUPE"
+      },
+      {
+        "model_year": 53,
+        "vin_from": "050001",
+        "vin_to": "052029",
+        "remark": "356 COUPE"
+      },
+      {
+        "model_year": 53,
+        "vin_from": "015073",
+        "vin_to": "015115",
+        "remark": "356 CABRIO"
+      },
+      {
+        "model_year": 53,
+        "vin_from": "060001",
+        "vin_to": "060549",
+        "remark": "356 CABRIO"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "052030",
+        "vin_to": "054223",
+        "remark": "356 COUPE"
+      },
+      {
+        "model_year": 54,
+        "vin_from": "060550",
+        "vin_to": "060923",
+        "remark": "356 CABRIO"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "052030",
+        "vin_to": "054223",
+        "remark": "356 COUPE"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "055001",
+        "vin_to": "059099",
+        "remark": "356 A COUPE"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "060550",
+        "vin_to": "060923",
+        "remark": "356 A CABRIO"
+      },
+      {
+        "model_year": 55,
+        "vin_from": "080001",
+        "vin_to": "081234",
+        "remark": "356 A SPEEDSTER 540"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "055001",
+        "vin_to": "059099",
+        "remark": "356 A COUPE"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "061001",
+        "vin_to": "061618",
+        "remark": "356 A CABRIO"
+      },
+      {
+        "model_year": 56,
+        "vin_from": "080001",
+        "vin_to": "081234",
+        "remark": "356 A SPEEDSTER 540"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "100001",
+        "vin_to": "101692",
+        "remark": "356 A COUPE (T1)"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "101693",
+        "vin_to": null,
+        "remark": "356 A COUPE (T2)"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "061701",
+        "vin_to": "061892",
+        "remark": "356 A CABRIO"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "082001",
+        "vin_to": "083791",
+        "remark": "356 A SPEEDSTER 540.1(T1)"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "083792",
+        "vin_to": "084999",
+        "remark": "356 A SPEEDSTER 540.1(T2)"
+      },
+      {
+        "model_year": 57,
+        "vin_from": "150001",
+        "vin_to": null,
+        "remark": "356 A HARDTOP"
+      }
+    ]
+  },
+  {
+    "id": "911Turbo_1975-1977",
+    "file": "911Turbo_1975-1977.sqlite",
+    "title": "Porsche 911 Turbo/GT2",
+    "model": "911 75",
+    "bytes": 4308992,
+    "vinRanges": [
+      {
+        "model_year": 75,
+        "vin_from": "93057 0001",
+        "vin_to": null,
+        "remark": "911 TURBO — 930.50"
+      },
+      {
+        "model_year": 76,
+        "vin_from": "93067 0001",
+        "vin_to": null,
+        "remark": "911 TURBO — 930.52"
+      },
+      {
+        "model_year": 76,
+        "vin_from": "93067 0001",
+        "vin_to": null,
+        "remark": "911 TURBO (J) — 930.52"
+      },
+      {
+        "model_year": 76,
+        "vin_from": "93068 0001",
+        "vin_to": null,
+        "remark": "911 TURBO CARRERA (USA)(CDN) — 930.51"
+      },
+      {
+        "model_year": 77,
+        "vin_from": "93077 0001",
+        "vin_to": null,
+        "remark": "911 TURBO — 930.52"
+      },
+      {
+        "model_year": 77,
+        "vin_from": "93077 0001",
+        "vin_to": null,
+        "remark": "911 TURBO — 930.54"
+      },
+      {
+        "model_year": 77,
+        "vin_from": "93078 0001",
+        "vin_to": null,
+        "remark": "911 TURBO CARRERA (USA)(CDN) — 930.53"
+      }
+    ]
+  },
+  {
+    "id": "996GT3-GT3RS_1999-2005",
+    "file": "996GT3-GT3RS_1999-2005.sqlite",
+    "title": "Porsche 996 GT3",
+    "model": "996 99",
+    "bytes": 4444160,
+    "vinRanges": [
+      {
+        "model_year": 0,
+        "vin_from": "99YS690061",
+        "vin_to": "99YS691900",
+        "remark": "996 COUPE GT3 — M96.76 265 KW"
+      },
+      {
+        "model_year": 0,
+        "vin_from": "991S690061",
+        "vin_to": "991S691900",
+        "remark": "996 COUPE GT3 — M96.76 265 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "994S690061",
+        "vin_to": "994S692000",
+        "remark": "996 COUPE GT3 — M96.79 280 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "994S692061",
+        "vin_to": "994S693000",
+        "remark": "996 COUPE GT3 (USA.CDN.MEX.BR) — M96.79 280 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "995S690061",
+        "vin_to": "995S692000",
+        "remark": "996 COUPE GT3 — M96.79 280 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "995S692061",
+        "vin_to": "995S693000",
+        "remark": "996 COUPE GT3 (USA.CDN.MEX.BR) — M96.79 280 KW"
+      }
+    ]
+  },
+  {
+    "id": "996Turbo-GT2_2001-2005",
+    "file": "996Turbo-GT2_2001-2005.sqlite",
+    "title": "Porsche 911 Turbo/GT2",
+    "model": "996 01",
+    "bytes": 6987776,
+    "vinRanges": [
+      {
+        "model_year": 1,
+        "vin_from": "991S680061",
+        "vin_to": "991S685000",
+        "remark": "996 TURBO — M96.70 309 KW"
+      },
+      {
+        "model_year": 1,
+        "vin_from": "991S685061",
+        "vin_to": "991S689000",
+        "remark": "996 TURBO (USA)(CDN)(MEX)(BR) — M96.70 309 KW"
+      },
+      {
+        "model_year": 1,
+        "vin_from": "991S695061",
+        "vin_to": "991S695900",
+        "remark": "996 TURBO GT2 — M96.70S 340 KW"
+      },
+      {
+        "model_year": 2,
+        "vin_from": "992S695061",
+        "vin_to": "992S695900",
+        "remark": "996 TURBO GT2 — M96.70S 340 KW"
+      },
+      {
+        "model_year": 2,
+        "vin_from": "992S696061",
+        "vin_to": "992S696900",
+        "remark": "996 TURBO GT2(USA,CDN,MEX,BR) — M96.70S 340 KW"
+      },
+      {
+        "model_year": 2,
+        "vin_from": "992S680061",
+        "vin_to": "992S685000",
+        "remark": "996 TURBO — M96.70 309 KW"
+      },
+      {
+        "model_year": 2,
+        "vin_from": "992S685061",
+        "vin_to": "992S689000",
+        "remark": "996 TURBO (USA)(CDN)(MEX)(BR) — M96.70 309 KW"
+      },
+      {
+        "model_year": 3,
+        "vin_from": "993S695061",
+        "vin_to": "993S695900",
+        "remark": "996 TURBO GT2 — M96.70S 340 KW"
+      },
+      {
+        "model_year": 3,
+        "vin_from": "993S696061",
+        "vin_to": "993S696900",
+        "remark": "996 TURBO GT2(USA,CDN,MEX,BR) — M96.70S 340 KW"
+      },
+      {
+        "model_year": 3,
+        "vin_from": "993S680061",
+        "vin_to": "993S685000",
+        "remark": "996 TURBO — M96.70 309 KW"
+      },
+      {
+        "model_year": 3,
+        "vin_from": "993S685061",
+        "vin_to": "993S689000",
+        "remark": "996 TURBO (USA)(CDN)(MEX)(BR) — M96.70 309 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "994S695061",
+        "vin_to": "994S695900",
+        "remark": "996 TURBO GT2 — M96.70S 340 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "994S696061",
+        "vin_to": "994S696900",
+        "remark": "996 TURBO GT2(USA,CDN,MEX,BR) — M96.70S 340 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "994S680061",
+        "vin_to": "994S685000",
+        "remark": "996 TURBO — M96.70 309 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "994S685061",
+        "vin_to": "994S689000",
+        "remark": "996 TURBO (USA)(CDN)(MEX)(BR) — M96.70 309 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "994S670061",
+        "vin_to": "994S674000",
+        "remark": "996 TURBO CABRIO — M96.70 309 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "994S675061",
+        "vin_to": "994S679000",
+        "remark": "996 TURBO CAB.(USA,CDN,MEX,BR) — M96.70 309 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "995S695061",
+        "vin_to": "995S695900",
+        "remark": "996 TURBO GT2 — M96.70SL 360 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "995S696061",
+        "vin_to": "995S696900",
+        "remark": "996 TURBO GT2(USA,CDN,MEX,BR) — M96.70SL 360 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "995S680061",
+        "vin_to": "995S685000",
+        "remark": "996 TURBO — M96.70 309 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "995S685061",
+        "vin_to": "995S689000",
+        "remark": "996 TURBO (USA)(CDN)(MEX)(BR) — M96.70 309 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "995S670061",
+        "vin_to": "995S674000",
+        "remark": "996 TURBO CABRIO — M96.70 309 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "994S675061",
+        "vin_to": "994S679000",
+        "remark": "996 TURBO CAB.(USA,CDN,MEX,BR) — M96.70 309 KW"
+      }
+    ]
+  },
+  {
+    "id": "996_1998-2005",
+    "file": "996_1998-2005.sqlite",
+    "title": "Porsche 911 Carrera",
+    "model": "996 98",
+    "bytes": 7995392,
+    "vinRanges": [
+      {
+        "model_year": 98,
+        "vin_from": "99WS600061",
+        "vin_to": "99WS610000",
+        "remark": "996 COUPE — M96.01 220 KW"
+      },
+      {
+        "model_year": 98,
+        "vin_from": "99WS620061",
+        "vin_to": "99WS630000",
+        "remark": "996 COUPE (MEX) — M96.01 220 KW"
+      },
+      {
+        "model_year": 98,
+        "vin_from": "99XS620061",
+        "vin_to": "99XS630000",
+        "remark": "996 COUPE (USA)(CDN) — M96.01 220 KW"
+      },
+      {
+        "model_year": 98,
+        "vin_from": "99VS629801",
+        "vin_to": "99VS630000",
+        "remark": "996 COUPE (BR) — M96.01 220 KW"
+      },
+      {
+        "model_year": 98,
+        "vin_from": "99WS629801",
+        "vin_to": "99WS630000",
+        "remark": "996 COUPE (BR) — M96.01 220 KW"
+      },
+      {
+        "model_year": 98,
+        "vin_from": "99WS640061",
+        "vin_to": "99WS649999",
+        "remark": "996 CABRIO — M96.01 220 KW"
+      },
+      {
+        "model_year": 98,
+        "vin_from": "99WS650061",
+        "vin_to": "99WS659999",
+        "remark": "996 CABRIO (USA)(CDN)(MEX) — M96.01 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99XS600061",
+        "vin_to": "99XS609999",
+        "remark": "996 COUPE 2 — M96.01 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99XS620061",
+        "vin_to": "99XS629999",
+        "remark": "996 COUPE 2 (USA)(CDN)(MEX) — M96.01 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99WS629801",
+        "vin_to": "99WS629999",
+        "remark": "996 COUPE 2 (BR) — M96.01 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99XS629801",
+        "vin_to": "99XS629999",
+        "remark": "996 COUPE 2 (BR) — M96.01 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99XS600061",
+        "vin_to": "99XS609999",
+        "remark": "996 COUPE 4 — M96.02 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99XS620061",
+        "vin_to": "99XS629999",
+        "remark": "996 COUPE 4 (USA)(CDN)(MEX) — M96.02 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99WS629401",
+        "vin_to": "99WS629500",
+        "remark": "996 COUPE 4 (BR) — M96.02 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99XS629401",
+        "vin_to": "99XS629500",
+        "remark": "996 COUPE 4 (BR) — M96.02 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99XS640061",
+        "vin_to": "99XS649999",
+        "remark": "996 CABRIO 2 — M96.01 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99XS650061",
+        "vin_to": "99XS659999",
+        "remark": "996 CABRIO 2 (USA)(CDN)(MEX) — M96.01 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99WS659601",
+        "vin_to": "99WS659700",
+        "remark": "996 CABRIO 2 (BR) — M96.01 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99XS659601",
+        "vin_to": "99XS659700",
+        "remark": "996 CABRIO 2 (BR) — M96.01 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99XS640061",
+        "vin_to": "99XS649999",
+        "remark": "996 CABRIO 4 — M96.02 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99XS650061",
+        "vin_to": "99XS659999",
+        "remark": "996 CABRIO 4 (USA)(CDN)(MEX) — M96.02 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99WS659801",
+        "vin_to": "99WS659999",
+        "remark": "996 CABRIO 4 (BR) — M96.02 220 KW"
+      },
+      {
+        "model_year": 99,
+        "vin_from": "99XS659801",
+        "vin_to": "99XS659999",
+        "remark": "996 CABRIO 4 (BR) — M96.02 220 KW"
+      },
+      {
+        "model_year": 0,
+        "vin_from": "99YS600061",
+        "vin_to": "99YS610000",
+        "remark": "996 COUPE 2/4 — M96.04 220 KW"
+      },
+      {
+        "model_year": 0,
+        "vin_from": "99YS620061",
+        "vin_to": "99YS629000",
+        "remark": "996 COUPE 2/4(USA.CDN.MEX.BR) — M96.04 220 KW"
+      },
+      {
+        "model_year": 0,
+        "vin_from": "99XS650061",
+        "vin_to": "99XS659000",
+        "remark": "996 COUPE 2/4 (BR) — M96.04 220 KW"
+      },
+      {
+        "model_year": 0,
+        "vin_from": "99YS640061",
+        "vin_to": "99YS649000",
+        "remark": "996 CABRIO 2/4 — M96.04 220 KW"
+      },
+      {
+        "model_year": 0,
+        "vin_from": "99YS650061",
+        "vin_to": "99YS659000",
+        "remark": "996 CABRIO 2/4(USA.CDN.MEX.BR) — M96.04 220 KW"
+      },
+      {
+        "model_year": 0,
+        "vin_from": "99XS650061",
+        "vin_to": "99XS659000",
+        "remark": "996 CABRIO 2/4(BR) — M96.04 220 KW"
+      },
+      {
+        "model_year": 1,
+        "vin_from": "991S600061",
+        "vin_to": "991S610000",
+        "remark": "996 COUPE 2/4 — M96.04 221 KW"
+      },
+      {
+        "model_year": 1,
+        "vin_from": "991S620061",
+        "vin_to": "991S629000",
+        "remark": "996 COUPE 2/4(USA.CDN.MEX.BR) — M96.04 221 KW"
+      },
+      {
+        "model_year": 1,
+        "vin_from": "991S640061",
+        "vin_to": "991S649000",
+        "remark": "996 CABRIO 2/4 — M96.04 221 KW"
+      },
+      {
+        "model_year": 1,
+        "vin_from": "991S650061",
+        "vin_to": "991S659000",
+        "remark": "996 CABRIO 2/4(USA.CDN.MEX.BR) — M96.04 221 KW"
+      },
+      {
+        "model_year": 2,
+        "vin_from": "992S600061",
+        "vin_to": "992S610000",
+        "remark": "996 COUPE 2/4/4S — M96.03 232 KW"
+      },
+      {
+        "model_year": 2,
+        "vin_from": "992S620061",
+        "vin_to": "992S629000",
+        "remark": "996 COUPE 2/4/4S(US.CN.MX.BR) — M96.03 232 KW"
+      },
+      {
+        "model_year": 2,
+        "vin_from": "992S630061",
+        "vin_to": "992S635000",
+        "remark": "996 TARGA 2/4 — M96.03 232 KW"
+      },
+      {
+        "model_year": 2,
+        "vin_from": "992S635061",
+        "vin_to": "992S640000",
+        "remark": "996 TARGA 2/4(USA.CDN.MEX.BR) — M96.03 232 KW"
+      },
+      {
+        "model_year": 2,
+        "vin_from": "992S640061",
+        "vin_to": "992S649000",
+        "remark": "996 CABRIO 2/4 — M96.03 232 KW"
+      },
+      {
+        "model_year": 2,
+        "vin_from": "992S650061",
+        "vin_to": "992S659000",
+        "remark": "996 CABRIO 2/4(USA.CDN.MEX.BR) — M96.03 232 KW"
+      },
+      {
+        "model_year": 3,
+        "vin_from": "993S600061",
+        "vin_to": "993S610000",
+        "remark": "996 COUPE 2/4/4S — M96.03 235 KW"
+      },
+      {
+        "model_year": 3,
+        "vin_from": "993S620061",
+        "vin_to": "993S629000",
+        "remark": "996 COUPE 2/4/4S(US.CN.MX.BR) — M96.03 235 KW"
+      },
+      {
+        "model_year": 3,
+        "vin_from": "993S630061",
+        "vin_to": "993S635000",
+        "remark": "996 TARGA 2/4 — M96.03 235 KW"
+      },
+      {
+        "model_year": 3,
+        "vin_from": "993S635061",
+        "vin_to": "993S640000",
+        "remark": "996 TARGA 2/4(USA.CDN.MEX.BR) — M96.03 235 KW"
+      },
+      {
+        "model_year": 3,
+        "vin_from": "993S640061",
+        "vin_to": "993S649000",
+        "remark": "996 CABRIO 2/4 — M96.03 235 KW"
+      },
+      {
+        "model_year": 3,
+        "vin_from": "993S650061",
+        "vin_to": "993S659000",
+        "remark": "996 CABRIO 2/4(USA.CDN.MEX.BR) — M96.03 235 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "994S600061",
+        "vin_to": "994S610000",
+        "remark": "996 COUPE 2/4/4S — M96.03 235 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "994S620061",
+        "vin_to": "994S629000",
+        "remark": "996 COUPE 2/4/4S(US.CN.MX.BR) — M96.03 235 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "994S630061",
+        "vin_to": "994S635000",
+        "remark": "996 TARGA 2/4 — M96.03 235 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "994S635061",
+        "vin_to": "994S640000",
+        "remark": "996 TARGA 2/4(USA.CDN.MEX.BR) — M96.03 235 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "994S640061",
+        "vin_to": "994S649000",
+        "remark": "996 CABRIO 2/4 — M96.03 235 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "994S650061",
+        "vin_to": "994S659000",
+        "remark": "996 CABRIO 2/4/4S(US.CN.MX.BR) — M96.03 235 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "995S600061",
+        "vin_to": "995S610000",
+        "remark": "996 COUPE 4S — M96.03 235 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "995S620061",
+        "vin_to": "995S629000",
+        "remark": "996 COUPE 4S(USA.CDN.MEX.BR) — M96.03 235 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "995S630061",
+        "vin_to": "995S635000",
+        "remark": "996 TARGA 2/4 — M96.03 235 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "995S635061",
+        "vin_to": "995S640000",
+        "remark": "996 TARGA 2/4(USA.CDN.MEX.BR) — M96.03 235 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "995S640061",
+        "vin_to": "995S649000",
+        "remark": "996 CABRIO 2/4 — M96.03 235 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "995S650061",
+        "vin_to": "995S659000",
+        "remark": "996 CABRIO 2/4/4S(US.CN.MX.BR) — M96.03 235 KW"
+      }
+    ]
+  },
+  {
+    "id": "997-1Turbo-GT2_2007-2009",
+    "file": "997-1Turbo-GT2_2007-2009.sqlite",
+    "title": "Porsche 911 Turbo/GT2",
+    "model": "997T07",
+    "bytes": 9228288,
+    "vinRanges": [
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S780061",
+        "vin_to": "99-7S783000",
+        "remark": "997 Turbo"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S787061",
+        "vin_to": "99-7S790000",
+        "remark": "997 Turbo"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S783061",
+        "vin_to": "99-7S787000",
+        "remark": "997 Turbo (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S708061",
+        "vin_to": "99-8S709000",
+        "remark": "997 Turbo Cabrio"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S788061",
+        "vin_to": "99-8S790000",
+        "remark": "997 Turbo Cabrio"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S794061",
+        "vin_to": "99-8S796000",
+        "remark": "997 Turbo GT2"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S796061",
+        "vin_to": "99-8S798000",
+        "remark": "997 Turbo GT2"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S783061",
+        "vin_to": "99-8S786000",
+        "remark": "997 Turbo (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S709061",
+        "vin_to": "99-8S710000",
+        "remark": "997 Turbo (rest of the world)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S780061",
+        "vin_to": "99-8S783000",
+        "remark": "997 Turbo (rest of the world)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S706061",
+        "vin_to": "99-8S707000",
+        "remark": "997 Turbo Cabrio (rest of the world)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S786061",
+        "vin_to": "99-8S788000",
+        "remark": "997 Turbo Cabrio (rest of the world)"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S770061",
+        "vin_to": "99-9S773000",
+        "remark": "997 Turbo Cabrio"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S773061",
+        "vin_to": "99-9S775000",
+        "remark": "997 Turbo Cabrio"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S776061",
+        "vin_to": "99-9S777000",
+        "remark": "997 Turbo GT2"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S778061",
+        "vin_to": "99-9S779000",
+        "remark": "997 Turbo GT2"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S766061",
+        "vin_to": "99-9S770000",
+        "remark": "997 Turbo (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S760061",
+        "vin_to": "99-9S766000",
+        "remark": "997 Turbo (rest of the world)"
+      }
+    ]
+  },
+  {
+    "id": "997-1_2005-2008",
+    "file": "997-1_2005-2008.sqlite",
+    "title": "Porsche 911 Carrera",
+    "model": "997 05",
+    "bytes": 8331264,
+    "vinRanges": [
+      {
+        "model_year": 2005,
+        "vin_from": "99-5S750061",
+        "vin_to": "99-5S755000",
+        "remark": "997 Cabrio"
+      },
+      {
+        "model_year": 2005,
+        "vin_from": "99-5S760061",
+        "vin_to": "99-5S765000",
+        "remark": "997 Cabrio S"
+      },
+      {
+        "model_year": 2005,
+        "vin_from": "99-5S700061",
+        "vin_to": "99-5S710000",
+        "remark": "997 Coupe"
+      },
+      {
+        "model_year": 2005,
+        "vin_from": "99-5S730061",
+        "vin_to": "99-5S740000",
+        "remark": "997 Coupe S"
+      },
+      {
+        "model_year": 2005,
+        "vin_from": "99-5S715061",
+        "vin_to": "99-5S730000",
+        "remark": "997 Coupe (USA,CDN,MEX,BR)"
+      },
+      {
+        "model_year": 2005,
+        "vin_from": "99-5S740061",
+        "vin_to": "99-5S750000",
+        "remark": "997 Coupe S (USA,CDN,MEX,BR)"
+      },
+      {
+        "model_year": 2005,
+        "vin_from": "99-5S755061",
+        "vin_to": "99-5S760000",
+        "remark": "997 Cabrio (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2005,
+        "vin_from": "99-5S765061",
+        "vin_to": "99-5S770000",
+        "remark": "997 Cabrio S (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "99-6S750061",
+        "vin_to": "99-6S755000",
+        "remark": "997 Cabrio"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "99-6S700061",
+        "vin_to": "99-6S710000",
+        "remark": "997 Coupe"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "99-6S730061",
+        "vin_to": "99-6S740000",
+        "remark": "997 Coupe S"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "99-6S715061",
+        "vin_to": "99-6S730000",
+        "remark": "997 Coupe (USA,CDN,MEX,BR)"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "99-6S740061",
+        "vin_to": "99-6S750000",
+        "remark": "997 Coupe S (USA,CDN,MEX,BR)"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "99-6S755061",
+        "vin_to": "99-6S760000",
+        "remark": "997 Cabrio (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "99-6S765061",
+        "vin_to": "99-6S771000",
+        "remark": "997 Cabrio S (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "99-6S760061",
+        "vin_to": "99-6S765000",
+        "remark": "997 Cabrio S (rest of the world)"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "99-6S775000",
+        "vin_to": "99-6S780000",
+        "remark": "997 Cabrio S (rest of the world)"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S760061",
+        "vin_to": "99-7S765000",
+        "remark": "997 Cabrio"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S770061",
+        "vin_to": "99-7S775000",
+        "remark": "997 Cabrio S"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S795001",
+        "vin_to": "99-7S796000",
+        "remark": "997 Cabrio S"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S700061",
+        "vin_to": "99-7S710000",
+        "remark": "997 Coupe"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S720061",
+        "vin_to": "99-7S730000",
+        "remark": "997 Coupe S"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S740061",
+        "vin_to": "99-7S745000",
+        "remark": "997 Targa"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S750061",
+        "vin_to": "99-7S755000",
+        "remark": "997 Targa S"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S710061",
+        "vin_to": "99-7S720000",
+        "remark": "997 Coupe (USA,CDN,MEX,BR)"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S730061",
+        "vin_to": "99-7S740000",
+        "remark": "997 Coupe S (USA,CDN,MEX,BR)"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S765061",
+        "vin_to": "99-7S770000",
+        "remark": "997 Cabrio (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S775061",
+        "vin_to": "99-7S780000",
+        "remark": "997 Cabrio S (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S745061",
+        "vin_to": "99-7S750000",
+        "remark": "997 Targa (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S755061",
+        "vin_to": "99-7S760000",
+        "remark": "997 Targa S (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S760061",
+        "vin_to": "99-8S765000",
+        "remark": "997 Cabrio"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S770061",
+        "vin_to": "99-8S775000",
+        "remark": "997 Cabrio S"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S700061",
+        "vin_to": "99-8S710000",
+        "remark": "997 Coupe"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S720061",
+        "vin_to": "99-8S730000",
+        "remark": "997 Coupe S"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S740061",
+        "vin_to": "99-8S745000",
+        "remark": "997 Targa"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S750061",
+        "vin_to": "99-8S755000",
+        "remark": "997 Targa S"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S710061",
+        "vin_to": "99-8S720000",
+        "remark": "997 Coupe (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S730061",
+        "vin_to": "99-8S740000",
+        "remark": "997 Coupe S (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S745061",
+        "vin_to": "99-8S750000",
+        "remark": "997 Targa (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S755061",
+        "vin_to": "99-8S760000",
+        "remark": "997 Targa S (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S765061",
+        "vin_to": "99-8S770000",
+        "remark": "997 Cabrio (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S775061",
+        "vin_to": "99-8S780000",
+        "remark": "997 Cabrio S (USA, CN, CDN, MEX, BR)"
+      }
+    ]
+  },
+  {
+    "id": "997-2Turbo-GT2RS_2010-2013",
+    "file": "997-2Turbo-GT2RS_2010-2013.sqlite",
+    "title": "Porsche 911 T / GT2RS 2",
+    "model": "997T10",
+    "bytes": 11952128,
+    "vinRanges": [
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS760061",
+        "vin_to": "99-AS766000",
+        "remark": "997 Turbo"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "A9-AS766061",
+        "vin_to": "A9-AS770000",
+        "remark": "997 Turbo (USA, CDN)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS770061",
+        "vin_to": "99-AS773000",
+        "remark": "997 Turbo Cabrio"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS766061",
+        "vin_to": "99-AS770000",
+        "remark": "997 Turbo (CN, MEX, BR, KOR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS773061",
+        "vin_to": "99-AS775000",
+        "remark": "997 Turbo Cabrio (CN, MEX, BR, KOR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "A9-AS773061",
+        "vin_to": "A9-AS775000",
+        "remark": "997 Turbo Cabrio (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS776061",
+        "vin_to": "99-BS778000",
+        "remark": "997 GT2 RS"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A9-BS778061",
+        "vin_to": "A9-BS780000",
+        "remark": "997 GT2 RS (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS760061",
+        "vin_to": "99-BS766000",
+        "remark": "997 Turbo"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A9-BS766061",
+        "vin_to": "A9-BS770000",
+        "remark": "997 Turbo (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS770061",
+        "vin_to": "99-BS773000",
+        "remark": "997 Turbo Cabrio"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS766061",
+        "vin_to": "99-BS770000",
+        "remark": "997 Turbo (CN, MEX, BR, KOR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS773061",
+        "vin_to": "99-BS776000",
+        "remark": "997 Turbo Cabrio (CN, MEX, BR, KOR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A9-BS773061",
+        "vin_to": "A9-BS776000",
+        "remark": "997 Turbo Cabrio (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS778061",
+        "vin_to": "99-BS780000",
+        "remark": "997 GT2 RS (CN, MEX, BR, KOR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS760061",
+        "vin_to": "99-CS766000",
+        "remark": "997 Turbo"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A9-CS766061",
+        "vin_to": "A9-CS770000",
+        "remark": "997 Turbo (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS770061",
+        "vin_to": "99-CS773000",
+        "remark": "997 Turbo Cabrio"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS766061",
+        "vin_to": "99-CS770000",
+        "remark": "997 Turbo (CN, MEX, BR, KOR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS773061",
+        "vin_to": "99-CS776000",
+        "remark": "997 Turbo Cabrio (CN, MEX, BR, KOR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A9-CS773061",
+        "vin_to": "A9-CS776000",
+        "remark": "997 Turbo Cabrio (USA, CDN)"
+      },
+      {
+        "model_year": 2013,
+        "vin_from": "99-DS760061",
+        "vin_to": "99-DS766000",
+        "remark": "997 Turbo"
+      },
+      {
+        "model_year": 2013,
+        "vin_from": "A9-DS766061",
+        "vin_to": "A9-DS770000",
+        "remark": "997 Turbo (USA, CDN)"
+      },
+      {
+        "model_year": 2013,
+        "vin_from": "99-DS770061",
+        "vin_to": "99-DS773000",
+        "remark": "997 Turbo Cabrio"
+      },
+      {
+        "model_year": 2013,
+        "vin_from": "99-DS766061",
+        "vin_to": "99-DS770000",
+        "remark": "997 Turbo (CN, MEX, BR, KOR)"
+      },
+      {
+        "model_year": 2013,
+        "vin_from": "99-DS773061",
+        "vin_to": "99-DS776000",
+        "remark": "997 Turbo Cabrio (CN, MEX, BR, KOR)"
+      },
+      {
+        "model_year": 2013,
+        "vin_from": "A9-CS773061",
+        "vin_to": "A9-CS776000",
+        "remark": "997 Turbo Cabrio (USA, CDN)"
+      }
+    ]
+  },
+  {
+    "id": "997-2_2009-2012",
+    "file": "997-2_2009-2012.sqlite",
+    "title": "Porsche 911 Carrera, 2.",
+    "model": "997-09",
+    "bytes": 10919936,
+    "vinRanges": [
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S735061",
+        "vin_to": "99-9S740000",
+        "remark": "997 Cabrio"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S745061",
+        "vin_to": "99-9S754000",
+        "remark": "997 Cabrio S"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S700061",
+        "vin_to": "99-9S7",
+        "remark": "6000 997 Coupe"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S710061",
+        "vin_to": "99-9S720000",
+        "remark": "997 Coupe S"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S725061",
+        "vin_to": "99-9S728000",
+        "remark": "997 Targa"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S730061",
+        "vin_to": "99-9S733000",
+        "remark": "997 Targa S"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S706061",
+        "vin_to": "99-9S710000",
+        "remark": "997 Coupe (USA,CDN,MEX,BR)"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S720061",
+        "vin_to": "99-9S730000",
+        "remark": "997 Coupe S (USA,CDN,MEX,BR)"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S740061",
+        "vin_to": "99-9S745000",
+        "remark": "997 Cabrio (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S754061",
+        "vin_to": "99-9S760000",
+        "remark": "997 Cabrio S (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S728061",
+        "vin_to": "99-9S730000",
+        "remark": "997 Targa (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S733061",
+        "vin_to": "99-9S735000",
+        "remark": "997 Targa S (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS735061",
+        "vin_to": "99-AS740000",
+        "remark": "997 Cabrio"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "A9-AS740061",
+        "vin_to": "A9-AS745000",
+        "remark": "997 Cabrio (USA, CDN)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS745061",
+        "vin_to": "99-AS754000",
+        "remark": "997 Cabrio S"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS700061",
+        "vin_to": "99-AS7",
+        "remark": "6000 997 Coupe"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "A9-AS706061",
+        "vin_to": "A9-AS710000",
+        "remark": "997 Coupe (USA, CDN)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS710061",
+        "vin_to": "99-AS720000",
+        "remark": "997 Coupe S"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS725061",
+        "vin_to": "99-AS728000",
+        "remark": "997 Targa"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "A9-AS728061",
+        "vin_to": "A9-AS730000",
+        "remark": "997 Targa (USA, CDN)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS730061",
+        "vin_to": "99-AS733000",
+        "remark": "997 Targa S"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS706061",
+        "vin_to": "99-AS710000",
+        "remark": "997 Coupe (KOR,CN,MEX,BR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS720061",
+        "vin_to": "99-AS725000",
+        "remark": "997 Coupe S (KOR,CN,MEX,BR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "A9-AS720061",
+        "vin_to": "A9-AS725000",
+        "remark": "997 Coupe S (USA,CDN)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS740061",
+        "vin_to": "99-AS745000",
+        "remark": "997 Cabrio (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS754061",
+        "vin_to": "99-AS760000",
+        "remark": "997 Cabrio S (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "A9-AS754061",
+        "vin_to": "A9-AS760000",
+        "remark": "997 Cabrio S (USA, CDN)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS728061",
+        "vin_to": "99-AS730000",
+        "remark": "997 Targa (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS733061",
+        "vin_to": "99-AS735000",
+        "remark": "997 Targa S (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "A9-AS733061",
+        "vin_to": "A9-AS735000",
+        "remark": "997 Targa S (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS735061",
+        "vin_to": "99-BS740000",
+        "remark": "997 Cabrio"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A9-BS740061",
+        "vin_to": "A9-BS745000",
+        "remark": "997 Cabrio (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS745061",
+        "vin_to": "99-BS754000",
+        "remark": "997 Cabrio S"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS700061",
+        "vin_to": "99-BS7",
+        "remark": "6000 997 Coupe"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A9-BS706061",
+        "vin_to": "A9-BS710000",
+        "remark": "997 Coupe (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS710061",
+        "vin_to": "99-BS720000",
+        "remark": "997 Coupe S"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS795061",
+        "vin_to": "99-BS795500",
+        "remark": "997 Speedster"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS725061",
+        "vin_to": "99-BS728000",
+        "remark": "997 Targa"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A9-BS728061",
+        "vin_to": "A9-BS730000",
+        "remark": "997 Targa (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS730061",
+        "vin_to": "99-BS733000",
+        "remark": "997 Targa S"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS706061",
+        "vin_to": "99-BS710000",
+        "remark": "997 Coupe (KOR,CN,MEX,BR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS720061",
+        "vin_to": "99-BS725000",
+        "remark": "997 Coupe S (KOR,CN,MEX,BR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A9-BS720061",
+        "vin_to": "A9-BS725000",
+        "remark": "997 Coupe S (USA,CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS740061",
+        "vin_to": "99-BS745000",
+        "remark": "997 Cabrio (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS754061",
+        "vin_to": "99-BS760000",
+        "remark": "997 Cabrio S (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A9-BS754061",
+        "vin_to": "A9-BS760000",
+        "remark": "997 Cabrio S (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS728061",
+        "vin_to": "99-BS730000",
+        "remark": "997 Targa (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS733061",
+        "vin_to": "99-BS735000",
+        "remark": "997 Targa S (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A9-BS733061",
+        "vin_to": "A9-BS735000",
+        "remark": "997 Targa S (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS795561",
+        "vin_to": "99-BS796000",
+        "remark": "997 Speedster (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A9-BS795561",
+        "vin_to": "A9-BS796000",
+        "remark": "997 Speedster (USA, (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS735061",
+        "vin_to": "99-CS740000",
+        "remark": "997 Cabrio"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A9-CS740061",
+        "vin_to": "A9-CS745000",
+        "remark": "997 Cabrio (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS745061",
+        "vin_to": "99-CS754000",
+        "remark": "997 Cabrio S"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS700061",
+        "vin_to": "99-CS7",
+        "remark": "6000 997 Coupe"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A9-CS706061",
+        "vin_to": "A9-CS710000",
+        "remark": "997 Coupe (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS710061",
+        "vin_to": "99-CS720000",
+        "remark": "997 Coupe S"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS725061",
+        "vin_to": "99-CS728000",
+        "remark": "997 Targa"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A9-CS728061",
+        "vin_to": "A9-CS730000",
+        "remark": "997 Targa (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS730061",
+        "vin_to": "99-CS733000",
+        "remark": "997 Targa S"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS706061",
+        "vin_to": "99-CS710000",
+        "remark": "997 Coupe (KOR,CN,MEX,BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS720061",
+        "vin_to": "99-CS725000",
+        "remark": "997 Coupe S (KOR,CN,MEX,BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A9-CS720061",
+        "vin_to": "A9-CS725000",
+        "remark": "997 Coupe S (USA,CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS740061",
+        "vin_to": "99-CS745000",
+        "remark": "997 Cabrio (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS754061",
+        "vin_to": "99-CS760000",
+        "remark": "997 Cabrio S (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A9-CS754061",
+        "vin_to": "A9-CS760000",
+        "remark": "997 Cabrio S (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS728061",
+        "vin_to": "99-CS730000",
+        "remark": "997 Targa (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS733061",
+        "vin_to": "99-CS735000",
+        "remark": "997 Targa S (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A9-CS733061",
+        "vin_to": "A9-CS735000",
+        "remark": "997 Targa S (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS786061",
+        "vin_to": "99-CS788000",
+        "remark": "997 Coupe Black Edition"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS790061",
+        "vin_to": "99-CS792000",
+        "remark": "997 Cabrio Black Edition"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS788061",
+        "vin_to": "99-CS790000",
+        "remark": "997 Coupe Black Edition KOR,CN,MEX,BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A9-CS788061",
+        "vin_to": "A9-CS790000",
+        "remark": "997 Coupe Black Edition (USA,CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "99-CS792061",
+        "vin_to": "99-CS794000",
+        "remark": "997 Cabrio Black Edition KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A9-CS792061",
+        "vin_to": "A9-CS794000",
+        "remark": "997 Cabrio Black Edition (USA, CDN)"
+      }
+    ]
+  },
+  {
+    "id": "997GT3-GT3RS_2007-2011",
+    "file": "997GT3-GT3RS_2007-2011.sqlite",
+    "title": "Porsche 997 GT3",
+    "model": "997G07",
+    "bytes": 8855552,
+    "vinRanges": [
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S790061",
+        "vin_to": "99-7S792000",
+        "remark": "997 Coupe GT3"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S794001",
+        "vin_to": "99-7S795000",
+        "remark": "997 Coupe GT3"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "99-7S792061",
+        "vin_to": "99-7S794000",
+        "remark": "997 Coup GT3 (USA,CDN,MEX,BR)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S790061",
+        "vin_to": "99-8S792000",
+        "remark": "997 Coupe GT3"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "99-8S792061",
+        "vin_to": "99-8S794000",
+        "remark": "997 Coup GT3 (USA,CDN,MEX,BR)"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S790061",
+        "vin_to": "99-9S792000",
+        "remark": "997 Coupe GT3"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9S790061",
+        "vin_to": "99-9S792000",
+        "remark": "997 Coup GT3 (USA,CDN,MEX,BR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS780061",
+        "vin_to": "99-AS783000",
+        "remark": "997 Coupe GT3"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "99-AS783061",
+        "vin_to": "99-AS785000",
+        "remark": "997 Coupe GT3 (MEX,BR,CN,KOR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "A9-AS783061",
+        "vin_to": "A9-AS785000",
+        "remark": "997 Coupe GT3 (USA,CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS780061",
+        "vin_to": "99-BS783000",
+        "remark": "997 Coupe GT3"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS780061",
+        "vin_to": "99-BS783000",
+        "remark": "997 Coupe GT3 RS 4.0l"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS783061",
+        "vin_to": "99-BS785000",
+        "remark": "997 Coupe GT3 (MEX,BR,CN,KOR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A9-BS783061",
+        "vin_to": "A9-BS785000",
+        "remark": "997 Coupe GT3 (USA,CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "99-BS783061",
+        "vin_to": "99-BS785000",
+        "remark": "997 Coupe GT3 RS 4.0l (MEX,BR,CN,KOR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A9-BS783061",
+        "vin_to": "A9-BS785000",
+        "remark": "997 Coupe GT3 RS 4.0l (USA,CDN)"
+      }
+    ]
+  },
+  {
+    "id": "Boxster(987-1)_2005-2008",
+    "file": "Boxster(987-1)_2005-2008.sqlite",
+    "title": "Porsche Boxster",
+    "model": "987 05",
+    "bytes": 6856704,
+    "vinRanges": [
+      {
+        "model_year": 2005,
+        "vin_from": "98-5S700061",
+        "vin_to": "98-5S710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2005,
+        "vin_from": "98-5U700061",
+        "vin_to": "98-5U710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2005,
+        "vin_from": "98-5S720061",
+        "vin_to": "98-5S730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2005,
+        "vin_from": "98-5U720061",
+        "vin_to": "98-5U730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2005,
+        "vin_from": "98-5S710061",
+        "vin_to": "98-5S720000",
+        "remark": "Boxster (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2005,
+        "vin_from": "98-5U710061",
+        "vin_to": "98-5U720000",
+        "remark": "Boxster (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2005,
+        "vin_from": "98-5S730061",
+        "vin_to": "98-5S740000",
+        "remark": "Boxster S (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2005,
+        "vin_from": "98-5U730061",
+        "vin_to": "98-5U740000",
+        "remark": "Boxster S (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "98-6S700061",
+        "vin_to": "98-6S710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "98-6U700061",
+        "vin_to": "98-6U710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "98-6S720061",
+        "vin_to": "98-6S730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "98-6U720061",
+        "vin_to": "98-6U730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "98-6S710061",
+        "vin_to": "98-6S720000",
+        "remark": "Boxster (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "98-6U710061",
+        "vin_to": "98-6U720000",
+        "remark": "Boxster (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "98-6S730061",
+        "vin_to": "98-6S740000",
+        "remark": "Boxster S (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2006,
+        "vin_from": "98-6U730061",
+        "vin_to": "98-6U740000",
+        "remark": "Boxster S (USA, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "98-7S700061",
+        "vin_to": "98-7S710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "98-7U700061",
+        "vin_to": "98-7U710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "98-7S720061",
+        "vin_to": "98-7S730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "98-7U720061",
+        "vin_to": "98-7U730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "98-7S710061",
+        "vin_to": "98-7S720000",
+        "remark": "Boxster (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "98-7U710061",
+        "vin_to": "98-7U720000",
+        "remark": "Boxster (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "98-7S730061",
+        "vin_to": "98-7S740000",
+        "remark": "Boxster S (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2007,
+        "vin_from": "98-7U730061",
+        "vin_to": "98-7U740000",
+        "remark": "Boxster S (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "98-8S700061",
+        "vin_to": "98-8S710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "98-8U700061",
+        "vin_to": "98-8U710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "98-8S720061",
+        "vin_to": "98-8S730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "98-8U720061",
+        "vin_to": "98-8U730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "98-8S710061",
+        "vin_to": "98-8S720000",
+        "remark": "Boxster (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "98-8U710061",
+        "vin_to": "98-8U720000",
+        "remark": "Boxster (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "98-8S730061",
+        "vin_to": "98-8S740000",
+        "remark": "Boxster S (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2008,
+        "vin_from": "98-8U730061",
+        "vin_to": "98-8U740000",
+        "remark": "Boxster S (USA, CN, CDN, MEX, BR)"
+      }
+    ]
+  },
+  {
+    "id": "Boxster(987-2)_2009-2012",
+    "file": "Boxster(987-2)_2009-2012.sqlite",
+    "title": "Porsche Boxster 2. Gene",
+    "model": "987209",
+    "bytes": 8163328,
+    "vinRanges": [
+      {
+        "model_year": 2009,
+        "vin_from": "98-9S700061",
+        "vin_to": "98-9S710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "98-9U700061",
+        "vin_to": "98-9U710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "98-9S720061",
+        "vin_to": "98-9S730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "99-9U720061",
+        "vin_to": "99-9U730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "98-9S710061",
+        "vin_to": "98-9S720000",
+        "remark": "Boxster (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "98-9U710061",
+        "vin_to": "98-9U720000",
+        "remark": "Boxster (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "98-9S730061",
+        "vin_to": "98-9S740000",
+        "remark": "Boxster S (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2009,
+        "vin_from": "98-9U730061",
+        "vin_to": "98-9U740000",
+        "remark": "Boxster S (USA, CN, CDN, MEX, BR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "98-AS700061",
+        "vin_to": "98-AS710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "98-AU700061",
+        "vin_to": "98-AU710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "A8-AS710061",
+        "vin_to": "A8-AS720000",
+        "remark": "Boxster (USA, CDN)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "A8-AU710061",
+        "vin_to": "A8-AU720000",
+        "remark": "Boxster (USA, CDN)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "98-AS720061",
+        "vin_to": "98-AS730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "98-AU720061",
+        "vin_to": "98-AU730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "A8-AS730061",
+        "vin_to": "A8-AS740000",
+        "remark": "Boxster S (USA, CDN)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "A8-AU730061",
+        "vin_to": "A8-AU740000",
+        "remark": "Boxster S (USA, CDN)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "98-AS710061",
+        "vin_to": "98-AS720000",
+        "remark": "Boxster (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "98-AU710061",
+        "vin_to": "98-AU720000",
+        "remark": "Boxster (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "98-AS730061",
+        "vin_to": "98-AS740000",
+        "remark": "Boxster S (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2010,
+        "vin_from": "98-AU730061",
+        "vin_to": "98-AU740000",
+        "remark": "Boxster S (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "98-BS700061",
+        "vin_to": "98-BS710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "98-BU700061",
+        "vin_to": "98-BU710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A8-BS710061",
+        "vin_to": "A8-BS720000",
+        "remark": "Boxster (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A8-BU710061",
+        "vin_to": "A8-BU720000",
+        "remark": "Boxster (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "98-BS720061",
+        "vin_to": "98-BS730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "98-BU720061",
+        "vin_to": "98-BU730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A8-BS730061",
+        "vin_to": "A8-BS740000",
+        "remark": "Boxster S (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A8-BU730061",
+        "vin_to": "A8-BU740000",
+        "remark": "Boxster S (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "98-BS740061",
+        "vin_to": "98-BS745000",
+        "remark": "Boxster Spyder"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "98-BU740061",
+        "vin_to": "98-BU745000",
+        "remark": "Boxster Spyder"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "98-BS710061",
+        "vin_to": "98-BS720000",
+        "remark": "Boxster (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "98-BU710061",
+        "vin_to": "98-BU720000",
+        "remark": "Boxster (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "98-BS730061",
+        "vin_to": "98-BS740000",
+        "remark": "Boxster S (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "98-BU730061",
+        "vin_to": "98-BU740000",
+        "remark": "Boxster S (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "98-BS745061",
+        "vin_to": "98-BS750000",
+        "remark": "Boxster Spyder (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "98-BU745061",
+        "vin_to": "98-BU750000",
+        "remark": "Boxster Spyder (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A8-BS745061",
+        "vin_to": "A8-BS750000",
+        "remark": "Boxster Spyder (USA, CDN)"
+      },
+      {
+        "model_year": 2011,
+        "vin_from": "A8-BU745061",
+        "vin_to": "A8-BU750000",
+        "remark": "Boxster Spyder (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CS700061",
+        "vin_to": "98-CS710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CU700061",
+        "vin_to": "98-CU710000",
+        "remark": "Boxster"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A8-CS710061",
+        "vin_to": "A8-CS720000",
+        "remark": "Boxster (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A8-CU710061",
+        "vin_to": "A8-CU720000",
+        "remark": "Boxster (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CS720061",
+        "vin_to": "98-CS730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CU720061",
+        "vin_to": "98-CU730000",
+        "remark": "Boxster S"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A8-CS730061",
+        "vin_to": "A8-CS740000",
+        "remark": "Boxster S (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A8-CU730061",
+        "vin_to": "A8-CU740000",
+        "remark": "Boxster S (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CS740061",
+        "vin_to": "98-CS745000",
+        "remark": "Boxster Spyder"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CU740061",
+        "vin_to": "98-CU745000",
+        "remark": "Boxster Spyder"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CS796061",
+        "vin_to": "98-CS798000",
+        "remark": "Boxster S Black Edition"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CU796061",
+        "vin_to": "98-CU798000",
+        "remark": "Boxster S Black Edition"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CS710061",
+        "vin_to": "98-CS720000",
+        "remark": "Boxster (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CU710061",
+        "vin_to": "98-CU720000",
+        "remark": "Boxster (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CS730061",
+        "vin_to": "98-CS740000",
+        "remark": "Boxster S (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CU730061",
+        "vin_to": "98-CU740000",
+        "remark": "Boxster S (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CS745061",
+        "vin_to": "98-CS750000",
+        "remark": "Boxster Spyder (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CU745061",
+        "vin_to": "98-CU750000",
+        "remark": "Boxster Spyder (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A8-CS745061",
+        "vin_to": "A8-CS750000",
+        "remark": "Boxster Spyder (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A8-CU745061",
+        "vin_to": "A8-CU750000",
+        "remark": "Boxster Spyder (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CS795061",
+        "vin_to": "98-CS796000",
+        "remark": "Boxster Black Edition (CN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CU795061",
+        "vin_to": "98-CU796000",
+        "remark": "Boxster Black Edition (CN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CS798061",
+        "vin_to": "98-CS799999",
+        "remark": "Boxster S Black Edition (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "98-CU798061",
+        "vin_to": "98-CU799999",
+        "remark": "Boxster S Black Edition (KOR, CN, MEX, BR)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A8-CS798061",
+        "vin_to": "A8-CS799999",
+        "remark": "Boxster S Black Edition (USA, CDN)"
+      },
+      {
+        "model_year": 2012,
+        "vin_from": "A8-CU798061",
+        "vin_to": "A8-CU799999",
+        "remark": "Boxster S Black Edition (USA, CDN)"
+      }
+    ]
+  },
+  {
+    "id": "Cayenne-955(E1)_2003-2006",
+    "file": "Cayenne-955(E1)_2003-2006.sqlite",
+    "title": "Porsche Cayenne",
+    "model": "9PA 03",
+    "bytes": 10375168,
+    "vinRanges": [
+      {
+        "model_year": 3,
+        "vin_from": "9P3LA00061",
+        "vin_to": "9P3LA10000",
+        "remark": "CAYENNE — M02.2Y 184 KW"
+      },
+      {
+        "model_year": 3,
+        "vin_from": "9P3LA40061",
+        "vin_to": "9P3LA50000",
+        "remark": "CAYENNE S — M48.00 250 KW"
+      },
+      {
+        "model_year": 3,
+        "vin_from": "9P3LA80061",
+        "vin_to": "9P3LA90000",
+        "remark": "CAYENNE TURBO — M48.50 331 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "9P4LA00061",
+        "vin_to": "9P4LA10000",
+        "remark": "CAYENNE — M02.2Y 184 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "9P4LA20061",
+        "vin_to": "9P4LA30000",
+        "remark": "CAYENNE (USA,CDN,MEX,BR) — M02.2Y 184 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "9P4LA40061",
+        "vin_to": "9P4LA60000",
+        "remark": "CAYENNE S — M48.00 250 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "9P4LA60061",
+        "vin_to": "9P4LA80000",
+        "remark": "CAYENNE S (USA,CDN,MEX,BR) — M48.00 250 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "9P4LA80061",
+        "vin_to": "9P4LA90000",
+        "remark": "CAYENNE TURBO — M48.50 331 KW"
+      },
+      {
+        "model_year": 4,
+        "vin_from": "9P4LA90061",
+        "vin_to": "9P4LA99999",
+        "remark": "CAYENNE TURBO (USA,CDN,MEX,BR) — M48.50 331 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "9P5LA00061",
+        "vin_to": "9P5LA10000",
+        "remark": "CAYENNE — M02.2Y 184 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "9P5LA20061",
+        "vin_to": "9P5LA30000",
+        "remark": "CAYENNE (USA,CDN,MEX,BR) — M02.2Y 184 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "9P5LA40061",
+        "vin_to": "9P5LA60000",
+        "remark": "CAYENNE S — M48.00 250 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "9P5LA60061",
+        "vin_to": "9P5LA80000",
+        "remark": "CAYENNE S (USA,CDN,MEX,BR) — M48.00 250 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "9P5LA80061",
+        "vin_to": "9P5LA90000",
+        "remark": "CAYENNE TURBO — M48.50 331 KW"
+      },
+      {
+        "model_year": 5,
+        "vin_from": "9P5LA90061",
+        "vin_to": "9P5LA99999",
+        "remark": "CAYENNE TURBO (USA,CDN,MEX,BR) — M48.50 331 KW"
+      },
+      {
+        "model_year": 6,
+        "vin_from": "9P6LA00061",
+        "vin_to": "9P6LA10000",
+        "remark": "CAYENNE — M02.2Y 184 KW"
+      },
+      {
+        "model_year": 6,
+        "vin_from": "9P6LA20061",
+        "vin_to": "9P6LA40000",
+        "remark": "CAYENNE (USA,CDN,MEX,BR,CN) — M02.2Y 184 KW"
+      },
+      {
+        "model_year": 6,
+        "vin_from": "9P6LA40061",
+        "vin_to": "9P6LA60000",
+        "remark": "CAYENNE S — M48.00 250 KW"
+      },
+      {
+        "model_year": 6,
+        "vin_from": "9P6LA60061",
+        "vin_to": "9P6LA80000",
+        "remark": "CAYENNE S (USA,CDN,MEX,BR,CN) — M48.00 250 KW"
+      },
+      {
+        "model_year": 6,
+        "vin_from": "9P6LA80061",
+        "vin_to": "9P6LA90000",
+        "remark": "CAYENNE TURBO — M48.50 331 KW"
+      },
+      {
+        "model_year": 6,
+        "vin_from": "9P6LA90061",
+        "vin_to": "9P6LA99999",
+        "remark": "CAYENNE T. (USA,CDN,MEX,BR,CN) — M48.50 331 KW"
+      }
+    ]
+  }
+]
