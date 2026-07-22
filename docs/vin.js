@@ -113,10 +113,12 @@
   }
 
   // Split a compact chassis number into { prefix, serial } where serial is the
-  // trailing run of digits. Dashes are dropped so a stored "99-5S750061" and a
-  // reconstructed "99-5S750061" key identically.
+  // trailing run of digits. Dashes AND spaces are dropped so a stored "99-5S750061"
+  // and a reconstructed "99-5S750061" key identically, and an old catalog's spaced
+  // "93077 0001" keys the same as a glued "930770001" the owner might type. (Matches
+  // appl.js serialKey, which strips the same set.)
   function chassisKey(s) {
-    const clean = String(s || '').replace(/-/g, '').toUpperCase();
+    const clean = String(s || '').replace(/[\s-]/g, '').toUpperCase();
     const m = clean.match(/^(.*?)(\d+)$/);
     if (!m) return null;
     return { prefix: m[1], serial: parseInt(m[2], 10) };
@@ -124,6 +126,10 @@
 
   // Find every vin_range row whose prefix matches and whose [from,to] serial span
   // contains the decoded chassis. Rows: { from, to, ...passthrough }.
+  //
+  // An empty `to` means "from this serial onward" — the open-ended form the old
+  // catalogs use (911 Turbo lists only a start per type). Modern ranges always
+  // carry both bounds, so this widening never touches the 17-char VIN path.
   function matchChassis(chassis, rows) {
     const key = chassisKey(chassis);
     if (!key) return [];
@@ -132,14 +138,30 @@
       const fk = chassisKey(r.from);
       if (!fk || fk.prefix !== key.prefix) continue;
       const tk = chassisKey(r.to);
-      const hi = (tk && tk.prefix === key.prefix) ? tk.serial : fk.serial;
+      const hi = (tk && tk.prefix === key.prefix) ? tk.serial
+               : (r.to == null || String(r.to).trim() === '') ? Infinity
+               : fk.serial;
       if (key.serial >= fk.serial && key.serial <= hi) out.push(r);
     }
     return out;
   }
 
-  const VIN = { decodeVin, chassisKey, matchChassis, parseMarket, variantFacets,
-                YEAR_CODE, FAMILY, MARKET_NAMES };
+  // The full four-digit model year for an old catalog's two-digit `vin_range`
+  // value, using the catalog's own century pivot (its Model-life start year).
+  // "05" against a 1998 pivot is 2005, "98" is 1998; a value already four digits
+  // (modern catalogs) is returned unchanged.
+  function expandYear(modelYear, yearPivot) {
+    const yy = parseInt(modelYear, 10);
+    if (!Number.isFinite(yy) || yy >= 100) return Number.isFinite(yy) ? yy : null;
+    const pivot = parseInt(yearPivot, 10);
+    if (!Number.isFinite(pivot)) return yy;
+    let full = Math.floor(pivot / 100) * 100 + yy;
+    while (full < pivot) full += 100;
+    return full;
+  }
+
+  const VIN = { decodeVin, chassisKey, matchChassis, expandYear, parseMarket,
+                variantFacets, YEAR_CODE, FAMILY, MARKET_NAMES };
   if (typeof module !== 'undefined' && module.exports) module.exports = VIN;
   else root.VIN = VIN;
 })(typeof self !== 'undefined' ? self : this);

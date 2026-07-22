@@ -281,11 +281,12 @@
 
           <div class="modal-body">
             <!-- VIN-first -->
-            <p class="lead-msg">Decode a VIN to prefill, or set the spec manually below.</p>
+            <p class="lead-msg">Decode a VIN — or, for a pre-VIN car (356/911/996/Cayenne),
+               its chassis number — to prefill, or set the spec manually below.</p>
             <div class="frow">
-              <label class="flabel">VIN</label>
+              <label class="flabel">VIN / chassis</label>
               <input type="text" class="inp mono" x-model="form.vin" maxlength="17"
-                     placeholder="17-char VIN (optional)" @keydown.enter="decodeVin()"
+                     placeholder="17-char VIN or chassis no. (optional)" @keydown.enter="decodeVin()"
                      style="flex:1;min-width:12rem">
               <button class="btn" @click="decodeVin()" :disabled="!SQL">Decode</button>
             </div>
@@ -502,7 +503,7 @@
         pendingCatalog: '',   // preselect for "+ New vehicle for this catalog"
         pendingReturn:  '',
         // Facet vocabularies for the selected catalog — see onCatalogChange.
-        opts:      { engines: [], gearboxes: [], lines: [], bodies: [], markets: [] },
+        opts:      { engines: [], gearboxes: [], lines: [], bodies: [], drive: [], trim: [], markets: [] },
         _engineNums:  [],     // engine serial ranges, for deriveSpec
         _transmCodes: [],
         _derived:  {},        // field -> the value deriveSpec last put there
@@ -626,18 +627,22 @@
             if (!c.installed) {
               // Not downloaded yet — match against the manifest's vin_range rows so a
               // VIN can select a bundled catalog before its (multi-MB) DB is fetched.
+              // dialect/year_pivot ride along so an old two-digit year can be expanded.
               const b = (this._bundled || []).find(x => x.id === c.id);
               for (const r of (b?.vinRanges ?? []))
                 idx.push({ catalogId: c.id, modelYear: r.model_year,
-                           from: r.vin_from, to: r.vin_to, remark: r.remark });
+                           from: r.vin_from, to: r.vin_to, remark: r.remark,
+                           dialect: b?.dialect || 'modern', yearPivot: b?.year_pivot });
               continue;
             }
             let db = null;
             try {
               db = await this._openCatalogDb(c.id);
+              const [dialect, pivot] = db.exec('SELECT dialect, year_pivot FROM catalog LIMIT 1')[0]?.values?.[0] ?? ['modern', null];
               const res = db.exec('SELECT model_year, vin_from, vin_to, remark FROM vin_range');
               for (const [modelYear, from, to, remark] of (res[0]?.values ?? []))
-                idx.push({ catalogId: c.id, modelYear, from, to, remark });
+                idx.push({ catalogId: c.id, modelYear, from, to, remark,
+                           dialect: dialect || 'modern', yearPivot: pivot });
             } catch {} finally { if (db) db.close(); }
           }
           this._vinIndex = idx;
@@ -645,27 +650,52 @@
         },
 
         async decodeVin() {
-          const dec = VIN.decodeVin(this.form.vin);
-          if (!dec.ok) { this.vinMsg = dec.error; this.vinOk = false; return; }
-          const idx     = await this._buildVinIndex();
-          const matches = dec.chassis ? VIN.matchChassis(dec.chassis, idx) : [];
-          const fam = (dec.family || 'unknown').toUpperCase();
-          const my  = dec.modelYear ? `MJ ${dec.modelYear}` : (dec.yearChar || '?');
+          const raw = (this.form.vin || '').trim().toUpperCase();
+          const idx = await this._buildVinIndex();
+          const dec = VIN.decodeVin(raw);
+          if (dec.ok) {
+            // Modern 17-char VIN: reconstruct the compact chassis and match it.
+            const matches = dec.chassis ? VIN.matchChassis(dec.chassis, idx) : [];
+            const my = dec.modelYear ? `MJ ${dec.modelYear}` : (dec.yearChar || '?');
+            return this._applyDecode(matches, idx, {
+              family: dec.family, fam: (dec.family || 'unknown').toUpperCase(),
+              myLabel: my, modelYear: dec.modelYear, chassis: dec.chassis });
+          }
+          // Not a 17-char VIN — the old catalogs (356/911/996/Cayenne) predate the
+          // 17-char VIN, so their chassis number is typed directly. Match it as-is
+          // against the old-dialect ranges (no reconstruction: the catalog stores
+          // the number exactly as stamped).
+          const chassis = raw.replace(/[\s-]/g, '');
+          if (!/\d{3,}/.test(chassis)) { this.vinMsg = dec.error; this.vinOk = false; return; }
+          const matches = VIN.matchChassis(chassis, idx.filter(r => r.dialect === 'old'));
+          // The tightest cut-in wins: for a type-glued number (911 "93077 0001") the
+          // greatest `from` at or below the serial is the car's own type/year block.
+          matches.sort((a, b) =>
+            ((VIN.chassisKey(b.from) || {}).serial || 0) - ((VIN.chassisKey(a.from) || {}).serial || 0));
+          return this._applyDecode(matches, idx, {
+            family: null, fam: '', myLabel: '', modelYear: null, chassis });
+        },
+
+        // Shared tail of both decode paths: select the matched catalog and prefill
+        // the fields the matched range names, blank ones only.
+        async _applyDecode(matches, idx, ctx) {
           if (!matches.length) {
-            this.vinMsg = `${fam} · ${my} — no catalog match`;
+            this.vinMsg = `${[ctx.fam, ctx.myLabel].filter(Boolean).join(' · ') || (ctx.chassis || '?')} — no catalog match`;
             this.vinOk  = false;
-            if (dec.modelYear) this.form.vfYear = String(dec.modelYear);
+            if (ctx.modelYear) this.form.vfYear = String(ctx.modelYear);
             return;
           }
           const m  = matches[0];
           const pm = VIN.parseMarket(m.remark);
+          const yr = VIN.expandYear(m.modelYear, m.yearPivot);
           this.form.catalogId = m.catalogId;
-          this.form.decoded = { family: dec.family, variant: pm.variant,
-                                marketLabel: pm.marketLabel, modelYear: dec.modelYear };
-          if (m.modelYear) this.form.vfYear = String(m.modelYear);
-          if (!this.form.nickname) this.form.nickname = [fam, pm.variant].filter(Boolean).join(' ');
+          this.form.decoded = { family: ctx.family, variant: pm.variant,
+                                marketLabel: pm.marketLabel, modelYear: yr || ctx.modelYear };
+          if (yr) this.form.vfYear = String(yr);
+          if (!this.form.nickname) this.form.nickname = [ctx.fam, pm.variant].filter(Boolean).join(' ');
           const extra = matches.length > 1 ? ` (+${matches.length - 1})` : '';
-          this.vinMsg = `${fam} · ${my} · ${pm.variant || m.remark || ''}${pm.marketLabel ? ' · ' + pm.marketLabel : ''}${extra} → ${this.catalogLabel(m.catalogId)}`;
+          const head  = [ctx.fam, ctx.myLabel, pm.variant || m.remark || ''].filter(Boolean).join(' · ');
+          this.vinMsg = `${head}${pm.marketLabel ? ' · ' + pm.marketLabel : ''}${extra} → ${this.catalogLabel(m.catalogId)}`;
           this.vinOk  = true;
           await this.onCatalogChange();   // the facet vocabularies the remark is read against
 
@@ -677,9 +707,9 @@
           if (!this.form.vfLine   && f.line)   this.form.vfLine   = f.line;
           if (!this.form.vfBody   && f.body)   this.form.vfBody   = f.body;
           if (!this.form.vfMarket && f.market) this.form.vfMarket = f.market;
-          // The chassis number the VIN reconstructs is exactly the one the parts
-          // pages print their changeovers against.
-          if (!this.form.vfChassis && dec.chassis) this.form.vfChassis = dec.chassis;
+          // The chassis number is exactly the one the parts pages print changeovers
+          // against — for old catalogs it is what the user typed.
+          if (!this.form.vfChassis && ctx.chassis) this.form.vfChassis = ctx.chassis;
         },
 
         // ── Catalog facts for the selected catalog ─────────────────

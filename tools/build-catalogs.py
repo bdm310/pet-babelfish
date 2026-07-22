@@ -27,7 +27,8 @@ def meta(db_bytes_or_path, is_path):
         tf.write(db_bytes_or_path); tf.close()
         con = sqlite3.connect(tf.name)
     try:
-        title, model = con.execute('SELECT title, model FROM catalog LIMIT 1').fetchone()
+        title, model, dialect, pivot = con.execute(
+            'SELECT title, model, dialect, year_pivot FROM catalog LIMIT 1').fetchone()
         vr = [dict(model_year=my, vin_from=vf, vin_to=vt, remark=rm)
               for (my, vf, vt, rm) in
               con.execute('SELECT model_year, vin_from, vin_to, remark FROM vin_range')]
@@ -35,7 +36,7 @@ def meta(db_bytes_or_path, is_path):
         con.close()
         if not is_path:
             os.unlink(tf.name)
-    return title or '', model or '', vr
+    return title or '', model or '', dialect or 'modern', pivot, vr
 
 
 def from_zip(path):
@@ -64,16 +65,16 @@ def main():
     src = from_dir(args.from_dir) if args.from_dir else from_zip(args.zip)
     manifest = []
     for cid, blob, is_path in src:
-        title, model, vr = meta(blob, is_path)
+        title, model, dialect, pivot, vr = meta(blob, is_path)
         size = os.path.getsize(os.path.join(OUTDIR, cid + '.sqlite'))
         manifest.append(dict(id=cid, file=cid + '.sqlite', title=title, model=model,
-                             bytes=size, vinRanges=vr))
+                             dialect=dialect, year_pivot=pivot, bytes=size, vinRanges=vr))
     manifest.sort(key=lambda m: m['id'])
     with open(os.path.join(OUTDIR, 'manifest.json'), 'w', encoding='utf-8') as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False); f.write('\n')
 
     total = sum(m['bytes'] for m in manifest)
-    print(f'{len(manifest)} catalogs, {total/1e6:.1f} MB → {OUTDIR}')
+    print(f'{len(manifest)} catalogs, {total/1e6:.1f} MB -> {OUTDIR}')
     for m in manifest:
         print(f"  {m['id']:34} {m['title']} - {m['model']}  ({len(m['vinRanges'])} vin ranges)")
 

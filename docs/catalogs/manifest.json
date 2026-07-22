@@ -4,6 +4,8 @@
     "file": "356_356A_1950-1959.sqlite",
     "title": "Porsche 356/356A",
     "model": "356 50",
+    "dialect": "old",
+    "year_pivot": 1950,
     "bytes": 4005888,
     "vinRanges": [
       {
@@ -865,6 +867,8 @@
     "file": "911Turbo_1975-1977.sqlite",
     "title": "Porsche 911 Turbo/GT2",
     "model": "911 75",
+    "dialect": "old",
+    "year_pivot": 1975,
     "bytes": 4308992,
     "vinRanges": [
       {
@@ -916,6 +920,8 @@
     "file": "996GT3-GT3RS_1999-2005.sqlite",
     "title": "Porsche 996 GT3",
     "model": "996 99",
+    "dialect": "old",
+    "year_pivot": 1999,
     "bytes": 4444160,
     "vinRanges": [
       {
@@ -961,6 +967,8 @@
     "file": "996Turbo-GT2_2001-2005.sqlite",
     "title": "Porsche 911 Turbo/GT2",
     "model": "996 01",
+    "dialect": "old",
+    "year_pivot": 2001,
     "bytes": 6987776,
     "vinRanges": [
       {
@@ -1108,6 +1116,8 @@
     "file": "996_1998-2005.sqlite",
     "title": "Porsche 911 Carrera",
     "model": "996 98",
+    "dialect": "old",
+    "year_pivot": 1998,
     "bytes": 7995392,
     "vinRanges": [
       {
@@ -1459,6 +1469,8 @@
     "file": "997-1Turbo-GT2_2007-2009.sqlite",
     "title": "Porsche 911 Turbo/GT2",
     "model": "997T07",
+    "dialect": "modern",
+    "year_pivot": 2007,
     "bytes": 9228288,
     "vinRanges": [
       {
@@ -1576,6 +1588,8 @@
     "file": "997-1_2005-2008.sqlite",
     "title": "Porsche 911 Carrera",
     "model": "997 05",
+    "dialect": "modern",
+    "year_pivot": 2005,
     "bytes": 8331264,
     "vinRanges": [
       {
@@ -1837,6 +1851,8 @@
     "file": "997-2Turbo-GT2RS_2010-2013.sqlite",
     "title": "Porsche 911 T / GT2RS 2",
     "model": "997T10",
+    "dialect": "modern",
+    "year_pivot": 2010,
     "bytes": 11952128,
     "vinRanges": [
       {
@@ -2008,6 +2024,8 @@
     "file": "997-2_2009-2012.sqlite",
     "title": "Porsche 911 Carrera, 2.",
     "model": "997-09",
+    "dialect": "modern",
+    "year_pivot": 2009,
     "bytes": 10919936,
     "vinRanges": [
       {
@@ -2467,6 +2485,8 @@
     "file": "997GT3-GT3RS_2007-2011.sqlite",
     "title": "Porsche 997 GT3",
     "model": "997G07",
+    "dialect": "modern",
+    "year_pivot": 2007,
     "bytes": 8855552,
     "vinRanges": [
       {
@@ -2572,6 +2592,8 @@
     "file": "Boxster(987-1)_2005-2008.sqlite",
     "title": "Porsche Boxster",
     "model": "987 05",
+    "dialect": "modern",
+    "year_pivot": 2005,
     "bytes": 6856704,
     "vinRanges": [
       {
@@ -2773,6 +2795,8 @@
     "file": "Boxster(987-2)_2009-2012.sqlite",
     "title": "Porsche Boxster 2. Gene",
     "model": "987209",
+    "dialect": "modern",
+    "year_pivot": 2009,
     "bytes": 8163328,
     "vinRanges": [
       {
@@ -3166,6 +3190,8 @@
     "file": "Cayenne-955(E1)_2003-2006.sqlite",
     "title": "Porsche Cayenne",
     "model": "9PA 03",
+    "dialect": "old",
+    "year_pivot": 2003,
     "bytes": 10375168,
     "vinRanges": [
       {
