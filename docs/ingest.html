@@ -2,99 +2,201 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Ingest — pet-babelfish</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ingest a catalog — pet-babelfish</title>
   <script>(function(){var t=localStorage.getItem('pb-theme');if(t)document.documentElement.dataset.theme=t;})()</script>
   <link rel="stylesheet" href="theme.css">
   <style>
     * { box-sizing: border-box; }
-    body { font-family: monospace; margin: 0; background: var(--bg); color: var(--text);
-           display: grid; grid-template-rows: auto 1fr; height: 100vh; }
-    header { padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); display: flex;
-             gap: 1rem; align-items: center; flex-wrap: wrap; }
-    h1 { color: var(--text-hi); font-size: 1rem; margin: 0; }
-    a { color: var(--accent); text-decoration: none; font-size: 0.8rem; }
-    .main { display: grid; grid-template-columns: 340px 1fr; height: 100%; overflow: hidden; }
-    #sidebar { border-right: 1px solid var(--border); padding: 1rem; overflow-y: auto; display: flex;
-               flex-direction: column; gap: 0.75rem; }
-    label { font-size: 0.8rem; color: var(--text3); display: block; margin-bottom: 0.2rem; }
-    input[type=text], input[type=file] {
-      width: 100%; background: var(--bg2); color: var(--text); border: 1px solid var(--border3);
-      padding: 0.4rem 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.85rem;
+    body {
+      font-family: var(--font-ui); margin: 0;
+      background: var(--bg); color: var(--text);
+      display: grid; grid-template-rows: auto 1fr; height: 100vh;
     }
-    input[type=file] { padding: 0.3rem; cursor: pointer; }
-    #dropzone { border: 2px dashed var(--border3); border-radius: 6px; padding: 1rem;
-                text-align: center; color: var(--text3); cursor: pointer; font-size: 0.85rem;
-                transition: border-color 0.15s; }
+
+    /* ── Layout ─────────────────────────────────────────────── */
+    .main {
+      display: grid; grid-template-columns: minmax(300px, 380px) 1fr;
+      min-height: 0; overflow: hidden;
+    }
+    .panel { padding: var(--sp-4); overflow-y: auto; }
+    .form-panel {
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: var(--sp-4);
+    }
+    .run-panel { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+    /* Stack into one column on narrow screens */
+    @media (max-width: 760px) {
+      body { height: auto; min-height: 100vh; }
+      .main { grid-template-columns: 1fr; overflow: visible; }
+      .form-panel { border-right: none; border-bottom: 1px solid var(--border); }
+    }
+
+    /* ── Form field groups ──────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: var(--sp-1); }
+    .field > label { font-size: 0.82rem; color: var(--text2); font-weight: 600; }
+    .field .inp { width: 100%; }
+    .sub-hint { font-size: 0.72rem; line-height: 1.4; }
+
+    /* ── Dropzone ───────────────────────────────────────────── */
+    #dropzone {
+      border: 2px dashed var(--border3); border-radius: var(--radius-lg);
+      padding: var(--sp-5) var(--sp-4); text-align: center; color: var(--text3);
+      cursor: pointer; font-size: 0.85rem; transition: border-color 0.15s, color 0.15s;
+    }
+    #dropzone:hover { border-color: var(--accent); }
     #dropzone.over, #dropzone.loaded { border-color: var(--accent); color: var(--accent); }
-    button.ingest { width: 100%; background: var(--accent-btn); color: var(--accent); border: 1px solid var(--accent);
-             padding: 0.5rem; border-radius: 4px; cursor: pointer; font-family: monospace;
-             font-size: 0.9rem; font-weight: bold; }
-    button.ingest:hover:not(:disabled) { background: var(--accent-btn-h); }
-    button.ingest:disabled { opacity: 0.4; cursor: not-allowed; }
-    #progressWrap { display: none; }
-    progress { width: 100%; height: 6px; accent-color: var(--accent); }
-    #progressLabel { font-size: 0.78rem; color: var(--text3); margin-top: 0.2rem; }
-    #log { flex: 1; overflow-y: auto; padding: 1rem; font-size: 0.78rem; line-height: 1.6; }
+    #dropzone .dz-hint { font-size: 0.72rem; color: var(--text4); margin-top: var(--sp-1); }
+    #dropzone.loaded .dz-hint { color: var(--accent); }
+
+    /* ── Ingest button (full width) ─────────────────────────── */
+    #ingestBtn { width: 100%; justify-content: center; font-weight: 600; padding: 0.55rem; }
+
+    /* ── Advanced disclosure ────────────────────────────────── */
+    details.advanced { border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+    details.advanced > summary,
+    #logDetails > summary {
+      cursor: pointer; font-size: 0.82rem; color: var(--text3);
+      list-style: none; user-select: none; padding: 0.15rem 0;
+    }
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary::before { content: '▸ '; color: var(--text4); }
+    details[open] > summary::before { content: '▾ '; }
+    details.advanced > summary:hover, #logDetails > summary:hover { color: var(--accent); }
+    details.advanced .stack { margin-top: var(--sp-3); }
+    .check-row {
+      display: flex; align-items: flex-start; gap: var(--sp-2);
+      font-size: 0.82rem; color: var(--text2); cursor: pointer;
+    }
+    .check-row input { margin-top: 0.15rem; }
+
+    /* ── Run panel: status / stepper / progress ─────────────── */
+    #progressWrap { display: none; flex-direction: column; gap: var(--sp-3); }
+    .status-line { font-size: 1.05rem; color: var(--text-hi); font-weight: 600; }
+
+    .stepper { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+    .step { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text4); }
+    .step .dot {
+      width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border3);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 0.62rem; font-family: var(--font-mono); color: var(--text4);
+    }
+    .step.active { color: var(--text-hi); font-weight: 600; }
+    .step.active .dot { border-color: var(--accent); color: var(--accent); }
+    .step.done { color: var(--accent); }
+    .step.done .dot { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+    progress { width: 100%; height: 8px; accent-color: var(--accent); border-radius: 4px; }
+    #progressLabel { font-size: 0.78rem; color: var(--text3); }
+
+    #idleHint { font-size: 0.85rem; line-height: 1.5; }
+
+    /* ── Result / CTAs ──────────────────────────────────────── */
+    #result { display: none; flex-direction: column; gap: var(--sp-3); }
+    .stats-row { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+    .stat {
+      display: inline-block; background: var(--bg2); border: 1px solid var(--border2);
+      border-radius: 3px; padding: 0.15rem 0.45rem; font-size: 0.78rem;
+      font-family: var(--font-mono);
+    }
+    .stat.ok { border-color: var(--accent-bd); color: var(--accent); background: var(--accent-bg2); }
+    .cta-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+    .cta-row .btn { padding: 0.45rem 0.8rem; font-size: 0.85rem; }
+
+    /* ── Log (behind Details) ───────────────────────────────── */
+    #logDetails { border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+    #log {
+      margin-top: var(--sp-2); max-height: 22rem; overflow-y: auto;
+      font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.6;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--bg4); padding: var(--sp-2) var(--sp-3);
+    }
     .log-line { padding: 0.1rem 0; border-bottom: 1px solid var(--row-border); }
+    .log-line:last-child { border-bottom: none; }
     .log-line.ok   { color: var(--accent); }
     .log-line.err  { color: var(--err); }
     .log-line.info { color: var(--text2); }
-    .stat { display: inline-block; background: var(--bg2); border: 1px solid var(--border2);
-            border-radius: 3px; padding: 0.15rem 0.4rem; margin: 0.1rem; font-size: 0.78rem; }
-    .stat.ok { border-color: var(--accent); color: var(--accent); }
-    #result { display: none; margin-top: 0.5rem; }
-    hr { border: none; border-top: 1px solid var(--border); margin: 0.25rem 0; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>Ingest PET Catalog</h1>
-    <a href="index.html">← home</a>
-    <a href="viewer.html" id="viewerLink" style="display:none">Open viewer →</a>
-    <button class="theme-toggle" style="margin-left:auto" onclick="themeToggle.cycle()">auto</button>
+  <header class="pb-header">
+    <h1>Ingest a catalog</h1>
+    <span class="spacer"></span>
+    <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
+    <a href="index.html">← Home</a>
   </header>
 
   <div class="main">
-    <div id="sidebar">
-      <div>
+    <!-- ── Form ─────────────────────────────────────────────── -->
+    <section class="panel form-panel">
+      <div class="field">
         <label>Catalog PDF</label>
         <div id="dropzone">
-          Drop PDF here or click to pick
+          Drop a PDF here, or click to choose one
+          <div class="dz-hint">Porsche PET parts-catalog export (.pdf)</div>
           <input type="file" id="fileInput" accept=".pdf" style="display:none">
         </div>
       </div>
 
-      <div>
-        <label for="catalogId">Catalog ID <span style="color:var(--text5)">(used as storage key)</span></label>
-        <input type="text" id="catalogId" placeholder="e.g. 997TT-2005">
+      <div class="field">
+        <label for="catalogId">Name this catalog</label>
+        <input type="text" class="inp mono" id="catalogId" placeholder="e.g. 997TT-2005">
+        <div class="sub-hint muted">Used as the storage key. Auto-filled from the file name — edit if you like.</div>
       </div>
 
-      <div>
-        <label for="sectionFilter">Sections to re-ingest <span style="color:var(--text5)">(optional — blank = all)</span></label>
-        <input type="text" id="sectionFilter" placeholder="e.g. 101-000, 102-000">
-      </div>
+      <button class="btn btn-primary" id="ingestBtn" disabled>Ingest</button>
 
-      <div>
-        <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer">
-          <input type="checkbox" id="partsOnly">
-          Parts only <span style="color:var(--text5)">(skip diagram re-render / OCR)</span>
-        </label>
+      <details class="advanced">
+        <summary>Advanced / re-ingest</summary>
+        <div class="stack">
+          <div class="field">
+            <label for="sectionFilter">Sections to re-ingest</label>
+            <input type="text" class="inp mono" id="sectionFilter" placeholder="e.g. 101-000, 102-000">
+            <div class="sub-hint muted">Comma-separated. Leave blank to ingest the whole catalog.</div>
+          </div>
+          <label class="check-row">
+            <input type="checkbox" id="partsOnly">
+            <span>Parts only <span class="muted">— skip diagram re-render / OCR (faster)</span></span>
+          </label>
+        </div>
+      </details>
+    </section>
+
+    <!-- ── Run / status / log ───────────────────────────────── -->
+    <section class="panel run-panel">
+      <div id="idleHint" class="muted">
+        Load a PDF and name your catalog, then press <strong>Ingest</strong>.
+        Progress will appear here.
       </div>
 
       <div id="progressWrap">
-        <hr>
-        <label id="progressLabel">—</label>
+        <div class="status-line" id="statusLine">Starting…</div>
+        <div class="stepper" id="stepper">
+          <span class="step" data-stage="prepare"><span class="dot">1</span>Prepare</span>
+          <span class="step" data-stage="parse"><span class="dot">2</span>Parse pages</span>
+          <span class="step" data-stage="extract"><span class="dot">3</span>Extract parts &amp; diagrams</span>
+          <span class="step" data-stage="save"><span class="dot">4</span>Save</span>
+        </div>
         <progress id="progressBar" value="0" max="100"></progress>
+        <div id="progressLabel" class="muted">—</div>
       </div>
 
-      <button class="ingest" id="ingestBtn" disabled>Ingest</button>
+      <div id="result">
+        <div class="stats-row" id="resultStats"></div>
+        <div class="cta-row">
+          <a class="btn btn-primary" id="viewerLink">Open viewer →</a>
+          <a class="btn" id="saveVehicleLink">Save a vehicle for this catalog</a>
+        </div>
+      </div>
 
-      <div id="result"></div>
-    </div>
-
-    <div id="log">
-      <div class="log-line info">Load a PDF and set a catalog ID, then click Ingest.</div>
-    </div>
+      <details id="logDetails">
+        <summary>Details</summary>
+        <div id="log">
+          <div class="log-line info">Waiting for a catalog…</div>
+        </div>
+      </details>
+    </section>
   </div>
 
   <script src="theme.js"></script>
@@ -108,12 +210,58 @@
     const sectionFilterEl = document.getElementById('sectionFilter');
     const partsOnlyEl     = document.getElementById('partsOnly');
     const ingestBtn       = document.getElementById('ingestBtn');
-    const logEl       = document.getElementById('log');
-    const progressBar = document.getElementById('progressBar');
-    const progressLabel = document.getElementById('progressLabel');
-    const progressWrap  = document.getElementById('progressWrap');
-    const resultEl    = document.getElementById('result');
-    const viewerLink  = document.getElementById('viewerLink');
+    const logEl           = document.getElementById('log');
+    const logDetails      = document.getElementById('logDetails');
+    const progressBar     = document.getElementById('progressBar');
+    const progressLabel   = document.getElementById('progressLabel');
+    const progressWrap    = document.getElementById('progressWrap');
+    const statusLine      = document.getElementById('statusLine');
+    const idleHint        = document.getElementById('idleHint');
+    const resultEl        = document.getElementById('result');
+    const resultStats     = document.getElementById('resultStats');
+    const viewerLink      = document.getElementById('viewerLink');
+    const saveVehicleLink = document.getElementById('saveVehicleLink');
+    const stepEls         = Array.from(document.querySelectorAll('#stepper .step'));
+
+    // ── Remember the log disclosure state ─────────────────────────────────
+    logDetails.open = localStorage.getItem('pb-ingest-log-open') !== '0'; // default open
+    logDetails.addEventListener('toggle', () => {
+      localStorage.setItem('pb-ingest-log-open', logDetails.open ? '1' : '0');
+    });
+
+    // ── High-level stage mapping (best-effort, robust to wording) ─────────
+    const STAGES = [
+      { id: 'prepare', label: 'Preparing…' },
+      { id: 'parse',   label: 'Parsing pages…' },
+      { id: 'extract', label: 'Extracting parts & reading diagrams…' },
+      { id: 'save',    label: 'Saving…' },
+    ];
+    let curStage = -1;
+
+    function classifyStage(text) {
+      const t = String(text).toLowerCase();
+      if (/extracting parts/.test(t))                                              return 'extract';
+      if (/(search index|saving database)/.test(t))                               return 'save';
+      if (/(table of contents|model\/option|model information|option information)/.test(t)) return 'parse';
+      if (/(loading pdf|initialis|opening storage|callout model|ocr worker|tesseract|loading existing|found \d+ section)/.test(t)) return 'prepare';
+      return null;
+    }
+
+    function renderSteps() {
+      stepEls.forEach((el, i) => {
+        el.classList.toggle('done', i < curStage);
+        el.classList.toggle('active', i === curStage);
+      });
+    }
+
+    // Advance to a stage (never regress), updating the status line + stepper.
+    function setStage(id) {
+      const i = STAGES.findIndex(s => s.id === id);
+      if (i < 0) return;
+      if (i > curStage) curStage = i;
+      statusLine.textContent = STAGES[curStage].label;
+      renderSteps();
+    }
 
     // ── File picking ────────────────────────────────────────────────────────
 
@@ -129,7 +277,9 @@
     function setFile(file) {
       if (!file || !file.name.endsWith('.pdf')) return;
       selectedFile = file;
-      dropzone.textContent = `✓ ${file.name} (${(file.size / 1024 / 1024).toFixed(1)} MB)`;
+      dropzone.innerHTML =
+        `✓ ${file.name}<div class="dz-hint">${(file.size / 1024 / 1024).toFixed(1)} MB — click to choose a different file</div>`;
+      dropzone.appendChild(fileInput);
       dropzone.classList.add('loaded');
       // Pre-fill catalog ID from filename if empty
       if (!catalogIdEl.value.trim()) {
@@ -162,9 +312,12 @@
       // Reset UI
       logEl.innerHTML = '';
       resultEl.style.display = 'none';
-      viewerLink.style.display = 'none';
-      progressWrap.style.display = 'block';
+      idleHint.style.display = 'none';
+      progressWrap.style.display = 'flex';
       progressBar.value = 0;
+      curStage = -1;
+      renderSteps();
+      statusLine.textContent = 'Starting…';
       progressLabel.textContent = 'Starting…';
       ingestBtn.disabled = true;
 
@@ -190,19 +343,27 @@
 
       worker.onmessage = ({ data }) => {
         switch (data.type) {
-          case 'status':
+          case 'status': {
             appendLog(data.message, 'info');
             progressLabel.textContent = data.message;
+            const st = classifyStage(data.message);
+            if (st) setStage(st);
+            else statusLine.textContent = data.message; // show verbatim when unsure
             break;
+          }
 
           case 'progress':
             progressBar.value = data.pct;
             progressLabel.textContent = `${data.pct}% — ${data.label}`;
             appendLog(`[${String(data.pct).padStart(3)}%] ${data.label}`, 'info');
+            setStage('extract'); // per-section work = extracting parts & diagrams
             break;
 
           case 'done':
             progressBar.value = 100;
+            curStage = STAGES.length;      // all steps complete
+            renderSteps();
+            statusLine.textContent = 'Done ✓';
             progressLabel.textContent = 'Done';
             appendLog(
               partial
@@ -210,14 +371,15 @@
                 : `✓ Done — ${data.sectionCount} sections, ${data.partCount} parts ingested.`,
               'ok'
             );
-            resultEl.innerHTML = `
+            resultStats.innerHTML = `
               <span class="stat ok">✓ ${data.sectionCount} section${data.sectionCount !== 1 ? 's' : ''}</span>
               <span class="stat ok">${data.partCount} parts</span>
               <span class="stat ok">saved to OPFS</span>
             `;
-            resultEl.style.display = 'block';
-            viewerLink.style.display = 'inline';
             viewerLink.href = `viewer.html?catalog=${encodeURIComponent(catalogId)}`;
+            saveVehicleLink.href =
+              `index.html?addVehicle=1&catalog=${encodeURIComponent(catalogId)}&return=viewer`;
+            resultEl.style.display = 'flex';
             ingestBtn.disabled = false;
             updateBtn();
             worker = null;
@@ -225,6 +387,7 @@
 
           case 'error':
             appendLog(`✗ Error: ${data.message}`, 'err');
+            statusLine.textContent = 'Failed — see details';
             progressLabel.textContent = 'Failed — see log';
             ingestBtn.disabled = false;
             worker = null;
@@ -234,6 +397,7 @@
 
       worker.onerror = (e) => {
         appendLog(`✗ Worker error: ${e.message}`, 'err');
+        statusLine.textContent = 'Failed — see details';
         ingestBtn.disabled = false;
         worker = null;
       };

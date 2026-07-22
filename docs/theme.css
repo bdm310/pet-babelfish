@@ -1,5 +1,21 @@
 /* ── Theme variables ──────────────────────────────────────── */
 
+/* Type + spacing tokens — theme-independent, declared once. --font-ui carries
+   prose (descriptions, hints, headers, buttons); --font-mono carries codes,
+   part numbers, IDs, VINs. This is the "hybrid" split: readable prose, monospace
+   where alignment/identity matters. */
+:root {
+  --font-ui:   system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Consolas, 'Roboto Mono', ui-monospace, monospace;
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --radius:   4px;
+  --radius-lg: 6px;
+}
+
 /* Dark defaults */
 :root {
   color-scheme: dark;
@@ -13,10 +29,10 @@
   --text:         #e0e0e0;
   --text-hi:      #ffffff;
   --text2:        #aaaaaa;
-  --text3:        #888888;
-  --text4:        #666666;
-  --text5:        #555555;
-  --text6:        #444444;
+  --text3:        #999999;
+  --text4:        #7c7c7c;
+  --text5:        #686868;
+  --text6:        #565656;
   --accent:       #4caf50;
   --accent-bg:    #1a3a1a;
   --accent-bg2:   #1a2a1a;
@@ -43,10 +59,10 @@
     --text:         #1a1a1a;
     --text-hi:      #000000;
     --text2:        #505050;
-    --text3:        #6e6e6e;
-    --text4:        #8a8a8a;
-    --text5:        #a0a0a0;
-    --text6:        #bbbbbb;
+    --text3:        #666666;
+    --text4:        #767676;
+    --text5:        #8a8a8a;
+    --text6:        #a2a2a2;
     --accent:       #2e7d32;
     --accent-bg:    #e8f5e9;
     --accent-bg2:   #f1f8f2;
@@ -73,10 +89,10 @@
   --text:         #e0e0e0;
   --text-hi:      #ffffff;
   --text2:        #aaaaaa;
-  --text3:        #888888;
-  --text4:        #666666;
-  --text5:        #555555;
-  --text6:        #444444;
+  --text3:        #999999;
+  --text4:        #7c7c7c;
+  --text5:        #686868;
+  --text6:        #565656;
   --accent:       #4caf50;
   --accent-bg:    #1a3a1a;
   --accent-bg2:   #1a2a1a;
@@ -101,10 +117,10 @@
   --text:         #1a1a1a;
   --text-hi:      #000000;
   --text2:        #505050;
-  --text3:        #6e6e6e;
-  --text4:        #8a8a8a;
-  --text5:        #a0a0a0;
-  --text6:        #bbbbbb;
+  --text3:        #666666;
+  --text4:        #767676;
+  --text5:        #8a8a8a;
+  --text6:        #a2a2a2;
   --accent:       #2e7d32;
   --accent-bg:    #e8f5e9;
   --accent-bg2:   #f1f8f2;
@@ -182,3 +198,103 @@ html { background: var(--bg); }
 /* Explicit overrides beat the media query via higher specificity */
 :root[data-theme="dark"]  .diagram-wrap img { filter: invert(1); }
 :root[data-theme="light"] .diagram-wrap img { filter: invert(0); }
+
+/* ══ Shared component layer ════════════════════════════════════════════
+   One vocabulary for every page: header, buttons, chips, cards, inputs.
+   Pages compose these instead of redefining their own. Prose defaults to
+   --font-ui; add .mono (or use --font-mono) for codes and part numbers. */
+
+/* ── App header ─────────────────────────────────────────────────────── */
+.pb-header {
+  display: flex; align-items: center; gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0; flex-wrap: wrap;
+  font-family: var(--font-ui);
+}
+.pb-header h1 {
+  font-size: 0.95rem; color: var(--text-hi); white-space: nowrap;
+  letter-spacing: 0.02em; margin: 0;
+}
+.pb-header a { color: var(--accent); font-size: 0.82rem; text-decoration: none; white-space: nowrap; }
+.pb-header a:hover { text-decoration: underline; }
+.pb-header .spacer { margin-left: auto; }
+
+/* ── Buttons ────────────────────────────────────────────────────────── */
+/* .btn is the base; modifiers layer on. .theme-toggle/.hdr-btn kept above
+   as aliases for pages not yet migrated. */
+.btn {
+  display: inline-flex; align-items: center; gap: var(--sp-1);
+  background: none; border: 1px solid var(--border3); color: var(--text2);
+  padding: 0.3rem 0.6rem; border-radius: var(--radius); cursor: pointer;
+  font-family: var(--font-ui); font-size: 0.82rem; line-height: 1.4;
+  white-space: nowrap; transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text-hi); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.btn-primary {
+  background: var(--accent-bg); color: var(--accent); border-color: var(--accent-bd);
+}
+.btn-primary:hover:not(:disabled) { background: var(--accent-btn-h); color: var(--accent); }
+
+/* Toggle: use with .btn; add .on when active. */
+.btn.on, .btn-toggle.on {
+  border-color: var(--accent); color: var(--accent); background: var(--accent-bg);
+}
+
+.btn-danger { color: var(--text3); }
+.btn-danger:hover:not(:disabled) { border-color: var(--err); color: var(--err); }
+
+/* Count/notification pill on a button (active-filter count, etc). */
+.btn-badge {
+  display: inline-block; background: var(--accent); color: #fff;
+  border-radius: 8px; padding: 0 5px; font-size: 0.62rem; line-height: 1.5;
+  margin-left: 3px; vertical-align: middle; font-family: var(--font-mono);
+}
+
+/* ── Inputs ─────────────────────────────────────────────────────────── */
+.inp {
+  background: var(--bg2); color: var(--text); border: 1px solid var(--border3);
+  padding: 0.35rem 0.5rem; border-radius: var(--radius);
+  font-family: var(--font-ui); font-size: 0.85rem;
+}
+.inp:focus { outline: none; border-color: var(--accent); }
+.inp.mono, .inp-code { font-family: var(--font-mono); }
+::placeholder { color: var(--text5); }
+
+/* ── Chips ──────────────────────────────────────────────────────────── */
+/* Small labelled tags: active-spec summary, applicability, facet values. */
+.chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  border: 1px solid var(--border2); background: var(--bg3); color: var(--text2);
+  border-radius: 3px; padding: 0.1rem 0.4rem;
+  font-size: 0.7rem; line-height: 1.5; white-space: nowrap;
+  font-family: var(--font-mono);
+}
+.chip-accent { color: var(--accent); border-color: var(--accent-bd); background: var(--accent-bg2); }
+.chip-pn     { color: var(--pn); }
+.chip-x { cursor: pointer; color: var(--text5); font-family: var(--font-ui); }
+.chip-x:hover { color: var(--text-hi); }
+
+/* ── Cards ──────────────────────────────────────────────────────────── */
+.card {
+  border: 1px solid var(--border2); border-radius: var(--radius-lg);
+  padding: var(--sp-4); background: var(--bg2);
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  font-family: var(--font-ui);
+}
+.card-title { font-size: 1rem; color: var(--text-hi); font-weight: 600; }
+.card-sub   { font-size: 0.78rem; color: var(--text3); }
+
+/* ── Utility ────────────────────────────────────────────────────────── */
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--text3); }
+.stack { display: flex; flex-direction: column; gap: var(--sp-2); }
+
+/* Touch targets: on coarse pointers, give interactive controls room. */
+@media (pointer: coarse) {
+  .btn, .theme-toggle, .hdr-btn { min-height: 40px; }
+  .inp { min-height: 38px; }
+}
