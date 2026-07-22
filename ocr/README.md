@@ -78,11 +78,14 @@ detection, not misreads.
 **Model:** `ocr/porsche.traineddata` — a fine-tune of Tesseract `4.0.0_best/eng` (the model
 Tesseract.js's WASM is compiled against; fast/integer models can't be fine-tuned). Trained on
 **14,937 real digit glyphs harvested from GT boxes** (both catalog fonts), which replaced the
-original single synthetic font.
+original single synthetic font, plus **whole-box compound crops** so it reads the `/` in
+compound callouts (`3/2`) in context — an isolated slash is indistinguishable from a `1`, so it
+can only be learned from the full box; see [COMPOUND_PLAN.md](COMPOUND_PLAN.md).
 
 ```
-uv run ocr/harvest.py   # split each GT box into per-digit CCs → real-glyph training set
-uv run ocr/train.py     # download base → generate lstmf → train → package porsche.traineddata
+uv run ocr/harvest.py           # split each GT box into per-digit CCs → real-glyph training set
+uv run ocr/harvest_compound.py  # whole-box compound crops (911) → learn "/" in context
+uv run ocr/train.py             # download base → generate lstmf → train → package porsche.traineddata
 ```
 
 `generate.py` + `ipa_font.ttf` are the *legacy* synthetic-glyph path (superseded by `harvest.py`,

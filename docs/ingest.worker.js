@@ -86,6 +86,24 @@ const OCR_MAX_CALLOUT = 99;
 // thinner blobs are leader-line fragments (kept out to protect precision).
 const OCR_ONE_AR_MIN = 0.24;
 const OCR_ONE_AR_MAX = 0.50;
+// Compound callouts ("3/2", "10/1") in the old catalogs (911, 356-family sub-positions).
+// The slash reads as a "1" per glyph — indistinguishable in isolation — so the digit
+// grouper never yields the "/". Instead a second pass pairs adjacent digit groups on one
+// row whose gap leaves room for a slash, and OCRs their WHOLE span with "/" whitelisted;
+// the retrained model reads the slash from context (ocr/COMPOUND_PLAN.md). Additive and
+// conservative: a span is only taken when it reads a valid n/n, else the digit groups
+// stand. `GAP_MAX`/`AR_*` are w/h-relative gates (911 gold compound boxes run w/h ~1..4.5).
+// OFF pending the CNN detection retrain: recognition is done (the model reads "/" in
+// context — validated 100% on held-out 911 compound crops, in both the CLI and the
+// WASM runtime, with no digit regression), but the CNN was trained with compound boxes
+// as IGNORE, so it under-detects the digit groups this pass pairs (e.g. "10/1" yields
+// only one blob). Un-mask compound in ocr/dataset.py + retrain the CNN, then flip this
+// on. Full status in ocr/COMPOUND_PLAN.md.
+const OCR_COMPOUND       = false;
+const OCR_COMPOUND_GAP_MAX = 1.4;   // pair gap ≤ this × mean digit-group height
+const OCR_COMPOUND_ROW_TOL = 0.35;  // pair y-centres within this × height
+const OCR_COMPOUND_AR_MIN  = 0.8;   // union-span w/h band
+const OCR_COMPOUND_AR_MAX  = 5.0;
 
 // ── Learned callout detector (Phase 3) ──────────────────────────────────────
 // A trained CNN decides accept/reject per candidate blob, replacing the multi-scale
@@ -1815,6 +1833,26 @@ function renderBlobCanvas(ink, W, H, blob, pad) {
   return dst;
 }
 
+// Render EVERY ink pixel inside a padded bbox onto a white canvas — the whole
+// glyph run in a region, not one connected component (renderBlobCanvas floods a
+// single blob). Used to OCR a compound callout's full "n/n" span at once.
+function renderRegionCanvas(ink, W, H, x0, y0, x1, y1, pad) {
+  const gx0 = Math.max(0, (x0|0) - pad), gy0 = Math.max(0, (y0|0) - pad);
+  const gx1 = Math.min(W, (x1|0) + pad), gy1 = Math.min(H, (y1|0) + pad);
+  const cw = Math.max(1, gx1 - gx0), ch = Math.max(1, gy1 - gy0);
+  const dst = new OffscreenCanvas(cw, ch);
+  const ctx = dst.getContext('2d');
+  ctx.fillStyle = 'white'; ctx.fillRect(0, 0, cw, ch);
+  const id = ctx.getImageData(0, 0, cw, ch), d = id.data;
+  for (let y = gy0; y < gy1; y++) for (let x = gx0; x < gx1; x++) {
+    if (!ink[y * W + x]) continue;
+    const i = ((y - gy0) * cw + (x - gx0)) * 4;
+    d[i] = d[i+1] = d[i+2] = 0; d[i+3] = 255;
+  }
+  ctx.putImageData(id, 0, 0);
+  return dst;
+}
+
 // Pull a decoded image object from PDF.js's internal object store (callback-based).
 function getObjAsync(store, name, timeoutMs = 3000) {
   return new Promise(resolve => {
@@ -2152,17 +2190,59 @@ async function ocrDiagramModel(canvas, opList, vp, tWorker, diagRect = null, par
     return true;
   });
 
+  // 6b: compound pass — pair adjacent digit groups whose gap leaves room for a slash
+  // and OCR the whole span with "/" whitelisted (see OCR_COMPOUND). byX is x-sorted, so
+  // the per-`a` gap grows monotonically and the scan can stop once it exceeds the cap.
+  // A taken span consumes its pair and any group sitting inside it (the slash often
+  // survives as a lone "1"). Additive: a span that doesn't read a valid n/n changes
+  // nothing.
+  const compounds = [];
+  if (OCR_COMPOUND && kept.length >= 2) {
+    await tWorker.setParameters({ tessedit_char_whitelist: '0123456789/', tessedit_pageseg_mode: '8', user_defined_dpi: '300' });
+    const byX = [...kept].sort((a, b) => a.x0 - b.x0);
+    const consumed = new Set();
+    for (let i = 0; i < byX.length; i++) {
+      const a = byX[i];
+      if (consumed.has(a)) continue;
+      for (let j = i + 1; j < byX.length; j++) {
+        const b = byX[j];
+        if (consumed.has(b)) continue;
+        const h   = ((a.y1 - a.y0) + (b.y1 - b.y0)) / 2;
+        const gap = b.x0 - a.x1;
+        if (gap > OCR_COMPOUND_GAP_MAX * h) break;                    // x-sorted: none closer follows
+        if (gap < -0.1 * h) continue;
+        if (Math.abs(a.cy - b.cy) > OCR_COMPOUND_ROW_TOL * h) continue;
+        const ux0 = Math.min(a.x0, b.x0), uy0 = Math.min(a.y0, b.y0);
+        const ux1 = Math.max(a.x1, b.x1), uy1 = Math.max(a.y1, b.y1);
+        const ar  = (ux1 - ux0) / Math.max(1, uy1 - uy0);
+        if (ar < OCR_COMPOUND_AR_MIN || ar > OCR_COMPOUND_AR_MAX) continue;
+        const reg = upscale(renderRegionCanvas(ink, W, H, ux0, uy0, ux1, uy1, Math.round(h * 0.3)), targetPx / h);
+        const { data } = await tWorker.recognize(await reg.convertToBlob({ type: 'image/png' }));
+        const txt = (data.text || '').replace(/\s/g, '');
+        if (!/^\d{1,3}\/\d{1,3}$/.test(txt)) continue;
+        compounds.push({ number: txt, x0: ux0, y0: uy0, x1: ux1, y1: uy1, confidence: Math.round(data.confidence || 0) });
+        for (const g of byX)
+          if (g.cx >= ux0 && g.cx <= ux1 && g.cy >= uy0 && g.cy <= uy1) consumed.add(g);
+        break;
+      }
+    }
+    kept = kept.filter(g => !consumed.has(g));
+  }
+
   // 7: emit 0–10000 in PNG pixel space. Native detection → scale is 1; only the crop
   // offset (cx,cy) maps back into the full canvas.
   const pngW = canvas.width, pngH = canvas.height;
+  const toXY = (x0, y0, x1, y1) => ({
+    x0: Math.round((x0 + cx) / pngW * 10000), y0: Math.round((y0 + cy) / pngH * 10000),
+    x1: Math.round((x1 + cx) / pngW * 10000), y1: Math.round((y1 + cy) / pngH * 10000),
+  });
   const callouts = kept.map(g => ({
     number:     g.digits.map(d => d.text).join(''),
     confidence: Math.round(g.digits.reduce((s, d) => s + d.confidence, 0) / g.digits.length),
-    x0: Math.round((g.x0 + cx) / pngW * 10000),
-    y0: Math.round((g.y0 + cy) / pngH * 10000),
-    x1: Math.round((g.x1 + cx) / pngW * 10000),
-    y1: Math.round((g.y1 + cy) / pngH * 10000),
-  })).filter(c => !/^0+$/.test(c.number));
+    ...toXY(g.x0, g.y0, g.x1, g.y1),
+  })).concat(compounds.map(c => ({
+    number: c.number, confidence: c.confidence, ...toXY(c.x0, c.y0, c.x1, c.y1),
+  }))).filter(c => !/^0+$/.test(c.number));
 
   if (dbg) dbg.callouts = callouts.map(c => ({ box: [c.x0, c.y0, c.x1, c.y1], number: c.number, conf: c.confidence }));
   done();

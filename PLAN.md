@@ -1,65 +1,36 @@
 # Status & remaining work
 
 Architecture and the data model are in [ARCHITECTURE.md](ARCHITECTURE.md); this file is only the
-roadmap. We're at the **first-pass full-functionality milestone**: a catalog can be ingested and
-browsed end-to-end, and modern cars (997/987) can be filtered to a specific vehicle.
+roadmap.
 
-## Shipped
+## Done
 
-- **Ingest** (`docs/ingest.worker.js`) — outline → sections → block-oriented parts extraction
-  (self-calibrating columns, applicability continuation rows, colour/trim child rows, compound
-  position ids), per-section diagram render to CCITT G4 blobs, and V-page decoding into the
-  vehicle/option tables. Handles multi-page sections; partial (`--parts-only`) re-ingest supported.
-  Modern and old (356/911) V-page dialects both parse.
-- **Callout detection** — a trained CNN (`docs/callout-cnn.onnx`, `OCR_USE_MODEL=true`) gates
-  connected-component candidates; Tesseract reads the digits in accepted boxes. Trained on 5 gold
-  catalogs. Detail and the ground-truth/eval pipeline: [ocr/README.md](ocr/README.md).
-- **Applicability** — one shared grammar (`docs/appl.js`) parses the scope language and matches it
-  against a vehicle spec (conjunction-of-disjunctions PR logic, year ranges, markets, model/body,
-  engine/gearbox codes, serial breakpoints). Used by both ingest and the app.
-- **Viewer** — section tree, parts table, FTS4 search (LIKE fallback), diagram pane with
-  interactive callout ↔ part overlay, and spec filtering that runs `appl.js` at query time.
-- **Garage** — saved vehicles (identity + spec filter) in one OPFS `garage.json`; per-part **Ok**
-  status + **Notes** editable inline; **Hide Ok** turns the view into "what's left to do". Marks
-  are keyed by content (`catalog|section|position|part_number|occurrence`), so re-ingest doesn't
-  lose them.
-- **VIN → vehicle** — `docs/vin.js` decodes modern 997/987/Cayenne VINs, scans every OPFS
-  catalog's `vin_range`, auto-selects the matching catalog, and pre-fills year + market group.
-  Manual PR-code entry (validated/labeled against `pr_code`) is the option source for all regimes.
-- All 13 source catalogs ingest cleanly.
+1. **Old-dialect vehicle filtering** — a pre-VIN car's chassis number (356/911/996/Cayenne),
+   typed into the VIN box, is matched directly against the old-dialect `vin_range` and pre-fills
+   catalog + year + market, the same as a modern VIN. `vin.js` keys spaced and glued chassis
+   numbers alike, treats an open `vin_to` as "from serial onward", and expands two-digit model
+   years via the catalog's century pivot.
+
+2. **Serial-breakpoint filter** — optional engine-number and **gearbox-number** inputs feed
+   `appl.serialAdmits`; parts whose changeover is printed against a stamped engine/gearbox number
+   are filtered within the car's own number block. (The gearbox number never *derives* the gearbox
+   code — the A/G transmission serial ranges print byte-identical.)
+
+3. **Bundled catalogs** — the 13 pre-ingested catalogs ship at `docs/catalogs/<id>.sqlite` (one
+   object per catalog) with a manifest; the app lists them by default and copies one into OPFS on
+   first open, after which it behaves like a locally-ingested catalog. `tools/build-catalogs.py`
+   rebuilds them from `catalogs.zip`.
+
+4. **Distribution / hosting** — `.github/workflows/pages.yml` publishes `docs/` (app + bundled
+   catalogs) to GitHub Pages on every push to `main`.
 
 ## Remaining work
 
-Roughly in priority order.
-
-1. **Old-dialect vehicle filtering** — old catalogs (356, 911) populate `vin_range` and the
-   number-range tables, but `VIN.decodeVin` only handles the 17-char modern VIN, so VIN pre-fill is
-   inert for them and `pr_code`/`sales_type` are empty by design (no PR system pre-modern). The
-   garage still filters these cars via manually entered facets; wiring old chassis numbers into the
-   decode path would make VIN pre-fill work for them too.
-
-2. **Serial-breakpoint filter (Cayenne, 356)** — these catalogs scope parts by engine/gearbox
-   *number* cut-in points, which a VIN doesn't contain. `appl.serialAdmits` already enforces the
-   per-block breakpoint logic; what's missing is the UI: optional engine-number / gearbox-number
-   inputs feeding it.
-
-3. **Compound-callout linking (911)** — parts with compound positions (`3/2`, `(3/1)`) are
-   extracted and searchable, but the digit-only OCR can't read the `/`, so those callouts don't
-   link to their parts. Parts show; the diagram cross-link is the gap.
-
-4. **OCR coverage on older typefaces** — the CNN generalizes cleanly to modern catalogs but needs
-   gold from each old typeface to reach full recall (LOCO recall drops on unseen old glyphs). Extend
-   gold and retrain per [ocr/README.md](ocr/README.md); chase residual 997-class precision.
-
-5. **Auto-fetch** — direct browser fetch of catalog PDFs is CORS-blocked; ingest is file-picker
-   only. Revisit if a fetch-friendly source or proxy appears.
-
-6. **Distribution / hosting** — decide whether to publish `docs/` (GitHub Pages, via a
-   Pages-from-Actions workflow so the served folder isn't tied to the `/docs` convention) and
-   whether/how any pre-ingested catalog data is shared, given PDF copyright constraints.
-
-## Explicitly out of scope
-
-- **Auto-deriving the option list from a VIN** — needs a Porsche Kardex / third-party decoder:
-  gated, variable accuracy, and a network dependency counter to the local-first design. Options stay
-  user-entered. Revisit only if a reliable source appears.
+1. **Compound-callout linking (911)** — parts with compound positions (`3/2`, `(3/1)`) show and
+   are searchable, but the diagram callout doesn't link. **Recognition is solved**: the OCR model
+   was retrained to read the `/` in context (validated 100% on held-out 911 compound crops, in the
+   WASM runtime, no digit regression). The remaining gap is **detection**: the callout-detector CNN
+   was trained with compound boxes as ignore regions and under-detects their digit groups, so the
+   (implemented, currently-off) worker compound pass has nothing to pair. Next step: un-mask
+   compound digit CCs in `ocr/dataset.py`, retrain the CNN without regressing the five gold
+   catalogs, then enable `OCR_COMPOUND`. Full write-up: [ocr/COMPOUND_PLAN.md](ocr/COMPOUND_PLAN.md).
