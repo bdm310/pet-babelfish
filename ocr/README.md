@@ -54,8 +54,9 @@ uv run ocr/train_classifier.py  # train → ocr/callout-cnn.onnx (+ .meta.json, 
 - `dataset.py` reads each gold catalog's `groundtruth.json` + its diagram blobs, decodes the CCITT
   G4 with `ccitt_decode.py`, and emits labeled 48×48 patches (`patches.npz`, `manifest.jsonl`).
   Positives = CC blobs that overlap a GT box (+ a safety-net patch per box); negatives = CC blobs
-  outside every GT box. Compound-callout boxes (`3/1`) are **masked** — the `/` stroke would be a
-  noisy positive.
+  outside every GT box. Inside a compound-callout box (`3/1`) the **digit** components are labeled
+  positive (aligned left-to-right to the number's chars) but the **`/` stroke stays ignore** — an
+  isolated slash is indistinguishable from a `1`, so making it a positive would cost precision.
 - `train_classifier.py` trains with augmentation that helped (rot ±10°, trans ±4px, scale ±15%; no
   flips — they tilt digits) and `pos_weight` for imbalance. Verified vs PyTorch to 1e-7; same 102 KB
   ONNX / identical I/O contract each retrain.

@@ -24,13 +24,14 @@ roadmap.
 4. **Distribution / hosting** — `.github/workflows/pages.yml` publishes `docs/` (app + bundled
    catalogs) to GitHub Pages on every push to `main`.
 
+5. **Compound-callout linking (911)** — parts with compound positions (`3/2`, `(3/1)`) now link to
+   their diagram callouts. The recognizer was retrained to read the `/` in context, the
+   callout-detector CNN to accept compound digit groups (`/` stroke stays ignore), and the ingest
+   worker gained a compound pass that pairs adjacent digit groups and OCRs the whole span. On 911,
+   148/208 gold compound boxes now match (was 0), 125 compound callouts link to a part, overall
+   callout F1 0.939. Write-up: [ocr/COMPOUND_PLAN.md](ocr/COMPOUND_PLAN.md).
+
 ## Remaining work
 
-1. **Compound-callout linking (911)** — parts with compound positions (`3/2`, `(3/1)`) show and
-   are searchable, but the diagram callout doesn't link. **Recognition is solved**: the OCR model
-   was retrained to read the `/` in context (validated 100% on held-out 911 compound crops, in the
-   WASM runtime, no digit regression). The remaining gap is **detection**: the callout-detector CNN
-   was trained with compound boxes as ignore regions and under-detects their digit groups, so the
-   (implemented, currently-off) worker compound pass has nothing to pair. Next step: un-mask
-   compound digit CCs in `ocr/dataset.py`, retrain the CNN without regressing the five gold
-   catalogs, then enable `OCR_COMPOUND`. Full write-up: [ocr/COMPOUND_PLAN.md](ocr/COMPOUND_PLAN.md).
+None outstanding from the original roadmap. Possible follow-ups: extend compound-callout gold
+beyond 911 to lift the 71% compound recall, and broaden OCR gold on the other old typefaces.

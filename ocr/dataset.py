@@ -23,6 +23,16 @@ from ccitt_decode import decode
 REPO = Path(__file__).parent.parent
 GT_DIR = REPO / 'groundtruth'
 OUT = Path(__file__).parent / 'dataset'
+
+
+def catalog_db(cat):
+    """The diagram-bearing SQLite for a gold catalog. Prefers the local GT-dir copy;
+    falls back to the shipped bundled catalog (docs/catalogs/<id>.sqlite), which is the
+    committed canonical source since the GT-dir copies are gitignored."""
+    gt = GT_DIR / cat / 'catalog.sqlite'
+    return gt if gt.exists() else REPO / 'docs' / 'catalogs' / f'{cat}.sqlite'
+
+
 # The 5 hand-verified GOLD catalogs we train on. Cayenne-955(E1)_2003-2006 is
 # deliberately held out as a downstream seed target.
 CATALOGS = ['996_1998-2005', '997-1Turbo-GT2_2007-2009',
@@ -77,6 +87,40 @@ def is_compound(num):
     return '/' in str(num)
 
 
+def compound_digit_boxes(img, g):
+    """DIGIT-component bboxes inside a compound GT box, in native px.
+
+    Connected-components the ink in the box and aligns them left-to-right to the
+    number's characters (same method as ocr/harvest_compound.py). Returns the boxes
+    of the DIGIT chars only — the '/' stroke is excluded so it stays an ignore region
+    (an isolated slash is indistinguishable from a '1', so teaching the gate to accept
+    it would cost precision). Returns [] when the component count doesn't match the
+    char count (fused/broken glyphs), leaving the whole box as ignore — never guess.
+    """
+    num, gx0, gy0, gx1, gy1 = g
+    chars = str(num)
+    x0, y0 = max(0, int(gx0)), max(0, int(gy0))
+    x1, y1 = int(np.ceil(gx1)), int(np.ceil(gy1))
+    sub = img[y0:y1, x0:x1]
+    if sub.size == 0:
+        return []
+    lbl, _ = ndimage.label(sub)
+    boxH = y1 - y0
+    comps = []
+    for sl in ndimage.find_objects(lbl):
+        if sl is None:
+            continue
+        ys, xs = sl
+        h = ys.stop - ys.start; w = xs.stop - xs.start
+        if h < 0.45 * boxH or w < 3:                # a real glyph, not dust
+            continue
+        comps.append((xs.start, (x0 + xs.start, y0 + ys.start, x0 + xs.stop, y0 + ys.stop)))
+    comps.sort()
+    if len(comps) != len(chars):
+        return []
+    return [bb for (_, bb), ch in zip(comps, chars) if ch != '/']
+
+
 def center_in(cc, g):
     """cc center lies inside GT box g=(num,x0,y0,x1,y1)."""
     cx = (cc[0] + cc[2]) / 2; cy = (cc[1] + cc[3]) / 2
@@ -114,12 +158,13 @@ def crop_patch(gray, bbox):
 
 
 def build_catalog(cat, limit):
-    db = GT_DIR / cat / 'catalog.sqlite'
+    db = catalog_db(cat)
     gt = json.loads((GT_DIR / cat / 'groundtruth.json').read_text())
     con = sqlite3.connect(db)
     rows = []             # (patch, label, source, gt_num, section_number, rowid, bbox)
     stats = dict(sections=0, candidates=0, pos_cc=0, pos_gt=0, neg=0, dropped=0,
-                 gt_boxes=0, gt_boxes_noncomp=0, gt_boxes_compound=0, gt_unmatched=0)
+                 gt_boxes=0, gt_boxes_noncomp=0, gt_boxes_compound=0, gt_unmatched=0,
+                 pos_comp_cc=0, pos_comp_gt=0, comp_digit_boxes=0, comp_digit_unmatched=0)
     items = list(gt.items())
     if limit:
         items = items[:limit]
@@ -140,26 +185,41 @@ def build_catalog(cat, limit):
         stats['gt_boxes'] += len(gts)
         stats['gt_boxes_noncomp'] += len(gts_noncomp)
         stats['gt_boxes_compound'] += len(gts_comp)
+        # A compound box's DIGIT glyphs are real callout digits → positives; only its
+        # '/' stroke stays ignore. Aligned per box (empty when the glyphs fuse). Kept
+        # as pseudo-GT boxes ('D') so label_cc handles them exactly like non-compound.
+        comp_digit = []
+        for gc in gts_comp:
+            comp_digit += [('D', *bb) for bb in compound_digit_boxes(img, gc)]
+        stats['comp_digit_boxes'] += len(comp_digit)
         ccs = candidates(img)
         stats['candidates'] += len(ccs)
         matched_gt = set()
+        matched_cd = set()
         for cc in ccs:
-            g = label_cc(cc, gts_noncomp)              # positive only vs non-compound
+            g = label_cc(cc, gts_noncomp)              # positive vs non-compound
             if g is not None:
                 matched_gt.add((g[0], round(g[1]), round(g[2])))
                 stats['pos_cc'] += 1
                 rows.append((crop_patch(gray, cc), 1, 'cc', g[0], num, int(rowid),
                              [cc[0], cc[1], cc[2], cc[3]]))
+                continue
+            cd = label_cc(cc, comp_digit)              # a compound-callout digit?
+            if cd is not None:
+                matched_cd.add((round(cd[1]), round(cd[2])))
+                stats['pos_comp_cc'] += 1
+                rows.append((crop_patch(gray, cc), 1, 'cc', 'D', num, int(rowid),
+                             [cc[0], cc[1], cc[2], cc[3]]))
             elif any(center_in(cc, gc) for gc in gts_comp):
-                # overlaps ONLY a compound box (no non-compound positive): DROP entirely
-                # so its '/'/partial-digit pieces pollute neither class.
+                # inside a compound box but not a clean digit (the '/' stroke, or a
+                # fused piece): DROP so it pollutes neither class.
                 stats['dropped'] += 1
             else:
                 stats['neg'] += 1
                 rows.append((crop_patch(gray, cc), 0, 'cc', None, num, int(rowid),
                              [cc[0], cc[1], cc[2], cc[3]]))
-        # positives safety net: one patch per NON-compound GT box (compound boxes emit
-        # no positive), plus candidate-recall accounting over non-compound boxes.
+        # positives safety net: one patch per NON-compound GT box, plus one per
+        # compound DIGIT box, plus candidate-recall accounting for both.
         for g in gts_noncomp:
             gnum, gx0, gy0, gx1, gy1 = g
             key = (gnum, round(gx0), round(gy0))
@@ -168,6 +228,13 @@ def build_catalog(cat, limit):
             bb = [int(gx0), int(gy0), int(np.ceil(gx1)), int(np.ceil(gy1))]
             stats['pos_gt'] += 1
             rows.append((crop_patch(gray, (gx0, gy0, gx1, gy1)), 1, 'gt', gnum, num,
+                         int(rowid), bb))
+        for _, dx0, dy0, dx1, dy1 in comp_digit:
+            if (round(dx0), round(dy0)) not in matched_cd:
+                stats['comp_digit_unmatched'] += 1
+            bb = [int(dx0), int(dy0), int(np.ceil(dx1)), int(np.ceil(dy1))]
+            stats['pos_comp_gt'] += 1
+            rows.append((crop_patch(gray, (dx0, dy0, dx1, dy1)), 1, 'gt', 'D', num,
                          int(rowid), bb))
     con.close()
     return rows, stats
@@ -198,7 +265,7 @@ def main():
 def render_samples(cat, gt, limit, n=3):
     """Render a few diagrams with candidate + GT boxes drawn."""
     from PIL import Image, ImageDraw
-    db = GT_DIR / cat / 'catalog.sqlite'
+    db = catalog_db(cat)
     con = sqlite3.connect(db)
     items = list(gt.items())
     if limit:
@@ -218,12 +285,17 @@ def render_samples(cat, gt, limit, n=3):
         gts = gt_boxes_px(entry, W, H)
         gts_noncomp = [g for g in gts if not is_compound(g[0])]
         gts_comp = [g for g in gts if is_compound(g[0])]
+        comp_digit = []
+        for gc in gts_comp:
+            comp_digit += [('D', *bb) for bb in compound_digit_boxes(img, gc)]
         for cc in candidates(img):
             g = label_cc(cc, gts_noncomp)
             if g is not None:
-                color = (0, 170, 0)          # positive
+                color = (0, 170, 0)          # positive (non-compound)
+            elif label_cc(cc, comp_digit) is not None:
+                color = (0, 200, 200)        # positive (compound digit)
             elif any(center_in(cc, gc) for gc in gts_comp):
-                color = (255, 165, 0)        # dropped (compound ignore region)
+                color = (255, 165, 0)        # ignored (slash / fused inside compound box)
             else:
                 color = (220, 0, 0)          # negative
             dr.rectangle([cc[0], cc[1], cc[2] - 1, cc[3] - 1], outline=color, width=2)
@@ -264,16 +336,22 @@ def write_report(all_stats, catalogs, labels, sources, cats):
         gtb = s['gt_boxes_noncomp'] or 1
         recall = (gtb - s['gt_unmatched']) / gtb
         tot = s['pos_cc'] + s['neg']
+        cdb = s['comp_digit_boxes'] or 1
+        crecall = (s['comp_digit_boxes'] - s['comp_digit_unmatched']) / cdb
         lines += [f"## {cat}", "",
                   f"- sections processed: {s['sections']}",
                   f"- candidate CC blobs: {s['candidates']}",
                   f"- positives (cc): {s['pos_cc']}   positives (gt safety-net): {s['pos_gt']}",
-                  f"- negatives: {s['neg']}   dropped (compound overlap): {s['dropped']}",
+                  f"- compound-digit positives: cc {s['pos_comp_cc']}, gt {s['pos_comp_gt']} "
+                  f"(from {s['comp_digit_boxes']} digit boxes across {s['gt_boxes_compound']} compound boxes)",
+                  f"- negatives: {s['neg']}   dropped (compound slash/fused): {s['dropped']}",
                   f"- CC class balance: {s['pos_cc']}/{tot} positive = {s['pos_cc']/max(1,tot):.3f}",
                   f"- GT boxes: {s['gt_boxes']} (non-compound {s['gt_boxes_noncomp']}, "
-                  f"compound-ignore {s['gt_boxes_compound']})",
+                  f"compound {s['gt_boxes_compound']})",
                   f"- non-compound GT boxes with NO matching CC: {s['gt_unmatched']}",
-                  f"- **candidate-recall (non-compound GT boxes hit by a CC): {recall:.4f}**", ""]
+                  f"- **candidate-recall (non-compound GT boxes hit by a CC): {recall:.4f}**",
+                  f"- **compound-digit candidate-recall: {crecall:.4f}** "
+                  f"({s['comp_digit_boxes'] - s['comp_digit_unmatched']}/{s['comp_digit_boxes']})", ""]
     lines += ["## Totals (all patches, cc+gt)", ""]
     for cat in cats:
         m = catalogs == cat

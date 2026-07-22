@@ -93,13 +93,11 @@ const OCR_ONE_AR_MAX = 0.50;
 // the retrained model reads the slash from context (ocr/COMPOUND_PLAN.md). Additive and
 // conservative: a span is only taken when it reads a valid n/n, else the digit groups
 // stand. `GAP_MAX`/`AR_*` are w/h-relative gates (911 gold compound boxes run w/h ~1..4.5).
-// OFF pending the CNN detection retrain: recognition is done (the model reads "/" in
-// context — validated 100% on held-out 911 compound crops, in both the CLI and the
-// WASM runtime, with no digit regression), but the CNN was trained with compound boxes
-// as IGNORE, so it under-detects the digit groups this pass pairs (e.g. "10/1" yields
-// only one blob). Un-mask compound in ocr/dataset.py + retrain the CNN, then flip this
-// on. Full status in ocr/COMPOUND_PLAN.md.
-const OCR_COMPOUND       = false;
+// Compound callouts ("3/2"): the CNN now detects compound digit groups (ocr/dataset.py
+// labels them positive; the "/" stroke stays ignore) and the recognizer reads the slash
+// in context, so this pass can pair the groups and OCR the whole span. See
+// ocr/COMPOUND_PLAN.md.
+const OCR_COMPOUND       = true;
 const OCR_COMPOUND_GAP_MAX = 1.4;   // pair gap ≤ this × mean digit-group height
 const OCR_COMPOUND_ROW_TOL = 0.35;  // pair y-centres within this × height
 const OCR_COMPOUND_AR_MIN  = 0.8;   // union-span w/h band
@@ -1624,8 +1622,35 @@ async function initTesseract() {
     langPath:   TESSDATA_URL,
     workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@7/dist/worker.min.js',
     corePath:   'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core-lstm.wasm.js',
+    // Don't cache the model: several OCR workers init concurrently, and their shared
+    // OPFS/IndexedDB cache races ("InvalidStateError: state had changed since read").
+    // It also served a STALE model after a retrain. Each worker just loads from the
+    // served file — the byte cost is paid once at ingest, not per catalog.
+    cacheMethod: 'none',
     logger:     () => {},
   });
+}
+
+// A dedicated Tesseract worker for the compound-callout pass, configured ONCE with the
+// "/"-inclusive whitelist and never used for the digit passes. Flipping a shared
+// worker's whitelist/PSM between the per-blob digit reads and the whole-span compound
+// read left it mis-reading the slash ("2/1" → "21") — an identical image reads
+// correctly on a worker that only ever does compound. Recognitions are serialized on
+// this single worker (compound spans are rare; no need for a pool).
+let COMPOUND_TWORKER = null;
+let compoundChain = Promise.resolve();
+async function getCompoundTWorker() {
+  if (!COMPOUND_TWORKER) {
+    COMPOUND_TWORKER = await initTesseract();
+    await COMPOUND_TWORKER.setParameters(
+      { tessedit_char_whitelist: '0123456789/', tessedit_pageseg_mode: '8', user_defined_dpi: '300' });
+  }
+  return COMPOUND_TWORKER;
+}
+function recognizeCompound(blob) {
+  const run = compoundChain.then(async () => (await (await getCompoundTWorker()).recognize(blob)).data);
+  compoundChain = run.then(() => {}, () => {});
+  return run;
 }
 
 async function createWorkerPool(size) {
@@ -1833,20 +1858,24 @@ function renderBlobCanvas(ink, W, H, blob, pad) {
   return dst;
 }
 
-// Render EVERY ink pixel inside a padded bbox onto a white canvas — the whole
-// glyph run in a region, not one connected component (renderBlobCanvas floods a
-// single blob). Used to OCR a compound callout's full "n/n" span at once.
-function renderRegionCanvas(ink, W, H, x0, y0, x1, y1, pad) {
-  const gx0 = Math.max(0, (x0|0) - pad), gy0 = Math.max(0, (y0|0) - pad);
-  const gx1 = Math.min(W, (x1|0) + pad), gy1 = Math.min(H, (y1|0) + pad);
-  const cw = Math.max(1, gx1 - gx0), ch = Math.max(1, gy1 - gy0);
+// Render the ink INSIDE a tight bbox onto a white canvas that carries a white-only
+// `margin` border. Unlike renderBlobCanvas (one flooded component) this draws the
+// whole glyph run in the box — a compound callout's full "n/n" span — but only ink
+// *within* [x0,x1)×[y0,y1): the margin is pure whitespace, so a leader-line stub
+// sitting just outside the box (which a padded ink region would pull in and OCR as a
+// stray "-") is excluded. Tesseract still gets the surrounding whitespace it wants.
+function renderRegionCanvas(ink, W, H, x0, y0, x1, y1, margin) {
+  const bx0 = Math.max(0, x0|0), by0 = Math.max(0, y0|0);
+  const bx1 = Math.min(W, x1|0), by1 = Math.min(H, y1|0);
+  const bw = Math.max(1, bx1 - bx0), bh = Math.max(1, by1 - by0);
+  const cw = bw + 2 * margin, ch = bh + 2 * margin;
   const dst = new OffscreenCanvas(cw, ch);
   const ctx = dst.getContext('2d');
   ctx.fillStyle = 'white'; ctx.fillRect(0, 0, cw, ch);
   const id = ctx.getImageData(0, 0, cw, ch), d = id.data;
-  for (let y = gy0; y < gy1; y++) for (let x = gx0; x < gx1; x++) {
+  for (let y = by0; y < by1; y++) for (let x = bx0; x < bx1; x++) {
     if (!ink[y * W + x]) continue;
-    const i = ((y - gy0) * cw + (x - gx0)) * 4;
+    const i = ((y - by0 + margin) * cw + (x - bx0 + margin)) * 4;
     d[i] = d[i+1] = d[i+2] = 0; d[i+3] = 255;
   }
   ctx.putImageData(id, 0, 0);
@@ -2198,7 +2227,6 @@ async function ocrDiagramModel(canvas, opList, vp, tWorker, diagRect = null, par
   // nothing.
   const compounds = [];
   if (OCR_COMPOUND && kept.length >= 2) {
-    await tWorker.setParameters({ tessedit_char_whitelist: '0123456789/', tessedit_pageseg_mode: '8', user_defined_dpi: '300' });
     const byX = [...kept].sort((a, b) => a.x0 - b.x0);
     const consumed = new Set();
     for (let i = 0; i < byX.length; i++) {
@@ -2217,8 +2245,9 @@ async function ocrDiagramModel(canvas, opList, vp, tWorker, diagRect = null, par
         const ar  = (ux1 - ux0) / Math.max(1, uy1 - uy0);
         if (ar < OCR_COMPOUND_AR_MIN || ar > OCR_COMPOUND_AR_MAX) continue;
         const reg = upscale(renderRegionCanvas(ink, W, H, ux0, uy0, ux1, uy1, Math.round(h * 0.3)), targetPx / h);
-        const { data } = await tWorker.recognize(await reg.convertToBlob({ type: 'image/png' }));
+        const data = await recognizeCompound(await reg.convertToBlob({ type: 'image/png' }));
         const txt = (data.text || '').replace(/\s/g, '');
+        if (dbg) (dbg.compoundTries || (dbg.compoundTries = [])).push({ a: a.num, b: b.num, txt });
         if (!/^\d{1,3}\/\d{1,3}$/.test(txt)) continue;
         compounds.push({ number: txt, x0: ux0, y0: uy0, x1: ux1, y1: uy1, confidence: Math.round(data.confidence || 0) });
         for (const g of byX)

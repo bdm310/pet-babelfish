@@ -12,7 +12,7 @@
   },
   "preprocessing": "value = patch_uint8 / 255.0 (0=ink, 1=white); no mean/std normalization",
   "output": "single sigmoid probability of class=callout",
-  "threshold": 0.933579,
+  "threshold": 0.150422,
   "threshold_selected_on": "val cc-only (held-out sections across all 5 gold catalogs), max-F1",
   "trained_on": [
     "356_356A_1950-1959",
@@ -25,10 +25,10 @@
   "onnx_opset": 13,
   "onnx_size_bytes": 104792,
   "eval_cc": {
-    "precision": 0.9943936877076412,
-    "recall": 0.9931563666528411,
-    "f1": 0.9937746420419173,
-    "ap": 0.9993553801881008
+    "precision": 0.9958813838550247,
+    "recall": 0.9956763434218654,
+    "f1": 0.9957788530834963,
+    "ap": 0.999499922802475
   },
   "eval_cc_split": "val (held-out sections, all 5 catalogs)"
 }
