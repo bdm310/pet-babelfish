@@ -22,3 +22,6 @@ ocr/dataset/
 __pycache__/
 *.log
 *credentials*
+# Exported eval SQLite + eval output under groundtruth (the .json are tracked)
+groundtruth/*/catalog.sqlite
+groundtruth/*/eval.csv

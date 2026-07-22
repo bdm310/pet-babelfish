@@ -21,7 +21,7 @@ Usage:
     uv run --with pillow python tools/ocr-eval.py --catalog-id 997-1Turbo-GT2_2007-2009
     uv run ... tools/ocr-eval.py --catalog-id 996_1998-2005 --iou 0.3
 """
-import sys, json, sqlite3, csv
+import sys, json, sqlite3, csv, re
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding='utf-8')
@@ -44,10 +44,11 @@ preds = {}
 for sid, num, x0, y0, x1, y1, conf in con.execute(
         "SELECT section_id, number, x0, y0, x1, y1, confidence FROM callout"):
     s = str(num).strip().strip('()')
-    if not s.lstrip('-').isdigit():
+    # Plain digits and compound ids ("3/1") both count; anything else is noise. A
+    # compound gold id can only be matched by a compound prediction (require_num), so
+    # keeping "n/n" here is what lets the compound-callout work show up in the score.
+    if not re.match(r'^-?\d+(/\d+)?$', s):
         continue
-    # ids are string tokens; a digit-only Tesseract pred can never match a compound
-    # gold id ('3/1'), which correctly leaves that gold callout unmatched (an FN).
     preds.setdefault(str(sid), []).append({'num': s, 'box': [x0, y0, x1, y1], 'conf': conf})
 con.close()
 

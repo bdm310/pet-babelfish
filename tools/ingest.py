@@ -183,12 +183,15 @@ try:
             except Exception:
                 pass
 
-        # Poll until done or error
+        # Poll until done or error. Completion is signalled by the #result panel
+        # becoming visible (the worker un-hides it on 'done'); check real visibility
+        # via offsetParent, NOT viewerLink.style.display — the link carries no inline
+        # display, so a style check reads '' and fires before the ingest even starts.
         result_handle = page.wait_for_function(
             """() => {
-                const link = document.getElementById('viewerLink');
+                const res = document.getElementById('result');
                 const errs = document.querySelectorAll('.log-line.err');
-                if (link && link.style.display !== 'none') return 'done';
+                if (res && res.offsetParent !== null) return 'done';
                 if (errs.length) return 'error:' + errs[0].textContent.trim();
                 return null;
             }""",
