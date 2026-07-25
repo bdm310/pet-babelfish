@@ -1676,27 +1676,67 @@
           this._applyZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top);
         },
 
-        // Drag-to-pan. Window listeners (not pointer capture) so the canvas still gets
-        // its click for taps; _panMoved tells diagramClick a drag just happened.
+        // Drag-to-pan (one pointer) and pinch-to-zoom (two). Window listeners (not
+        // pointer capture) so the canvas still gets its click for taps; _panMoved tells
+        // diagramClick a drag/pinch just happened. .diagram-scroll has touch-action:none,
+        // so touch gestures reach us here rather than scrolling/zooming the page.
         onDiagramPointerDown(e) {
-          if (e.button !== 0 || !this.diagramUrl) return;
+          if (e.pointerType === 'mouse' && e.button !== 0) return;
+          if (!this.diagramUrl) return;
+          const s = document.querySelector('.diagram-scroll');
+          if (!s) return;
+          const local = ev => {
+            const r = s.getBoundingClientRect();
+            return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+          };
+          if (!this._ptrs) this._ptrs = new Map();
+          this._ptrs.set(e.pointerId, local(e));
           this._panning  = true;
           this._panMoved = false;
-          const start = { x: e.clientX, y: e.clientY, panX: this.dpanX, panY: this.dpanY };
+          this._pinchDist = 0;  // recomputed once a second pointer moves
+
+          if (this._ptrListening) return;  // handlers already live for the gesture
+          this._ptrListening = true;
           const move = ev => {
-            const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
-            if (Math.abs(dx) + Math.abs(dy) > 3) this._panMoved = true;
-            this.dpanX = start.panX + dx;
-            this.dpanY = start.panY + dy;
+            const p = this._ptrs.get(ev.pointerId);
+            if (!p) return;
+            const n = local(ev);
+            if (this._ptrs.size >= 2) {
+              // Pinch: pan by the midpoint shift, then zoom about the midpoint by the
+              // ratio of finger spread. Update this pointer first so both are current.
+              this._ptrs.set(ev.pointerId, n);
+              const [a, b] = [...this._ptrs.values()];
+              const dist = Math.hypot(a.x - b.x, a.y - b.y);
+              const mid  = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+              if (this._pinchDist > 0) {
+                this.dpanX += mid.x - this._pinchMid.x;
+                this.dpanY += mid.y - this._pinchMid.y;
+                if (dist > 0) this._applyZoom(dist / this._pinchDist, mid.x, mid.y);
+              }
+              this._pinchDist = dist;
+              this._pinchMid  = mid;
+              this._panMoved  = true;
+            } else {
+              const dx = n.x - p.x, dy = n.y - p.y;
+              this._ptrs.set(ev.pointerId, n);
+              if (Math.abs(dx) + Math.abs(dy) > 0) { this.dpanX += dx; this.dpanY += dy; }
+              if (Math.hypot(n.x, n.y)) this._panMoved = this._panMoved || Math.abs(dx) + Math.abs(dy) > 1;
+            }
           };
-          const up = () => {
+          const up = ev => {
+            this._ptrs.delete(ev.pointerId);
+            this._pinchDist = 0;  // re-seat the pan baseline for any remaining pointer
+            if (this._ptrs.size) return;  // gesture continues with the other finger(s)
             this._panning = false;
+            this._ptrListening = false;
             window.removeEventListener('pointermove', move);
             window.removeEventListener('pointerup', up);
+            window.removeEventListener('pointercancel', up);
             setTimeout(() => { this._panMoved = false; }, 0);  // after the click fires
           };
           window.addEventListener('pointermove', move);
           window.addEventListener('pointerup', up);
+          window.addEventListener('pointercancel', up);
         },
 
         dismissDiagramHint() {
