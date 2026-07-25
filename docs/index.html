@@ -463,14 +463,14 @@
     <a href="catalog-browser.html" class="muted">Raw table browser</a>
   </footer>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+  <script src="vendor/sql.js/sql-wasm.js"></script>
   <script src="theme.js"></script>
   <script src="appl.js"></script>
   <script src="vin.js"></script>
   <script src="catalogs.js"></script>
   <script src="garage.js"></script>
   <script>
-    const SQLJS_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
+    const SQLJS_WASM = 'vendor/sql.js/sql-wasm.wasm';
 
     // Nobody knows their car by its EC/TC code, so name it with what the catalog says
     // about it. A transmission's `type_code` is speeds plus A(utomatik) or
@@ -919,6 +919,6 @@
       };
     }
   </script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.13.3/cdn.min.js" defer></script>
+  <script src="vendor/alpinejs/cdn.min.js" defer></script>
 </body>
 </html>

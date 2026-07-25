@@ -130,12 +130,12 @@
     <button @click="setPage(page + 1)" :disabled="(page+1)*pageSize >= filteredRows.length">next ›</button>
   </div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+  <script src="vendor/sql.js/sql-wasm.js"></script>
+  <script src="vendor/fflate/index.js"></script>
   <script src="theme.js"></script>
   <script src="catalogs.js"></script>
   <script>
-    const SQLJS_WASM = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
+    const SQLJS_WASM = 'vendor/sql.js/sql-wasm.wasm';
     const PAGE_SIZE  = 200;
 
     const TABLES = ['catalog', 'main_group', 'section', 'part', 'callout'];
@@ -280,6 +280,10 @@
         },
 
         _startQueryBridge() {
+          // Dev-only relay (tools/query-bridge.ps1). It talks to http://localhost:9876,
+          // which is meaningless - and blocked as mixed content - on the hosted HTTPS site.
+          // Only poll when the page is itself served from localhost.
+          if (!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) return;
           const self = this;
           const poll = async () => {
             if (self.db) {
@@ -408,6 +412,6 @@
       };
     }
   </script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.13.3/cdn.min.js" defer></script>
+  <script src="vendor/alpinejs/cdn.min.js" defer></script>
 </body>
 </html>

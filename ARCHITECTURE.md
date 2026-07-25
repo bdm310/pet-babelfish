@@ -10,7 +10,7 @@ The project splits cleanly in two, joined only by a file:
 
 ```
 PET PDF ──[ ingest ]──▶  <catalogId>/catalog.sqlite  ──[ app ]──▶  filtered parts view
-             docs/ingest.*            (in OPFS)              docs/viewer.html, garage.html
+             docs/ingest.*            (in OPFS)              docs/viewer.html, index.html
 ```
 
 1. **Ingest** parses a PDF entirely in the browser and writes one SQLite file per catalog to
@@ -21,17 +21,25 @@ Both run as client-side JavaScript hosted from `docs/`. No server, no backend - 
 `tools/` and `ocr/` is dev/automation only. HTTP is required (WASM + OPFS do not work on
 `file://`).
 
-**No build step.** Vendored from CDN: PDF.js 3.11, sql.js 1.10.3 (FTS**4** - the cdnjs build has
-no FTS5), Tesseract.js 7, onnxruntime-web 1.20.1, Alpine.js 3.13.
+**No build step.** All third-party libs are vendored under `docs/vendor/` and loaded same-origin -
+nothing is fetched from a CDN at runtime, so the app has no external dependency to be down,
+yanked, or tampered with (which is also why the `<script>` tags need no SRI). Versions: PDF.js
+3.11.174, sql.js 1.10.3 (FTS**4** - this build has no FTS5), Tesseract.js 7 (+ tesseract.js-core 5),
+onnxruntime-web 1.20.1, Alpine.js 3.13.3, fflate 0.8.2. All are permissive (MIT / Apache-2.0) and
+GPLv3-compatible; each lib's `LICENSE`/notice file is kept beside it, as MIT and Apache-2.0 require
+when redistributing. Re-vendor by copying the files - **and that license file** - from the matching
+npm package into `docs/vendor/<lib>/` (Alpine and onnxruntime ship no license in their npm package;
+take theirs from the project's tagged GitHub release).
 
 ## Files in `docs/` (the app)
 
 | File | Role |
 |---|---|
-| `index.html` | Landing page / links. |
+| `index.html` | Landing page + garage: saved vehicles (identity + spec filter + per-part Ok/Notes). |
 | `ingest.html` + `ingest.worker.js` | Ingest UI; the worker does all PDF parse + OCR + SQLite writes off the main thread. |
 | `viewer.html` | Parts viewer: section tree, parts table, FTS search, diagram + callout overlay, spec filter. |
-| `garage.html` + `garage.js` | Saved vehicles (identity + spec filter + per-part Ok/Notes) in a single OPFS `garage.json`. |
+| `garage.js` | Garage storage module (a single OPFS `garage.json`), loaded by `index.html` and `viewer.html`. `garage.html` is a legacy redirect to `index.html`. |
+| `vendor/` | Third-party libs (sql.js, Alpine, PDF.js, Tesseract, onnxruntime, fflate), served same-origin. |
 | `catalog-browser.html` | Raw SQLite table inspector. |
 | `appl.js` | Applicability grammar - the scope language parser/matcher (see below). |
 | `vin.js` | VIN decode + chassis/market matching. |

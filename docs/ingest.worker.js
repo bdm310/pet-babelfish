@@ -25,16 +25,16 @@ if (typeof document === 'undefined') {
 }
 if (typeof window === 'undefined') self.window = self;
 
-const ORT_CDN = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/';
+const ORT_CDN = new URL('./vendor/onnxruntime/', self.location.href).href;
 
 importScripts(
-  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js',
-  'https://cdn.jsdelivr.net/npm/tesseract.js@7/dist/tesseract.min.js',
+  './vendor/pdfjs/pdf.min.js',
+  './vendor/sql.js/sql-wasm.js',
+  './vendor/tesseract/tesseract.min.js',
   ORT_CDN + 'ort.wasm.min.js'
 );
 
-// onnxruntime-web: single-threaded, no proxy, wasm from the same CDN dir. numThreads=1
+// onnxruntime-web: single-threaded, no proxy, wasm from the same vendor dir. numThreads=1
 // avoids SharedArrayBuffer (the static server sets no COOP/COEP headers).
 ort.env.wasm.numThreads = 1;
 ort.env.wasm.proxy      = false;
@@ -51,15 +51,15 @@ importScripts(new URL('./ccitt.js', self.location.href).href);
 // Prevent pdf.min.js from spawning a nested worker - it should use the
 // already-running pdf.worker.min.js indirectly via the fake worker path.
 pdfjsLib.GlobalWorkerOptions.workerSrc =
-  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  new URL('./vendor/pdfjs/pdf.worker.min.js', self.location.href).href;
 
 const PDFJS_OPTS = {
-  cMapUrl:             'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
+  cMapUrl:             new URL('./vendor/pdfjs/cmaps/', self.location.href).href,
   cMapPacked:          true,
-  standardFontDataUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/',
+  standardFontDataUrl: new URL('./vendor/pdfjs/standard_fonts/', self.location.href).href,
 };
 
-const SQLJS_WASM    = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
+const SQLJS_WASM    = new URL('./vendor/sql.js/sql-wasm.wasm', self.location.href).href;
 const DIAGRAM_SCALE = 2.0;
 
 // OCR parameters - tuned for Porsche PET callout digits at ~7pt
@@ -1620,8 +1620,8 @@ async function extractSectionParts(pdf, firstPartsPage, nextDiagramPage) {
 async function initTesseract() {
   return Tesseract.createWorker('porsche', 1, {
     langPath:   TESSDATA_URL,
-    workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@7/dist/worker.min.js',
-    corePath:   'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core-lstm.wasm.js',
+    workerPath: new URL('./vendor/tesseract/worker.min.js', self.location.href).href,
+    corePath:   new URL('./vendor/tesseract-core/tesseract-core-lstm.wasm.js', self.location.href).href,
     // Don't cache the model: several OCR workers init concurrently, and their shared
     // OPFS/IndexedDB cache races ("InvalidStateError: state had changed since read").
     // It also served a STALE model after a retrain. Each worker just loads from the

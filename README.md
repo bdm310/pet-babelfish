@@ -27,7 +27,7 @@ Then open `http://localhost:8080/`:
 - **Ingest a catalog** (`ingest.html`) - pick a PET PDF; it extracts parts + diagrams and stores
   the result in the browser (OPFS).
 - **Browse parts** (`viewer.html`) - section tree, parts table, search, diagram view, spec filter.
-- **Garage** (`garage.html`) - save vehicles with their catalog + spec filter 
+- **Garage** (on `index.html`) - save vehicles with their catalog + spec filter 
 - **Raw table browser** (`catalog-browser.html`) - inspect the ingested SQLite directly.
 
 ## Documentation
