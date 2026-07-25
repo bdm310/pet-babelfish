@@ -1388,7 +1388,7 @@
           this.hoveredPos  = null;
           this.selectedPos = null;
 
-          // Load diagram. It travels inside the DB (CCITT G4 bitstream), so this works
+          // Load diagram. It travels inside the DB (WebP or CCITT G4 blob), so this works
           // in file mode too. Decode happens here, only for the section being shown.
           this._setDiagram(null);
           this._resetDiagramView();
@@ -1397,7 +1397,7 @@
             const row = this._query(
               'SELECT diagram_blob, diagram_w, diagram_h FROM section WHERE id=?', [sec.id]
             )[0];
-            if (row && row[0]) this._showG4Diagram(row[0], row[1], row[2], token);
+            if (row && row[0]) this._showDiagram(row[0], row[1], row[2], token);
           }
         },
 
@@ -1476,14 +1476,14 @@
           ).map(([number, x0, y0, x1, y1, confidence]) => ({ number, x0, y0, x1, y1, confidence }));
           const pos = this._posNum(p.position);
           this.hoveredPos = pos; this.selectedPos = pos;
-          // Load this section's diagram (CCITT G4, inside the DB - works in file mode too).
+          // Load this section's diagram (WebP or CCITT G4, inside the DB - works in file mode too).
           this._setDiagram(null);
           this._resetDiagramView();
           const token = ++this._diagramToken;
           const row = this._query(
             'SELECT diagram_blob, diagram_w, diagram_h FROM section WHERE id=?', [p.section_id]
           )[0];
-          if (row && row[0]) this._showG4Diagram(row[0], row[1], row[2], token);
+          if (row && row[0]) this._showDiagram(row[0], row[1], row[2], token);
         },
 
         // ── Applicability ────────────────────────────────────────────
@@ -1749,9 +1749,20 @@
           this.diagramUrl = url;
         },
 
-        // Decode a section's CCITT G4 bitstream to a displayable image. toBlob is
-        // async, so a token guards against a slow decode clobbering a newer section.
-        _showG4Diagram(bytes, w, h, token) {
+        // Show a section's diagram. diagram_blob is either a WebP (newer greyscale/CAD
+        // renders) or a headerless CCITT G4 bitstream (bilevel line art). WebP self-
+        // describes via its RIFF/WEBP magic and the browser decodes it natively; anything
+        // else is G4 and needs ccitt.js + w/h. toBlob is async, so a token guards against
+        // a slow decode clobbering a newer section.
+        _showDiagram(bytes, w, h, token) {
+          const isWebp = bytes.length > 12 &&
+            bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 && // "RIFF"
+            bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50; // "WEBP"
+          if (isWebp) {
+            if (token !== this._diagramToken) return;
+            this._setDiagram(URL.createObjectURL(new Blob([bytes], { type: 'image/webp' })));
+            return;
+          }
           try {
             const { pixels } = CCITT.decode(bytes, w, h);
             const rgba = CCITT.toRGBA(pixels, w, h);

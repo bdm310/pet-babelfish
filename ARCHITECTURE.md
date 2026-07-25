@@ -80,10 +80,14 @@ Tables: `catalog`, `main_group`, `section`, `part`, `part_fts`, `callout`, `pr_c
 **main_group** - top-level groups 0–9 (Engine, Gearbox, Body, …).
 
 **section** - numbered like `103-010`.
-- `parts_page`, `diagram_page`; `diagram_blob` is the rendered diagram as a raw **CCITT Group 4**
-  (ITU-T T.6) bitstream - bilevel line art, ~44% the size of the lossy WebP it replaced, decoded by
-  `ccitt.js` for display. T.6 has no header, so `diagram_w`/`diagram_h` carry the pixel dimensions
-  the decoder needs. It lives in the DB because OPFS costs ~2.6 ms per file however small - a file
+- `parts_page`, `diagram_page`; `diagram_blob` is the rendered diagram in one of two self-describing
+  codecs, chosen per-diagram by content. Bilevel line art → a raw headerless **CCITT Group 4** (ITU-T
+  T.6) bitstream (~44% the size of lossy WebP), decoded by `ccitt.js`. Greyscale/CAD renders (newer
+  catalogs like 718) → **WebP** - a hard threshold to bilevel destroys their shading, so they keep
+  their tones; decoded natively by the browser. `renderDiagram`'s `isContinuousTone()` decides;
+  WebP's RIFF/WEBP magic tells the two apart at display, so no schema flag is needed. T.6 has no
+  header, so `diagram_w`/`diagram_h` carry the pixel dimensions the G4 decoder needs (WebP ignores
+  them). It lives in the DB because OPFS costs ~2.6 ms per file however small - a file
   per diagram costs ~7.4 s per import vs ~0.3 s for the same bytes inside the DB. **Never SELECT
   `diagram_blob` in a list query** - read it by section id only when a diagram is actually shown, or
   a list of titles drags every diagram into memory. One file also means `viewer.html?sqlite=URL`

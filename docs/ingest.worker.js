@@ -385,7 +385,7 @@ async function ingest(buffer, catalogId) {
     `    ── below: CPU-seconds summed across all workers; not additive with wall ──\n` +
     `    renderDiagram()    : ${cpu(diagCpu)}\n` +
     `    page render+oplist : ${fmt(T.render)} ${perDiag(T.render)}\n` +
-    `    G4 encode          : ${fmt(T.convertDiagram)} ${perDiag(T.convertDiagram)}\n` +
+    `    diagram encode     : ${fmt(T.convertDiagram)} ${perDiag(T.convertDiagram)}\n` +
     `    ocrDiagram() total : ${fmt(T.totalOcr)} ${perDiag(T.totalOcr)}\n` +
     `      binarize+upscale   : ${fmt(T.binarizeUpscale)}\n` +
     `      findBlobs (BFS)    : ${fmt(T.findBlobs)}\n` +
@@ -1719,6 +1719,26 @@ function binarize(src, threshold) {
   return dst;
 }
 
+// Bilevel line art vs. continuous-tone render. Line art sits almost entirely at the
+// luminance extremes (near-white paper + near-black ink); a greyscale CAD render (newer
+// catalogs) carries real mid-tone mass. A hard threshold is near-lossless on the former
+// and destroys the latter, so this picks the storage codec. Biased safe: a false
+// "continuous-tone" only costs file size, a false "line art" ruins the image.
+function isContinuousTone(canvas) {
+  const w = canvas.width, h = canvas.height, N = w * h;
+  if (!N) return false;
+  const d = canvas.getContext('2d').getImageData(0, 0, w, h).data;
+  const step = Math.max(1, Math.floor(N / 200000));   // sample, don't scan, big native images
+  let mid = 0, n = 0;
+  for (let i = 0; i < N; i += step) {
+    const j = i * 4;
+    const v = 0.299*d[j] + 0.587*d[j+1] + 0.114*d[j+2];
+    if (v > 40 && v < 215) mid++;
+    n++;
+  }
+  return mid / n > 0.03;
+}
+
 // Bilinear resample - returns new OffscreenCanvas. Handles BOTH up- and downscaling:
 // downscaling matters for oversized callouts (a large-font scale needs factor < 1 to
 // bring the glyph down to targetPx). Only a near-identity factor is passed through.
@@ -2751,7 +2771,7 @@ const TIMING = {
   dbSave:          0,  // db.export + writeOpfsFile
   // ── OCR internals (subset of renderDiagram) ────────────────────────────────
   render:          0,  // page.getOperatorList + page.render
-  convertDiagram:  0,  // binarize + CCITT.encode → G4 bytes for section.diagram_blob
+  convertDiagram:  0,  // encode section.diagram_blob (G4 for line art, WebP for CAD renders)
   binarizeUpscale: 0,  // binarize + upscale
   findBlobs:       0,  // connected-component labeling
   patchExtract:    0,  // 48×48 patch extraction for the model (model path)
@@ -2818,16 +2838,24 @@ async function renderDiagram(pdf, pageNum, tWorker) {
 
   page.cleanup();
 
-  // Save native image (or 2× render fallback) binarized to a CCITT Group 4
-  // bitstream for display - bilevel line art, ~44% the size of lossy WebP.
-  // ocrCanvas is native when available - no upscaling wasted on the stored file.
+  // Store the native image (or 2× render fallback) for display. Line art → CCITT G4
+  // bitstream (bilevel, ~44% the size of lossy WebP). Continuous-tone greyscale renders
+  // → WebP, which a hard threshold would destroy. The blob is self-describing (WebP's
+  // RIFF/WEBP magic vs. headerless G4), so the viewer picks the decoder with no schema
+  // flag. OCR is unaffected: ocrDiagram binarizes ocrCanvas itself, downstream of this.
   t = performance.now();
-  const binCanvas = binarize(ocrCanvas, OCR_BIN_THRESH);
-  const w = binCanvas.width, h = binCanvas.height;
-  const bd = binCanvas.getContext('2d').getImageData(0, 0, w, h).data;
-  const pixels = new Uint8Array(w * h);
-  for (let i = 0, j = 0; i < pixels.length; i++, j += 4) pixels[i] = bd[j] < 128 ? 1 : 0; // black=1
-  const imgBytes = CCITT.encode(pixels, w, h);
+  const w = ocrCanvas.width, h = ocrCanvas.height;
+  let imgBytes;
+  if (isContinuousTone(ocrCanvas)) {
+    const blob = await ocrCanvas.convertToBlob({ type: 'image/webp', quality: 0.8 });
+    imgBytes = new Uint8Array(await blob.arrayBuffer());
+  } else {
+    const binCanvas = binarize(ocrCanvas, OCR_BIN_THRESH);
+    const bd = binCanvas.getContext('2d').getImageData(0, 0, w, h).data;
+    const pixels = new Uint8Array(w * h);
+    for (let i = 0, j = 0; i < pixels.length; i++, j += 4) pixels[i] = bd[j] < 128 ? 1 : 0; // black=1
+    imgBytes = CCITT.encode(pixels, w, h);
+  }
   TIMING.convertDiagram += performance.now() - t;
 
   let callouts = [];

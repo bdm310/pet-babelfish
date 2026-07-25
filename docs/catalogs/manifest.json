@@ -1114,7 +1114,7 @@
     "model": "982-17",
     "dialect": "modern",
     "year_pivot": null,
-    "bytes": 3096576,
+    "bytes": 10125312,
     "vinRanges": [
       {
         "model_year": 2017,
@@ -1197,7 +1197,7 @@
     "model": "982C17",
     "dialect": "modern",
     "year_pivot": null,
-    "bytes": 3031040,
+    "bytes": 9658368,
     "vinRanges": [
       {
         "model_year": 2017,
@@ -2729,7 +2729,7 @@
     "model": "918",
     "dialect": "modern",
     "year_pivot": 2015,
-    "bytes": 1835008,
+    "bytes": 7430144,
     "vinRanges": [
       {
         "model_year": 2014,
@@ -4561,7 +4561,7 @@
     "model": "991-12",
     "dialect": "modern",
     "year_pivot": 2012,
-    "bytes": 5222400,
+    "bytes": 15151104,
     "vinRanges": [
       {
         "model_year": 2012,
@@ -5004,7 +5004,7 @@
     "model": "991-16",
     "dialect": "modern",
     "year_pivot": 2017,
-    "bytes": 4210688,
+    "bytes": 14757888,
     "vinRanges": [
       {
         "model_year": 2017,
@@ -5339,7 +5339,7 @@
     "model": "991G13",
     "dialect": "modern",
     "year_pivot": null,
-    "bytes": 3641344,
+    "bytes": 14008320,
     "vinRanges": [
       {
         "model_year": 2014,
@@ -5542,7 +5542,7 @@
     "model": "991T13",
     "dialect": "modern",
     "year_pivot": null,
-    "bytes": 6451200,
+    "bytes": 23343104,
     "vinRanges": [
       {
         "model_year": 2014,
@@ -7848,7 +7848,7 @@
     "model": "981-13",
     "dialect": "modern",
     "year_pivot": 2012,
-    "bytes": 4063232,
+    "bytes": 10653696,
     "vinRanges": [
       {
         "model_year": 2013,
@@ -9056,7 +9056,7 @@
     "model": "981SPY",
     "dialect": "modern",
     "year_pivot": 2016,
-    "bytes": 2019328,
+    "bytes": 7761920,
     "vinRanges": [
       {
         "model_year": 2016,
@@ -10365,7 +10365,7 @@
     "model": "981C14",
     "dialect": "modern",
     "year_pivot": 2014,
-    "bytes": 3956736,
+    "bytes": 10801152,
     "vinRanges": [
       {
         "model_year": 2014,
@@ -10980,7 +10980,7 @@
     "model": "981GT4",
     "dialect": "modern",
     "year_pivot": 2016,
-    "bytes": 1949696,
+    "bytes": 7565312,
     "vinRanges": [
       {
         "model_year": 2015,
@@ -11045,7 +11045,7 @@
     "model": "95B",
     "dialect": "modern",
     "year_pivot": 2014,
-    "bytes": 4603904,
+    "bytes": 15888384,
     "vinRanges": [
       {
         "model_year": 2014,
@@ -12177,7 +12177,7 @@
     "model": "971-17",
     "dialect": "modern",
     "year_pivot": null,
-    "bytes": 7409664,
+    "bytes": 31850496,
     "vinRanges": [
       {
         "model_year": 2017,
