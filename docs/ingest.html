@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ingest a catalog - pet-babelfish</title>
+  <script>(function(){var t=localStorage.getItem('pb-theme');if(t)document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: var(--font-ui); margin: 0;
+      background: var(--bg); color: var(--text);
+      display: grid; grid-template-rows: auto 1fr; height: 100vh;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────── */
+    .main {
+      display: grid; grid-template-columns: minmax(300px, 380px) 1fr;
+      min-height: 0; overflow: hidden;
+    }
+    .panel { padding: var(--sp-4); overflow-y: auto; }
+    .form-panel {
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: var(--sp-4);
+    }
+    .run-panel { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+    /* Stack into one column on narrow screens */
+    @media (max-width: 760px) {
+      body { height: auto; min-height: 100vh; }
+      .main { grid-template-columns: 1fr; overflow: visible; }
+      .form-panel { border-right: none; border-bottom: 1px solid var(--border); }
+    }
+
+    /* ── Form field groups ──────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: var(--sp-1); }
+    .field > label { font-size: 0.82rem; color: var(--text2); font-weight: 600; }
+    .field .inp { width: 100%; }
+    .sub-hint { font-size: 0.72rem; line-height: 1.4; }
+
+    /* ── Dropzone ───────────────────────────────────────────── */
+    #dropzone {
+      border: 2px dashed var(--border3); border-radius: var(--radius-lg);
+      padding: var(--sp-5) var(--sp-4); text-align: center; color: var(--text3);
+      cursor: pointer; font-size: 0.85rem; transition: border-color 0.15s, color 0.15s;
+    }
+    #dropzone:hover { border-color: var(--accent); }
+    #dropzone.over, #dropzone.loaded { border-color: var(--accent); color: var(--accent); }
+    #dropzone .dz-hint { font-size: 0.72rem; color: var(--text4); margin-top: var(--sp-1); }
+    #dropzone.loaded .dz-hint { color: var(--accent); }
+
+    /* ── Ingest button (full width) ─────────────────────────── */
+    #ingestBtn { width: 100%; justify-content: center; font-weight: 600; padding: 0.55rem; }
+
+    /* ── Advanced disclosure ────────────────────────────────── */
+    details.advanced { border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+    details.advanced > summary,
+    #logDetails > summary {
+      cursor: pointer; font-size: 0.82rem; color: var(--text3);
+      list-style: none; user-select: none; padding: 0.15rem 0;
+    }
+    details > summary::-webkit-details-marker { display: none; }
+    details > summary::before { content: '▸ '; color: var(--text4); }
+    details[open] > summary::before { content: '▾ '; }
+    details.advanced > summary:hover, #logDetails > summary:hover { color: var(--accent); }
+    details.advanced .stack { margin-top: var(--sp-3); }
+    .check-row {
+      display: flex; align-items: flex-start; gap: var(--sp-2);
+      font-size: 0.82rem; color: var(--text2); cursor: pointer;
+    }
+    .check-row input { margin-top: 0.15rem; }
+
+    /* ── Run panel: status / stepper / progress ─────────────── */
+    #progressWrap { display: none; flex-direction: column; gap: var(--sp-3); }
+    .status-line { font-size: 1.05rem; color: var(--text-hi); font-weight: 600; }
+
+    .stepper { display: flex; flex-wrap: wrap; gap: var(--sp-3); }
+    .step { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text4); }
+    .step .dot {
+      width: 18px; height: 18px; border-radius: 50%; border: 1px solid var(--border3);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 0.62rem; font-family: var(--font-mono); color: var(--text4);
+    }
+    .step.active { color: var(--text-hi); font-weight: 600; }
+    .step.active .dot { border-color: var(--accent); color: var(--accent); }
+    .step.done { color: var(--accent); }
+    .step.done .dot { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+
+    progress { width: 100%; height: 8px; accent-color: var(--accent); border-radius: 4px; }
+    #progressLabel { font-size: 0.78rem; color: var(--text3); }
+
+    #idleHint { font-size: 0.85rem; line-height: 1.5; }
+
+    /* ── Result / CTAs ──────────────────────────────────────── */
+    #result { display: none; flex-direction: column; gap: var(--sp-3); }
+    .stats-row { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+    .stat {
+      display: inline-block; background: var(--bg2); border: 1px solid var(--border2);
+      border-radius: 3px; padding: 0.15rem 0.45rem; font-size: 0.78rem;
+      font-family: var(--font-mono);
+    }
+    .stat.ok { border-color: var(--accent-bd); color: var(--accent); background: var(--accent-bg2); }
+    .cta-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+    .cta-row .btn { padding: 0.45rem 0.8rem; font-size: 0.85rem; }
+
+    /* ── Log (behind Details) ───────────────────────────────── */
+    #logDetails { border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+    #log {
+      margin-top: var(--sp-2); max-height: 22rem; overflow-y: auto;
+      font-family: var(--font-mono); font-size: 0.75rem; line-height: 1.6;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--bg4); padding: var(--sp-2) var(--sp-3);
+    }
+    .log-line { padding: 0.1rem 0; border-bottom: 1px solid var(--row-border); }
+    .log-line:last-child { border-bottom: none; }
+    .log-line.ok   { color: var(--accent); }
+    .log-line.err  { color: var(--err); }
+    .log-line.info { color: var(--text2); }
+  </style>
+</head>
+<body>
+  <header class="pb-header">
+    <h1>Ingest a catalog</h1>
+    <span class="spacer"></span>
+    <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
+    <a href="index.html">← Home</a>
+  </header>
+
+  <div class="main">
+    <!-- ── Form ─────────────────────────────────────────────── -->
+    <section class="panel form-panel">
+      <div class="field">
+        <label>Catalog PDF</label>
+        <div id="dropzone">
+          Drop a PDF here, or click to choose one
+          <div class="dz-hint">Porsche PET parts-catalog export (.pdf)</div>
+          <input type="file" id="fileInput" accept=".pdf" style="display:none">
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="catalogId">Name this catalog</label>
+        <input type="text" class="inp mono" id="catalogId" placeholder="e.g. 997TT-2005">
+        <div class="sub-hint muted">Used as the storage key. Auto-filled from the file name - edit if you like.</div>
+      </div>
+
+      <button class="btn btn-primary" id="ingestBtn" disabled>Ingest</button>
+
+      <details class="advanced">
+        <summary>Advanced / re-ingest</summary>
+        <div class="stack">
+          <div class="field">
+            <label for="sectionFilter">Sections to re-ingest</label>
+            <input type="text" class="inp mono" id="sectionFilter" placeholder="e.g. 101-000, 102-000">
+            <div class="sub-hint muted">Comma-separated. Leave blank to ingest the whole catalog.</div>
+          </div>
+          <label class="check-row">
+            <input type="checkbox" id="partsOnly">
+            <span>Parts only <span class="muted">- skip diagram re-render / OCR (faster)</span></span>
+          </label>
+        </div>
+      </details>
+    </section>
+
+    <!-- ── Run / status / log ───────────────────────────────── -->
+    <section class="panel run-panel">
+      <div id="idleHint" class="muted">
+        Load a PDF and name your catalog, then press <strong>Ingest</strong>.
+        Progress will appear here.
+      </div>
+
+      <div id="progressWrap">
+        <div class="status-line" id="statusLine">Starting…</div>
+        <div class="stepper" id="stepper">
+          <span class="step" data-stage="prepare"><span class="dot">1</span>Prepare</span>
+          <span class="step" data-stage="parse"><span class="dot">2</span>Parse pages</span>
+          <span class="step" data-stage="extract"><span class="dot">3</span>Extract parts &amp; diagrams</span>
+          <span class="step" data-stage="save"><span class="dot">4</span>Save</span>
+        </div>
+        <progress id="progressBar" value="0" max="100"></progress>
+        <div id="progressLabel" class="muted">-</div>
+      </div>
+
+      <div id="result">
+        <div class="stats-row" id="resultStats"></div>
+        <div class="cta-row">
+          <a class="btn btn-primary" id="viewerLink">Open viewer →</a>
+          <a class="btn" id="saveVehicleLink">Save a vehicle for this catalog</a>
+        </div>
+      </div>
+
+      <details id="logDetails">
+        <summary>Details</summary>
+        <div id="log">
+          <div class="log-line info">Waiting for a catalog…</div>
+        </div>
+      </details>
+    </section>
+  </div>
+
+  <script src="theme.js"></script>
+  <script>
+    let selectedFile = null;
+    let worker = null;
+
+    const dropzone        = document.getElementById('dropzone');
+    const fileInput       = document.getElementById('fileInput');
+    const catalogIdEl     = document.getElementById('catalogId');
+    const sectionFilterEl = document.getElementById('sectionFilter');
+    const partsOnlyEl     = document.getElementById('partsOnly');
+    const ingestBtn       = document.getElementById('ingestBtn');
+    const logEl           = document.getElementById('log');
+    const logDetails      = document.getElementById('logDetails');
+    const progressBar     = document.getElementById('progressBar');
+    const progressLabel   = document.getElementById('progressLabel');
+    const progressWrap    = document.getElementById('progressWrap');
+    const statusLine      = document.getElementById('statusLine');
+    const idleHint        = document.getElementById('idleHint');
+    const resultEl        = document.getElementById('result');
+    const resultStats     = document.getElementById('resultStats');
+    const viewerLink      = document.getElementById('viewerLink');
+    const saveVehicleLink = document.getElementById('saveVehicleLink');
+    const stepEls         = Array.from(document.querySelectorAll('#stepper .step'));
+
+    // ── Remember the log disclosure state ─────────────────────────────────
+    logDetails.open = localStorage.getItem('pb-ingest-log-open') !== '0'; // default open
+    logDetails.addEventListener('toggle', () => {
+      localStorage.setItem('pb-ingest-log-open', logDetails.open ? '1' : '0');
+    });
+
+    // ── High-level stage mapping (best-effort, robust to wording) ─────────
+    const STAGES = [
+      { id: 'prepare', label: 'Preparing…' },
+      { id: 'parse',   label: 'Parsing pages…' },
+      { id: 'extract', label: 'Extracting parts & reading diagrams…' },
+      { id: 'save',    label: 'Saving…' },
+    ];
+    let curStage = -1;
+
+    function classifyStage(text) {
+      const t = String(text).toLowerCase();
+      if (/extracting parts/.test(t))                                              return 'extract';
+      if (/(search index|saving database)/.test(t))                               return 'save';
+      if (/(table of contents|model\/option|model information|option information)/.test(t)) return 'parse';
+      if (/(loading pdf|initialis|opening storage|callout model|ocr worker|tesseract|loading existing|found \d+ section)/.test(t)) return 'prepare';
+      return null;
+    }
+
+    function renderSteps() {
+      stepEls.forEach((el, i) => {
+        el.classList.toggle('done', i < curStage);
+        el.classList.toggle('active', i === curStage);
+      });
+    }
+
+    // Advance to a stage (never regress), updating the status line + stepper.
+    function setStage(id) {
+      const i = STAGES.findIndex(s => s.id === id);
+      if (i < 0) return;
+      if (i > curStage) curStage = i;
+      statusLine.textContent = STAGES[curStage].label;
+      renderSteps();
+    }
+
+    // ── File picking ────────────────────────────────────────────────────────
+
+    dropzone.addEventListener('click', () => fileInput.click());
+    dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('over'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
+    dropzone.addEventListener('drop', e => {
+      e.preventDefault(); dropzone.classList.remove('over');
+      setFile(e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+
+    function setFile(file) {
+      if (!file || !file.name.endsWith('.pdf')) return;
+      selectedFile = file;
+      dropzone.innerHTML =
+        `✓ ${file.name}<div class="dz-hint">${(file.size / 1024 / 1024).toFixed(1)} MB - click to choose a different file</div>`;
+      dropzone.appendChild(fileInput);
+      dropzone.classList.add('loaded');
+      // Pre-fill catalog ID from filename if empty
+      if (!catalogIdEl.value.trim()) {
+        catalogIdEl.value = file.name.replace(/\.pdf$/i, '').replace(/\s+/g, '-');
+      }
+      updateBtn();
+    }
+
+    catalogIdEl.addEventListener('input', updateBtn);
+    sectionFilterEl.addEventListener('input', updateBtn);
+    partsOnlyEl.addEventListener('change', updateBtn);
+
+    function updateBtn() {
+      ingestBtn.disabled = !(selectedFile && catalogIdEl.value.trim());
+      const filter   = sectionFilterEl.value.trim();
+      const partsOnly = partsOnlyEl.checked;
+      if (!filter && !partsOnly) ingestBtn.textContent = 'Ingest';
+      else if (!filter)          ingestBtn.textContent = 'Re-ingest parts (all sections)';
+      else if (!partsOnly)       ingestBtn.textContent = 'Re-ingest sections';
+      else                       ingestBtn.textContent = 'Re-ingest sections (parts only)';
+    }
+
+    // ── Ingest ──────────────────────────────────────────────────────────────
+
+    ingestBtn.addEventListener('click', startIngest);
+
+    async function startIngest() {
+      if (!selectedFile || !catalogIdEl.value.trim()) return;
+
+      // Reset UI
+      logEl.innerHTML = '';
+      resultEl.style.display = 'none';
+      idleHint.style.display = 'none';
+      progressWrap.style.display = 'flex';
+      progressBar.value = 0;
+      curStage = -1;
+      renderSteps();
+      statusLine.textContent = 'Starting…';
+      progressLabel.textContent = 'Starting…';
+      ingestBtn.disabled = true;
+
+      const catalogId    = catalogIdEl.value.trim();
+      const sectionFilter = sectionFilterEl.value.trim();
+      const sectionNums   = sectionFilter
+        ? sectionFilter.split(',').map(s => s.trim()).filter(Boolean)
+        : null;
+      const partsOnly = partsOnlyEl.checked;
+      const partial   = sectionNums !== null || partsOnly;
+
+      let logMsg;
+      if (!partial)          logMsg = `Ingesting "${selectedFile.name}" as catalog "${catalogId}"…`;
+      else if (sectionNums)  logMsg = `Re-ingesting [${sectionNums.join(', ')}] from "${selectedFile.name}"${partsOnly ? ' (parts only)' : ''}…`;
+      else                   logMsg = `Re-ingesting all sections from "${selectedFile.name}" (parts only)…`;
+      appendLog(logMsg, 'info');
+
+      const buffer = await selectedFile.arrayBuffer();
+
+      // Terminate any previous worker
+      if (worker) worker.terminate();
+      worker = new Worker('ingest.worker.js?v=' + Date.now());
+
+      worker.onmessage = ({ data }) => {
+        switch (data.type) {
+          case 'status': {
+            appendLog(data.message, 'info');
+            progressLabel.textContent = data.message;
+            const st = classifyStage(data.message);
+            if (st) setStage(st);
+            else statusLine.textContent = data.message; // show verbatim when unsure
+            break;
+          }
+
+          case 'progress':
+            progressBar.value = data.pct;
+            progressLabel.textContent = `${data.pct}% - ${data.label}`;
+            appendLog(`[${String(data.pct).padStart(3)}%] ${data.label}`, 'info');
+            setStage('extract'); // per-section work = extracting parts & diagrams
+            break;
+
+          case 'done':
+            progressBar.value = 100;
+            curStage = STAGES.length;      // all steps complete
+            renderSteps();
+            statusLine.textContent = 'Done ✓';
+            progressLabel.textContent = 'Done';
+            appendLog(
+              partial
+                ? `✓ Done - ${data.sectionCount} section(s) re-ingested, ${data.partCount} parts.`
+                : `✓ Done - ${data.sectionCount} sections, ${data.partCount} parts ingested.`,
+              'ok'
+            );
+            resultStats.innerHTML = `
+              <span class="stat ok">✓ ${data.sectionCount} section${data.sectionCount !== 1 ? 's' : ''}</span>
+              <span class="stat ok">${data.partCount} parts</span>
+              <span class="stat ok">saved to OPFS</span>
+            `;
+            viewerLink.href = `viewer.html?catalog=${encodeURIComponent(catalogId)}`;
+            saveVehicleLink.href =
+              `index.html?addVehicle=1&catalog=${encodeURIComponent(catalogId)}&return=viewer`;
+            resultEl.style.display = 'flex';
+            ingestBtn.disabled = false;
+            updateBtn();
+            worker = null;
+            break;
+
+          case 'error':
+            appendLog(`✗ Error: ${data.message}`, 'err');
+            statusLine.textContent = 'Failed - see details';
+            progressLabel.textContent = 'Failed - see log';
+            ingestBtn.disabled = false;
+            worker = null;
+            break;
+        }
+      };
+
+      worker.onerror = (e) => {
+        appendLog(`✗ Worker error: ${e.message}`, 'err');
+        statusLine.textContent = 'Failed - see details';
+        ingestBtn.disabled = false;
+        worker = null;
+      };
+
+      // Transfer buffer ownership to worker (zero-copy)
+      if (partial) {
+        worker.postMessage({ type: 'reingest-sections', buffer, catalogId, sectionNums, partsOnly }, [buffer]);
+      } else {
+        worker.postMessage({ type: 'ingest', buffer, catalogId }, [buffer]);
+      }
+    }
+
+    function appendLog(text, cls = 'info') {
+      const div = document.createElement('div');
+      div.className = `log-line ${cls}`;
+      div.textContent = `${timestamp()} ${text}`;
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function timestamp() {
+      const d = new Date();
+      return `[${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}]`;
+    }
+  </script>
+</body>
+</html>

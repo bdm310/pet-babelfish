@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pet-babelfish</title>
+  <script>(function(){var t=localStorage.getItem('pb-theme');if(t)document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: var(--font-ui); background: var(--bg); color: var(--text);
+           min-height: 100vh; margin: 0; }
+
+    .status { color: var(--text5); font-size: 0.8rem; }
+    .count  { color: var(--text5); font-size: 0.8rem; font-family: var(--font-mono); }
+
+    main { max-width: 1000px; margin: var(--sp-5) auto; padding: 0 var(--sp-4); }
+
+    .section-head { display: flex; align-items: center; gap: var(--sp-3);
+                    margin-bottom: var(--sp-4); flex-wrap: wrap; }
+    .section-head h2 { font-size: 1.1rem; color: var(--text-hi); margin: 0; }
+    .section-head .spacer { margin-left: auto; }
+
+    /* ── First-run hero ─────────────────────────────────────────── */
+    .hero { border: 1px solid var(--border2); border-radius: var(--radius-lg);
+            background: var(--bg2); padding: var(--sp-5); text-align: center; }
+    .hero h2 { font-size: 1.25rem; color: var(--text-hi); margin: 0 0 var(--sp-3); }
+    .hero p  { color: var(--text2); line-height: 1.6; max-width: 40rem; margin: 0 auto var(--sp-4); }
+    .steps { list-style: none; margin: 0 auto var(--sp-5); padding: 0; max-width: 30rem;
+             display: flex; flex-direction: column; gap: var(--sp-2); text-align: left; }
+    .steps li { display: flex; gap: var(--sp-3); align-items: baseline;
+                color: var(--text2); font-size: 0.9rem; }
+    .steps .num { flex-shrink: 0; width: 1.5rem; height: 1.5rem; border-radius: 50%;
+                  background: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-bd);
+                  display: inline-flex; align-items: center; justify-content: center;
+                  font-size: 0.8rem; font-family: var(--font-mono); }
+    .steps strong { color: var(--text-hi); font-weight: 600; }
+
+    /* ── Vehicle cards ──────────────────────────────────────────── */
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+             gap: var(--sp-4); }
+    .card .vin { font-size: 0.72rem; color: var(--text5); word-break: break-all;
+                 font-family: var(--font-mono); }
+    .badges { display: flex; flex-wrap: wrap; gap: 4px; }
+    /* margin-top:auto pins actions to the card's bottom edge when the grid row
+       stretches a short card taller than its content. */
+    .card .actions { display: flex; gap: var(--sp-2); margin-top: auto;
+                     padding-top: var(--sp-2); align-items: center; }
+    .card .actions .spacer { margin-left: auto; }
+
+    .empty { color: var(--text5); font-size: 0.9rem; padding: 2.5rem 1rem; text-align: center;
+             border: 1px dashed var(--border3); border-radius: var(--radius-lg);
+             margin-bottom: var(--sp-5); }
+
+    /* ── Browse catalogs ────────────────────────────────────────── */
+    .browse { margin-top: var(--sp-5); }
+    .browse h3 { font-size: 0.95rem; color: var(--text3); margin: 0 0 var(--sp-3);
+                 border-bottom: 1px solid var(--border); padding-bottom: var(--sp-2); }
+    /* The whole row is the button - no separate control. */
+    .browse-row { display: flex; align-items: center; gap: var(--sp-3);
+                  border: 1px solid var(--border2); background: var(--bg2);
+                  border-radius: var(--radius); padding: var(--sp-3);
+                  text-decoration: none; color: inherit; cursor: pointer;
+                  transition: border-color 0.12s, background 0.12s; }
+    .browse-row:hover { border-color: var(--accent); background: var(--accent-bg); }
+    .browse-row .browse-label { color: var(--text-hi); font-size: 0.88rem; }
+    .browse-row .browse-id { font-size: 0.72rem; }
+    .browse-row .spacer { margin-left: auto; }
+    .browse-row .browse-go { color: var(--accent); font-size: 0.82rem; white-space: nowrap; }
+
+    .choose-banner { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+                     border: 1px solid var(--accent-bd); background: var(--accent-bg2);
+                     border-radius: var(--radius); padding: var(--sp-3);
+                     margin-bottom: var(--sp-4); font-size: 0.88rem; color: var(--text2); }
+    .choose-banner strong { color: var(--text-hi); }
+
+    .dev-footer { max-width: 1000px; margin: var(--sp-5) auto 3rem; padding: var(--sp-3) var(--sp-4) 0;
+                  border-top: 1px solid var(--border);
+                  display: flex; gap: var(--sp-4); align-items: baseline; flex-wrap: wrap; }
+    .dev-footer .dev-label { font-size: 0.78rem; color: var(--text4); }
+    .dev-footer a { font-size: 0.78rem; text-decoration: none; display: inline-block; }
+    .dev-footer a:hover { color: var(--accent); }
+
+    /* ── Spec editor modal ──────────────────────────────────────── */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+                      display: flex; align-items: flex-start; justify-content: center;
+                      overflow-y: auto; padding: var(--sp-5) var(--sp-3); z-index: 100; }
+    .modal { background: var(--bg2); border: 1px solid var(--border2);
+             border-radius: var(--radius-lg); width: 100%; max-width: 640px;
+             max-height: 90vh; display: flex; flex-direction: column; }
+    .modal-head { display: flex; align-items: center; gap: var(--sp-3);
+                  padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--border); }
+    .modal-head h3 { font-size: 1rem; color: var(--text-hi); margin: 0; }
+    .modal-head .btn { margin-left: auto; }
+    .modal-body { padding: var(--sp-4); overflow-y: auto; }
+    .modal-foot { display: flex; gap: var(--sp-2); align-items: center;
+                  padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--border); }
+    .modal-foot .spacer { margin-left: auto; }
+
+    .lead-msg { color: var(--text3); font-size: 0.82rem; margin: 0 0 var(--sp-3); }
+
+    .form-section { border-top: 1px solid var(--border); padding-top: var(--sp-3);
+                    margin-top: var(--sp-3); }
+    .form-section h4 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em;
+                       color: var(--text4); margin: 0 0 var(--sp-3); }
+
+    .frow { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3);
+            flex-wrap: wrap; }
+    .frow > label.flabel { width: 6rem; color: var(--text3); font-size: 0.8rem;
+                           text-align: right; flex-shrink: 0; }
+    .frow .hint { font-size: 0.72rem; color: var(--text5); }
+    .frow input.inp, .frow select.inp { min-height: 0; }
+
+    .vin-result { font-size: 0.75rem; padding: 0.2rem 0.4rem; border-radius: var(--radius);
+                  display: inline-block; margin-bottom: var(--sp-3); }
+    .vin-result.ok  { color: var(--accent); background: var(--accent-bg2); }
+    .vin-result.err { color: var(--err); }
+
+    .disclosure { background: none; border: none; color: var(--text3); cursor: pointer;
+                  font-family: var(--font-ui); font-size: 0.72rem; text-transform: uppercase;
+                  letter-spacing: 0.05em; padding: 0; }
+    .disclosure:hover { color: var(--accent); }
+
+    /* ── Narrow-screen polish (tablet / phone) ──────────────────── */
+    @media (max-width: 640px) {
+      /* Cards: one clean column, never a horizontal scroll on ~320px. */
+      .cards { grid-template-columns: 1fr; }
+
+      /* Browse rows wrap so the "Browse ▸" button stays reachable, and
+         long catalog ids/labels break instead of forcing overflow. */
+      .browse-row { flex-wrap: wrap; }
+      .browse-row .browse-label { min-width: 0; word-break: break-word; }
+      .browse-row .browse-id { min-width: 0; word-break: break-all; }
+
+      /* Spec-editor modal → full-screen sheet. Backdrop drops its padding
+         so the sheet reaches every edge. */
+      .modal-backdrop { padding: 0; overflow: hidden; }
+      .modal {
+        width: 100%; max-width: none;
+        height: 100vh; height: 100dvh;   /* dvh so browser chrome can't clip the foot */
+        max-height: none;
+        border: none; border-radius: 0;
+      }
+      /* Head/foot pinned; only the body scrolls between them. */
+      .modal-head, .modal-foot {
+        position: sticky; flex-shrink: 0; background: var(--bg2); z-index: 1;
+      }
+      .modal-head { top: 0; }
+      .modal-foot { bottom: 0; }
+      .modal-body { flex: 1; min-height: 0; }
+    }
+  </style>
+</head>
+<body x-data="homeApp()" x-init="init()">
+
+  <header class="pb-header">
+    <h1>pet-babelfish</h1>
+    <a href="viewer.html">Browse parts</a>
+    <span class="spacer"></span>
+    <span class="status" x-text="status"></span>
+    <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
+  </header>
+
+  <main>
+
+    <!-- ── State-aware hero (flat sibling templates) ─────────────── -->
+
+    <!-- No catalogs ingested yet -->
+    <template x-if="!catalogs.length">
+      <div class="hero">
+        <h2>No catalogs loaded yet</h2>
+        <p>A local-first browser for Porsche PET parts catalogs. Everything runs in your
+           browser - no server, no upload. Catalogs are distributed as prebuilt database
+           files; once one is loaded, here's the flow:</p>
+        <ol class="steps">
+          <li><span class="num">1</span><span><strong>Get a catalog</strong> - a prebuilt parts + diagram database, stored in your browser.</span></li>
+          <li><span class="num">2</span><span><strong>Save a vehicle</strong> - a VIN or spec picks the exact filter for one catalog.</span></li>
+          <li><span class="num">3</span><span><strong>Browse</strong> - open the vehicle to see only the parts that apply to it.</span></li>
+        </ol>
+        <p class="muted" style="font-size:0.82rem">Building your own from a PET PDF? Use
+           <a href="ingest.html">Ingest a catalog</a> in the developer tools below.</p>
+      </div>
+    </template>
+
+    <!-- Catalogs exist, no vehicles -->
+    <template x-if="catalogs.length && !vehicles.length">
+      <div>
+        <div class="section-head">
+          <h2>Your vehicles</h2>
+          <span class="spacer"></span>
+          <button class="btn btn-primary" @click="newVehicle()">+ Add a vehicle</button>
+        </div>
+        <div class="empty">No vehicles yet. Add one to save a catalog and spec filter for one-click browsing - or browse a catalog unfiltered below.</div>
+
+        <div class="browse">
+          <h3>Browse a catalog unfiltered</h3>
+          <div class="stack">
+            <template x-for="c in catalogs" :key="c.id">
+              <a class="browse-row" :href="'viewer.html?catalog=' + encodeURIComponent(c.id)"
+                 title="Browse this catalog unfiltered">
+                <span class="browse-label" x-text="c.label"></span>
+                <span class="mono muted browse-id" x-text="c.id"></span>
+                <span class="spacer"></span>
+                <span class="browse-go">Browse ▸</span>
+              </a>
+            </template>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Vehicles exist -->
+    <template x-if="catalogs.length && vehicles.length">
+      <div>
+        <div class="section-head">
+          <h2>Your vehicles</h2>
+          <span class="count" x-text="vehicles.length + (vehicles.length === 1 ? ' vehicle' : ' vehicles')"></span>
+          <span class="spacer"></span>
+          <button class="btn btn-primary" @click="newVehicle()">+ Add vehicle</button>
+        </div>
+
+        <!-- Arrived from "Filter to a vehicle…" for a catalog that already has vehicles:
+             offer to pick one, or add a new one preselected to that catalog. -->
+        <template x-if="chooseCatalog">
+          <div class="choose-banner">
+            <span>Pick a vehicle for <strong x-text="catalogLabel(chooseCatalog)"></strong> below, or</span>
+            <button class="btn btn-primary"
+                    @click="newVehicle(pendingCatalog, pendingReturn); chooseCatalog=''">+ New vehicle for this catalog</button>
+          </div>
+        </template>
+
+        <div class="cards">
+          <template x-for="v in vehicles" :key="v.id">
+            <div class="card">
+              <span class="card-title" x-text="v.nickname || '(unnamed)'"></span>
+              <span class="card-sub" x-text="vehicleSubtitle(v)"></span>
+              <template x-if="v.vin"><span class="vin" x-text="v.vin"></span></template>
+              <div class="badges">
+                <span class="chip chip-accent" x-text="v.catalogId ? catalogLabel(v.catalogId) : 'no catalog'"></span>
+                <template x-if="v.spec && v.spec.vfYear"><span class="chip" x-text="'MJ ' + v.spec.vfYear"></span></template>
+                <template x-for="f in specBadges(v)" :key="f"><span class="chip" x-text="f"></span></template>
+                <template x-if="v.spec && v.spec.vfPrCodes && v.spec.vfPrCodes.length">
+                  <span class="chip chip-pn" x-text="v.spec.vfPrCodes.length + ' PR'"></span>
+                </template>
+              </div>
+              <div class="actions">
+                <button class="btn btn-primary" @click="openInViewer(v)" :disabled="!v.catalogId">Open ▸</button>
+                <button class="btn" @click="editVehicle(v)">Edit</button>
+                <span class="spacer"></span>
+                <button class="btn btn-danger" @click="deleteVehicle(v.id)" title="Delete">✕</button>
+              </div>
+            </div>
+          </template>
+        </div>
+
+        <div class="browse">
+          <h3>Browse a catalog unfiltered</h3>
+          <div class="stack">
+            <template x-for="c in catalogs" :key="c.id">
+              <a class="browse-row" :href="'viewer.html?catalog=' + encodeURIComponent(c.id)"
+                 title="Browse this catalog unfiltered">
+                <span class="browse-label" x-text="c.label"></span>
+                <span class="mono muted browse-id" x-text="c.id"></span>
+                <span class="spacer"></span>
+                <span class="browse-go">Browse ▸</span>
+              </a>
+            </template>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ── Spec editor modal (single root: the backdrop) ─────────── -->
+    <template x-if="form">
+      <div class="modal-backdrop" @click="cancelForm()">
+        <div class="modal" @click.stop @keydown.escape.window="cancelForm()">
+          <div class="modal-head">
+            <h3 x-text="form.id ? 'Edit vehicle' : 'Add vehicle'"></h3>
+            <button class="btn" @click="cancelForm()" title="Close">✕</button>
+          </div>
+
+          <div class="modal-body">
+            <!-- VIN-first -->
+            <p class="lead-msg">Decode a VIN - or, for a pre-VIN car (356/911/996/Cayenne),
+               its chassis number - to prefill, or set the spec manually below.</p>
+            <div class="frow">
+              <label class="flabel">VIN / chassis</label>
+              <input type="text" class="inp mono" x-model="form.vin" maxlength="17"
+                     placeholder="17-char VIN or chassis no. (optional)" @keydown.enter="decodeVin()"
+                     style="flex:1;min-width:12rem">
+              <button class="btn" @click="decodeVin()" :disabled="!SQL">Decode</button>
+            </div>
+            <template x-if="vinMsg">
+              <div class="vin-result" :class="vinOk ? 'ok' : 'err'" x-text="vinMsg"></div>
+            </template>
+
+            <!-- Identity -->
+            <div class="form-section">
+              <h4>Identity</h4>
+              <div class="frow">
+                <label class="flabel">Nickname</label>
+                <input type="text" class="inp" x-model="form.nickname" placeholder="e.g. My GT2"
+                       style="flex:1;min-width:12rem">
+              </div>
+              <div class="frow">
+                <label class="flabel">Catalog</label>
+                <select class="inp" x-model="form.catalogId" @change="onCatalogChange()"
+                        style="flex:1;min-width:12rem">
+                  <option value="">- select catalog -</option>
+                  <template x-for="c in catalogs" :key="c.id">
+                    <option :value="c.id" x-text="c.label" :selected="c.id === form.catalogId"></option>
+                  </template>
+                </select>
+              </div>
+              <div class="frow">
+                <label class="flabel">Model year</label>
+                <input type="number" class="inp mono" x-model="form.vfYear" placeholder="2008"
+                       min="1990" max="2030" style="width:6rem">
+                <label class="flabel" style="width:auto">Market</label>
+                <input type="text" class="inp mono" :value="form.vfMarket"
+                       @input="form.vfMarket = $event.target.value.toUpperCase()"
+                       list="mkt-codes" placeholder="USA" style="width:5rem">
+                <datalist id="mkt-codes">
+                  <template x-for="m in opts.markets" :key="m"><option :value="m"></option></template>
+                </datalist>
+                <span class="hint">only parts printed for a named market are filtered on it</span>
+              </div>
+              <div class="frow" x-show="opts.lines.length || opts.bodies.length">
+                <label class="flabel">Model</label>
+                <select class="inp" x-model="form.vfLine" style="width:9rem">
+                  <option value="">any line</option>
+                  <template x-for="l in opts.lines" :key="l"><option :value="l" x-text="l" :selected="l === form.vfLine"></option></template>
+                </select>
+                <label class="flabel" style="width:auto">Body</label>
+                <select class="inp" x-model="form.vfBody" style="width:9rem">
+                  <option value="">any body</option>
+                  <template x-for="b in opts.bodies" :key="b"><option :value="b" x-text="b" :selected="b === form.vfBody"></option></template>
+                </select>
+                <span class="hint">left blank, a facet does not filter</span>
+              </div>
+              <div class="frow" x-show="opts.drive.length || opts.trim.length">
+                <template x-if="opts.drive.length">
+                  <span style="display:contents">
+                    <label class="flabel">Drive</label>
+                    <select class="inp" x-model="form.vfDrive" style="width:9rem">
+                      <option value="">any</option>
+                      <template x-for="d in opts.drive" :key="d"><option :value="d" x-text="d === '4' ? 'AWD (4)' : 'RWD (2)'" :selected="d === form.vfDrive"></option></template>
+                    </select>
+                  </span>
+                </template>
+                <template x-if="opts.trim.length">
+                  <span style="display:contents">
+                    <label class="flabel" style="width:auto">Trim</label>
+                    <select class="inp" x-model="form.vfTrim" style="width:9rem">
+                      <option value="">any</option>
+                      <option value="BASE" :selected="form.vfTrim === 'BASE'">base</option>
+                      <template x-for="tr in opts.trim" :key="tr"><option :value="tr" x-text="tr" :selected="tr === form.vfTrim"></option></template>
+                    </select>
+                  </span>
+                </template>
+                <span class="hint">drive 2=RWD/4=AWD; trim S/GTS/RS</span>
+              </div>
+            </div>
+
+            <!-- Powertrain -->
+            <div class="form-section" x-show="opts.engines.length || opts.gearboxes.length">
+              <h4>Powertrain</h4>
+              <div class="frow" x-show="opts.engines.length">
+                <label class="flabel">Engine</label>
+                <select class="inp" x-model="form.vfEngine" style="flex:1;min-width:12rem">
+                  <option value="">any engine</option>
+                  <template x-for="e in opts.engines" :key="e.code">
+                    <option :value="e.code" x-text="e.label" :selected="e.code === form.vfEngine"></option>
+                  </template>
+                </select>
+                <label class="flabel" style="width:auto">Engine no.</label>
+                <input type="text" class="inp mono" x-model="form.engineNo" @input="deriveSpec()"
+                       placeholder="62807297" style="width:8rem"
+                       title="Stamped on the engine - looks the code up in the catalog's own serial ranges, and filters parts whose changeover is printed against it">
+              </div>
+              <div class="frow" x-show="opts.gearboxes.length">
+                <label class="flabel">Gearbox</label>
+                <select class="inp" x-model="form.vfGearbox" style="flex:1;min-width:12rem">
+                  <option value="">any gearbox</option>
+                  <template x-for="g in opts.gearboxes" :key="g.code">
+                    <option :value="g.code" x-text="g.label" :selected="g.code === form.vfGearbox"></option>
+                  </template>
+                </select>
+                <label class="flabel" style="width:auto">Gearbox no.</label>
+                <input type="text" class="inp mono" x-model="form.gearboxNo"
+                       placeholder="7803214" style="width:8rem"
+                       title="Stamped on the gearbox - filters parts whose changeover is printed against a gearbox number (356, PDK). It cannot name the gearbox type; pick that above.">
+              </div>
+              <div class="frow" x-show="opts.gearboxes.length && !form.vfGearbox">
+                <span class="hint">the transmission serial ranges cannot tell the gearbox types apart - pick one above or leave open</span>
+              </div>
+            </div>
+
+            <!-- Options -->
+            <div class="form-section">
+              <h4>Options</h4>
+              <div class="frow" style="align-items:flex-start">
+                <label class="flabel">PR codes</label>
+                <div style="flex:1">
+                  <input type="text" class="inp mono" x-model="form.prText"
+                         @input="refreshPrPreview(); deriveSpec()"
+                         placeholder="e.g. 480 X51 XAA  (space/comma separated)" style="width:100%">
+                  <div style="margin-top:0.3rem" x-show="prPreview.length">
+                    <button class="pr-toggle" :class="{on: prListOpen}" @click="prListOpen = !prListOpen"
+                            x-text="prPreview.length + (prPreview.length === 1 ? ' option ' : ' options ') + (prListOpen ? '▴' : '▾')"></button>
+                  </div>
+                  <div class="pr-list" style="margin-top:0.3rem" x-show="prListOpen && prPreview.length">
+                    <template x-for="pr in prPreview" :key="pr.code">
+                      <div class="pr-row" :class="{unknown: pr.unknown}">
+                        <span class="pr-code" x-text="pr.code"></span>
+                        <span class="pr-desc" x-text="pr.desc || 'not in this catalog\'s option list'"></span>
+                        <span class="pr-x" title="Remove" @click="removePrCode(pr.code)">×</span>
+                      </div>
+                    </template>
+                  </div>
+                  <template x-if="prUnknown.length">
+                    <div class="hint" style="margin-top:0.3rem;color:var(--warn, #c87800)"
+                         title="Kept and filtered on - this catalog's option list just does not describe them. Check for a typo.">
+                      ⚠ not in this catalog's option list: <span x-text="prUnknown.join(', ')"></span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+
+            <!-- Advanced -->
+            <div class="form-section">
+              <button class="disclosure" @click="advancedOpen = !advancedOpen"
+                      x-text="(advancedOpen ? '▾ ' : '▸ ') + 'Advanced'"></button>
+              <div class="frow" x-show="advancedOpen" style="margin-top:var(--sp-3)">
+                <label class="flabel">Chassis no.</label>
+                <input type="text" class="inp mono" :value="form.vfChassis"
+                       @input="form.vfChassis = $event.target.value.toUpperCase()"
+                       placeholder="99-8S784090" style="width:12rem"
+                       title="Filled in from the VIN - parts whose changeover is printed against your car's own number block are filtered on it">
+                <span class="hint">from the VIN; changeovers printed for another block never apply</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-foot">
+            <button class="btn btn-primary" @click="saveForm()" :disabled="!form.catalogId && !form.nickname">Save</button>
+            <button class="btn" @click="cancelForm()">Cancel</button>
+            <span class="spacer"></span>
+            <template x-if="form.id">
+              <button class="btn btn-danger" @click="deleteVehicle(form.id)">Delete</button>
+            </template>
+          </div>
+        </div>
+      </div>
+    </template>
+
+  </main>
+
+  <footer class="dev-footer">
+    <span class="dev-label">Developer tools:</span>
+    <a href="ingest.html" class="muted">Ingest a catalog from a PDF</a>
+    <a href="catalog-browser.html" class="muted">Raw table browser</a>
+  </footer>
+
+  <script src="vendor/sql.js/sql-wasm.js"></script>
+  <script src="theme.js"></script>
+  <script src="appl.js"></script>
+  <script src="vin.js"></script>
+  <script src="catalogs.js"></script>
+  <script src="garage.js"></script>
+  <script>
+    const SQLJS_WASM = 'vendor/sql.js/sql-wasm.wasm';
+
+    // Nobody knows their car by its EC/TC code, so name it with what the catalog says
+    // about it. A transmission's `type_code` is speeds plus A(utomatik) or
+    // S(chaltgetriebe) - the reading gearboxFromPrCodes depends on too. An unfamiliar
+    // shape is left as printed rather than guessed at.
+    const gearboxLabel = (tc, type) => {
+      const m = /^(\d)([AS])$/.exec(String(type || '').toUpperCase());
+      return [tc, type, m && `${m[1]}-speed ${m[2] === 'A' ? 'automatic' : 'manual'}`]
+             .filter(Boolean).join(' — ');
+    };
+    const engineLabel = (ec, displacement, hp) =>
+      [ec, [displacement && displacement + ' l', hp && hp + ' hp'].filter(Boolean).join(', ')]
+      .filter(Boolean).join(' — ');
+
+    function homeApp() {
+      return {
+        catalogs:  [],
+        vehicles:  [],
+        SQL:       null,
+        status:    '',
+        form:      null,      // editable vehicle draft, or null
+        vinMsg:    '', vinOk: false,
+        prCodes:   {},        // code -> description for the selected catalog
+        prPreview: [],
+        prUnknown: [],
+        prListOpen: true,     // the form is where the pasted list gets checked
+        advancedOpen: false,  // chassis-no. disclosure
+        returnTo:  '',        // 'viewer' → jump into the viewer after a save
+        chooseCatalog:  '',   // arrived to pick/add a vehicle for this catalog → show banner
+        pendingCatalog: '',   // preselect for "+ New vehicle for this catalog"
+        pendingReturn:  '',
+        // Facet vocabularies for the selected catalog - see onCatalogChange.
+        opts:      { engines: [], gearboxes: [], lines: [], bodies: [], drive: [], trim: [], markets: [] },
+        _engineNums:  [],     // engine serial ranges, for deriveSpec
+        _transmCodes: [],
+        _derived:  {},        // field -> the value deriveSpec last put there
+        _vinIndex: null,
+        _bundled:  null,      // manifest of bundled catalogs (vin_range rides along)
+
+        async init() {
+          this.status = 'Loading…';
+          try { this.SQL = await initSqlJs({ locateFile: () => SQLJS_WASM }); } catch {}
+          await this.listCatalogs();
+          await this.refresh();
+          this.status = '';
+          this.applyUrlIntent();
+        },
+
+        // ── URL contracts ──────────────────────────────────────────
+        // ?edit=<id>                     → open that vehicle's edit form
+        // ?addVehicle=1&catalog=<id>&return=viewer
+        //                                → blank add form, catalog preselected;
+        //                                  save then jumps to the viewer
+        applyUrlIntent() {
+          const p = new URLSearchParams(location.search);
+          const edit = p.get('edit');
+          if (edit) {
+            const v = this.vehicles.find(x => x.id === edit);
+            if (v) this.editVehicle(v);
+            return;
+          }
+          if (p.get('addVehicle')) {
+            const cat = p.get('catalog') || '';
+            const ret = p.get('return') || '';
+            // Already have vehicles for this catalog? Let the user pick one rather than
+            // forcing a new one - only auto-open the blank form when there's none to pick.
+            const existing = cat ? this.vehicles.filter(v => v.catalogId === cat) : [];
+            if (existing.length) {
+              this.chooseCatalog  = cat;
+              this.pendingCatalog = cat;
+              this.pendingReturn  = ret;
+            } else {
+              this.newVehicle(cat, ret);
+            }
+          }
+        },
+
+        async refresh() { this.vehicles = await Garage.list(); },
+
+        // ── OPFS catalog discovery ─────────────────────────────────
+        async listCatalogs() {
+          // Bundled catalogs (docs/catalogs/) are offered alongside OPFS ones and
+          // copied into OPFS on first open. Their vin_range rows ride in the manifest
+          // so a VIN can pick one before it is downloaded (see _buildVinIndex).
+          this.catalogs = await CATALOGS.listAll(this.SQL);
+          this._bundled = await CATALOGS.bundled();
+        },
+
+        // Copy a not-yet-installed bundled catalog into OPFS before anything opens it.
+        async ensureInstalled(id) {
+          const c = this.catalogs.find(x => x.id === id);
+          if (!c || c.installed) return;
+          this.status = 'Fetching catalog…';
+          try {
+            await CATALOGS.install({ id: c.id, file: c.file });
+            c.installed = true;
+            this._vinIndex = null;   // its ranges now read from OPFS
+          } finally { this.status = ''; }
+        },
+
+        // A vehicle stores the catalog id; the card should still show the name.
+        // An id with no catalog behind it any more is shown as-is rather than
+        // silently blanked - it is why the vehicle won't open.
+        catalogLabel(id) {
+          return this.catalogs.find(c => c.id === id)?.label || id;
+        },
+
+        async _openCatalogDb(id) {
+          await this.ensureInstalled(id);
+          const rootDir = await navigator.storage.getDirectory();
+          const dir = await rootDir.getDirectoryHandle(id);
+          const fh  = await dir.getFileHandle('catalog.sqlite');
+          const buf = await (await fh.getFile()).arrayBuffer();
+          return new this.SQL.Database(new Uint8Array(buf));
+        },
+
+        // ── Form lifecycle ─────────────────────────────────────────
+        blankForm() {
+          return { id: null, nickname: '', vin: '', catalogId: '',
+                   vfYear: '', vfMarket: '', vfLine: '', vfBody: '', vfDrive: '', vfTrim: '',
+                   vfEngine: '', vfGearbox: '', engineNo: '', gearboxNo: '', vfChassis: '', prText: '' };
+        },
+        newVehicle(catalogId = '', ret = '') {
+          this.form = this.blankForm();
+          this.vinMsg = ''; this.prPreview = []; this.prUnknown = []; this.prCodes = {};
+          this._derived = {}; this.advancedOpen = false; this.returnTo = ret || '';
+          if (catalogId) { this.form.catalogId = catalogId; this.onCatalogChange(); }
+        },
+        editVehicle(v) {
+          // Nothing on a saved vehicle is a guess any more - it is what the owner
+          // kept - so no field here is deriveSpec's to overwrite.
+          this._derived = {}; this.advancedOpen = false; this.returnTo = '';
+          const s = v.spec || {};
+          this.form = {
+            id: v.id, nickname: v.nickname || '', vin: v.vin || '',
+            catalogId: v.catalogId || '', decoded: v.decoded || null,
+            vfYear: s.vfYear || '', vfMarket: s.vfMarket || '',
+            vfLine: s.vfLine || '', vfBody: s.vfBody || '',
+            vfDrive: s.vfDrive || '', vfTrim: s.vfTrim || '',
+            vfEngine: s.vfEngine || '', vfGearbox: s.vfGearbox || '',
+            engineNo: s.engineNo || '', gearboxNo: s.gearboxNo || '', vfChassis: s.vfChassis || '',
+            prText: (s.vfPrCodes || []).join(' '),
+          };
+          this.vinMsg = '';
+          this.onCatalogChange();
+        },
+        cancelForm() { this.form = null; this.returnTo = ''; },
+
+        // ── VIN decode → prefill catalog + year + nickname ─────────
+        async _buildVinIndex() {
+          if (this._vinIndex) return this._vinIndex;
+          const idx = [];
+          for (const c of this.catalogs) {
+            if (!c.installed) {
+              // Not downloaded yet - match against the manifest's vin_range rows so a
+              // VIN can select a bundled catalog before its (multi-MB) DB is fetched.
+              // dialect/year_pivot ride along so an old two-digit year can be expanded.
+              const b = (this._bundled || []).find(x => x.id === c.id);
+              for (const r of (b?.vinRanges ?? []))
+                idx.push({ catalogId: c.id, modelYear: r.model_year,
+                           from: r.vin_from, to: r.vin_to, remark: r.remark,
+                           dialect: b?.dialect || 'modern', yearPivot: b?.year_pivot });
+              continue;
+            }
+            let db = null;
+            try {
+              db = await this._openCatalogDb(c.id);
+              const [dialect, pivot] = db.exec('SELECT dialect, year_pivot FROM catalog LIMIT 1')[0]?.values?.[0] ?? ['modern', null];
+              const res = db.exec('SELECT model_year, vin_from, vin_to, remark FROM vin_range');
+              for (const [modelYear, from, to, remark] of (res[0]?.values ?? []))
+                idx.push({ catalogId: c.id, modelYear, from, to, remark,
+                           dialect: dialect || 'modern', yearPivot: pivot });
+            } catch {} finally { if (db) db.close(); }
+          }
+          this._vinIndex = idx;
+          return idx;
+        },
+
+        async decodeVin() {
+          const raw = (this.form.vin || '').trim().toUpperCase();
+          const idx = await this._buildVinIndex();
+          const dec = VIN.decodeVin(raw);
+          if (dec.ok) {
+            // Modern 17-char VIN: reconstruct the compact chassis and match it.
+            const matches = dec.chassis ? VIN.matchChassis(dec.chassis, idx) : [];
+            const my = dec.modelYear ? `MJ ${dec.modelYear}` : (dec.yearChar || '?');
+            return this._applyDecode(matches, idx, {
+              family: dec.family, fam: (dec.family || 'unknown').toUpperCase(),
+              myLabel: my, modelYear: dec.modelYear, chassis: dec.chassis });
+          }
+          // Not a 17-char VIN - the old catalogs (356/911/996/Cayenne) predate the
+          // 17-char VIN, so their chassis number is typed directly. Match it as-is
+          // against the old-dialect ranges (no reconstruction: the catalog stores
+          // the number exactly as stamped).
+          const chassis = raw.replace(/[\s-]/g, '');
+          if (!/\d{3,}/.test(chassis)) { this.vinMsg = dec.error; this.vinOk = false; return; }
+          const matches = VIN.matchChassis(chassis, idx.filter(r => r.dialect === 'old'));
+          // The tightest cut-in wins: for a type-glued number (911 "93077 0001") the
+          // greatest `from` at or below the serial is the car's own type/year block.
+          matches.sort((a, b) =>
+            ((VIN.chassisKey(b.from) || {}).serial || 0) - ((VIN.chassisKey(a.from) || {}).serial || 0));
+          return this._applyDecode(matches, idx, {
+            family: null, fam: '', myLabel: '', modelYear: null, chassis });
+        },
+
+        // Shared tail of both decode paths: select the matched catalog and prefill
+        // the fields the matched range names, blank ones only.
+        async _applyDecode(matches, idx, ctx) {
+          if (!matches.length) {
+            this.vinMsg = `${[ctx.fam, ctx.myLabel].filter(Boolean).join(' · ') || (ctx.chassis || '?')} - no catalog match`;
+            this.vinOk  = false;
+            if (ctx.modelYear) this.form.vfYear = String(ctx.modelYear);
+            return;
+          }
+          const m  = matches[0];
+          const pm = VIN.parseMarket(m.remark);
+          const yr = VIN.expandYear(m.modelYear, m.yearPivot);
+          this.form.catalogId = m.catalogId;
+          this.form.decoded = { family: ctx.family, variant: pm.variant,
+                                marketLabel: pm.marketLabel, modelYear: yr || ctx.modelYear };
+          if (yr) this.form.vfYear = String(yr);
+          if (!this.form.nickname) this.form.nickname = [ctx.fam, pm.variant].filter(Boolean).join(' ');
+          const extra = matches.length > 1 ? ` (+${matches.length - 1})` : '';
+          const head  = [ctx.fam, ctx.myLabel, pm.variant || m.remark || ''].filter(Boolean).join(' · ');
+          this.vinMsg = `${head}${pm.marketLabel ? ' · ' + pm.marketLabel : ''}${extra} → ${this.catalogLabel(m.catalogId)}`;
+          this.vinOk  = true;
+          await this.onCatalogChange();   // the facet vocabularies the remark is read against
+
+          // The matched range names the car - the one thing the decode knows that the
+          // filter cannot get anywhere else. Blank fields only: a re-decode must not
+          // overwrite a correction the owner already made.
+          const remarks = idx.filter(r => r.catalogId === m.catalogId).map(r => r.remark);
+          const f = VIN.variantFacets(m.remark, remarks, this.opts.lines, this.opts.bodies);
+          if (!this.form.vfLine   && f.line)   this.form.vfLine   = f.line;
+          if (!this.form.vfBody   && f.body)   this.form.vfBody   = f.body;
+          if (!this.form.vfMarket && f.market) this.form.vfMarket = f.market;
+          // The chassis number is exactly the one the parts pages print changeovers
+          // against - for old catalogs it is what the user typed.
+          if (!this.form.vfChassis && ctx.chassis) this.form.vfChassis = ctx.chassis;
+        },
+
+        // ── Catalog facts for the selected catalog ─────────────────
+        // Every choice the form offers comes from the catalog that will be filtered.
+        // A hard-coded vocabulary would be wrong for the next model line, and a facet
+        // value no part carries could only hide the whole catalog.
+        async onCatalogChange() {
+          this.prCodes = {};
+          this.opts = { engines: [], gearboxes: [], lines: [], bodies: [], drive: [], trim: [], markets: [] };
+          this._engineNums = []; this._transmCodes = [];
+          if (!this.form.catalogId || !this.SQL) { this.refreshPrPreview(); return; }
+          let db = null;
+          try {
+            db = await this._openCatalogDb(this.form.catalogId);
+            const q = sql => (db.exec(sql)[0]?.values ?? []);
+            for (const [code, desc] of q('SELECT code, description FROM pr_code'))
+              this.prCodes[String(code).toUpperCase()] = desc;
+
+            // A code appears once per date range; the x-for is keyed on the code,
+            // and a duplicate key makes Alpine drop the whole option list.
+            const uniq = list => { const seen = new Set();
+              return list.filter(o => !seen.has(o.code) && seen.add(o.code)); };
+            this.opts.engines = uniq(q('SELECT ec, displacement_l, power_hp FROM engine_code ORDER BY ec')
+              .map(([ec, disp, hp]) => ({ code: ec, label: engineLabel(ec, disp, hp) })));
+            this.opts.gearboxes = uniq(q('SELECT tc, type_code FROM transmission_code ORDER BY tc')
+              .map(([tc, type]) => ({ code: tc, label: gearboxLabel(tc, type) })));
+
+            // The typed section columns are OR-lists ("TURBO,GT2"); a section scoped
+            // to either offers both, not the pair.
+            const split = col => [...new Set(
+              q(`SELECT DISTINCT ${col} FROM section WHERE COALESCE(${col},'')!=''`)
+                .flatMap(([v]) => v.split(',')).map(v => v.trim()).filter(Boolean))].sort();
+            this.opts.lines  = split('body_line');
+            this.opts.bodies = split('body_style');
+            // Drive is the universal 2/4 axis; trim is derived from the catalog's own
+            // decomposed section columns (S/GTS/RS/RS 4.0). Only offered when present.
+            this.opts.drive  = split('drive_code');
+            this.opts.trim   = split('trim_code');
+
+            this.opts.markets = [...new Set(
+              q(`SELECT applicability FROM part WHERE applicability LIKE '%"%'
+                 UNION SELECT applicability FROM section WHERE applicability LIKE '%"%'`)
+                .flatMap(([a]) => {
+                  const m = APPL.parse(a).markets;
+                  return [...m.any, ...m.not];
+                }))].sort();
+
+            this._engineNums = q('SELECT number_from, number_to, engine_type FROM engine_number_range')
+              .map(([from, to, type]) => ({ from, to, type }));
+            this._transmCodes = q('SELECT tc, type_code FROM transmission_code')
+              .map(([tc, type]) => ({ tc, type }));
+          } catch {} finally { if (db) db.close(); }
+          this.refreshPrPreview();
+          this.deriveSpec();
+        },
+
+        // Fill in what the car's own numbers imply. A derivation is a starting point,
+        // never an answer: it only ever writes over a blank field or its own previous
+        // guess, so a hand-picked code survives, while a corrected engine number is
+        // free to move the code it derived.
+        deriveSpec() {
+          const set = (field, value) => {
+            const cur = this.form[field];
+            if (cur && cur !== this._derived[field]) return;   // the owner's, leave it
+            this.form[field]   = value;
+            this._derived[field] = value;
+          };
+          set('vfEngine',  this.engineFromNumber(this.form.engineNo));
+          set('vfGearbox', this.gearboxFromPrCodes(this.parsePrText()));
+        },
+
+        // Engine number → engine code, via the catalog's own serial ranges. The
+        // numbers are printed as a block prefix plus a serial ("628 00501>18000");
+        // comparing the whole number keeps the blocks apart.
+        engineFromNumber(no) {
+          const n = parseInt(String(no || '').replace(/\D/g, ''), 10);
+          if (!n) return '';
+          const hits = new Set();
+          for (const r of this._engineNums) {
+            const from = parseInt(String(r.from || '').replace(/\D/g, ''), 10);
+            const to   = parseInt(String(r.to   || '').replace(/\D/g, ''), 10);
+            if (from && to && n >= from && n <= to && r.type) hits.add(APPL.normalizeEngine(r.type));
+          }
+          return hits.size === 1 ? [...hits][0] : '';
+        },
+
+        // Gearbox from the option list. The transmission SERIAL ranges cannot do this
+        // - A9750's and G9750's are printed byte-identical, so they can never tell a
+        // Tiptronic from a manual - but an option code names the transmission outright.
+        // Read both tables rather than naming codes: `type_code` is speeds + A(utomatic)
+        // or S(ynchromesh), and an option whose description is a transmission spec
+        // ("6-speed manual transmission", "Tiptronic transmission") states the same
+        // thing in prose. Where that lands on two codes at once - this catalog has two
+        // different 6-speed manuals - nothing is derivable and the field stays open.
+        gearboxFromPrCodes(codes) {
+          const SPEC_RE = /^(?:(\d)-speed\s+)?(manual|automatic|tiptronic|pdk)\b[^.]*\b(?:transmission|gearbox)\b/i;
+          const KIND    = { manual: 'S', automatic: 'A', tiptronic: 'A', pdk: 'A' };
+          const hits = new Set();
+          for (const code of codes) {
+            const m = SPEC_RE.exec(this.prCodes[code] || '');
+            if (!m) continue;
+            for (const t of (this._transmCodes || [])) {
+              const tm = /^(\d)([A-Z])$/.exec(String(t.type || '').toUpperCase());
+              if (!tm) continue;
+              if (tm[2] !== KIND[m[2].toLowerCase()]) continue;
+              if (m[1] && tm[1] !== m[1]) continue;
+              hits.add(t.tc);
+            }
+          }
+          return hits.size === 1 ? [...hits][0] : '';
+        },
+
+        parsePrText() {
+          return (this.form.prText || '').split(/[\s,;/|]+/)
+                   .map(s => s.trim().toUpperCase()).filter(Boolean);
+        },
+        // Codes the catalog cannot label are still the car's, so they are kept and
+        // filtered on - PR codes and M-numbers are one vocabulary here and the
+        // sticker's M-numbers gate real parts. They are only called out, never dropped.
+        refreshPrPreview() {
+          const codes = [...new Set(this.parsePrText())];
+          const known = Object.keys(this.prCodes).length > 0;
+          // Option-list order (numeric first, then M-numbers), not paste order -
+          // a code is looked up by eye, and the sticker's order is arbitrary.
+          const num = c => /^\d+$/.test(c) ? parseInt(c, 10) : Infinity;
+          this.prPreview = codes
+            .sort((a, b) => num(a) - num(b) || a.localeCompare(b))
+            .map(code => ({ code, desc: this.prCodes[code] || '',
+                            unknown: known && !(code in this.prCodes) }));
+          this.prUnknown = known ? codes.filter(c => !(c in this.prCodes)) : [];
+        },
+
+        removePrCode(code) {
+          this.form.prText = this.parsePrText().filter(c => c !== code).join(' ');
+          this.refreshPrPreview();
+          this.deriveSpec();
+        },
+
+        // ── Save / delete ──────────────────────────────────────────
+        async saveForm() {
+          const prCodes = this.parsePrText();
+          const vehicle = {
+            id: this.form.id || undefined,
+            nickname: this.form.nickname.trim(),
+            vin: this.form.vin.trim().toUpperCase(),
+            catalogId: this.form.catalogId,
+            decoded: this.form.decoded || null,
+            spec: {
+              vfYear: this.form.vfYear ? String(this.form.vfYear) : '',
+              vfMarket: (this.form.vfMarket || '').toUpperCase(),
+              vfLine: this.form.vfLine || '',
+              vfBody: this.form.vfBody || '',
+              vfDrive: this.form.vfDrive || '',
+              vfTrim: this.form.vfTrim || '',
+              vfEngine: this.form.vfEngine || '',
+              vfGearbox: this.form.vfGearbox || '',
+              // Kept so the code can be re-derived if the catalog is re-ingested -
+              // and read directly: it is the number engine breakpoints are printed
+              // against, not just the way in to the engine code.
+              engineNo: (this.form.engineNo || '').trim(),
+              // Filtered on directly (transmission serial breakpoints); never derives
+              // the gearbox code - the A/G serial ranges are printed byte-identical.
+              gearboxNo: (this.form.gearboxNo || '').trim(),
+              vfChassis: (this.form.vfChassis || '').trim().toUpperCase(),
+              vfPrCodes: prCodes,
+            },
+          };
+          const saved   = await Garage.upsert(vehicle);
+          const toViewer = this.returnTo === 'viewer';
+          this.form = null;
+          this.returnTo = '';
+          await this.refresh();
+          // ?addVehicle&return=viewer came from the viewer/ingest flow: hand the
+          // freshly-saved vehicle (its id) straight back to the viewer.
+          if (toViewer && saved && saved.id) {
+            location.href = `viewer.html?vehicle=${encodeURIComponent(saved.id)}`;
+          }
+        },
+
+        async deleteVehicle(id) {
+          const v = this.vehicles.find(x => x.id === id);
+          if (!confirm(`Delete "${(v && v.nickname) || 'this vehicle'}" from the garage?`)) return;
+          await Garage.remove(id);
+          if (this.form && this.form.id === id) this.form = null;
+          await this.refresh();
+        },
+
+        openInViewer(v) {
+          if (!v.catalogId) return;
+          location.href = `viewer.html?vehicle=${encodeURIComponent(v.id)}`;
+        },
+
+        // ── Display helpers ────────────────────────────────────────
+        specBadges(v) {
+          const s = v.spec || {};
+          return [s.vfLine, s.vfBody, s.vfDrive && s.vfDrive + 'WD', s.vfTrim,
+                  s.vfEngine, s.vfGearbox, s.vfMarket].filter(Boolean);
+        },
+
+        vehicleSubtitle(v) {
+          const bits = [];
+          if (v.decoded && v.decoded.family) bits.push(String(v.decoded.family).toUpperCase());
+          if (v.decoded && v.decoded.variant) bits.push(v.decoded.variant);
+          if (v.decoded && v.decoded.marketLabel) bits.push(v.decoded.marketLabel);
+          return bits.join(' · ');
+        },
+      };
+    }
+  </script>
+  <script src="vendor/alpinejs/cdn.min.js" defer></script>
+</body>
+</html>

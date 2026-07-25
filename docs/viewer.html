@@ -1,0 +1,2049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Viewer - pet-babelfish</title>
+  <script>(function(){var t=localStorage.getItem('pb-theme');if(t)document.documentElement.dataset.theme=t;})()</script>
+  <link rel="stylesheet" href="theme.css">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font-ui); background: var(--bg); color: var(--text);
+           display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+    /* ── Header ─────────────────────────────────────────────────── */
+    /* .pb-header (theme.css) styles the bar; these tune the viewer's own fields. */
+    .pb-header select { cursor: pointer; }
+    .pb-header input[type=search] { flex: 1 1 240px; min-width: 180px; max-width: 420px; }
+    #statusBar { font-size: 0.72rem; color: var(--text4); white-space: nowrap;
+                 font-family: var(--font-mono); }
+
+    /* ── Read-only active-spec summary strip (replaces the old filter editor) ── */
+    .spec-summary { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center;
+                    padding: 0.4rem 1rem; border-bottom: 1px solid var(--border);
+                    background: var(--bg2); flex-shrink: 0; font-family: var(--font-ui); }
+    .spec-summary .ss-link { margin-left: 0.25rem; }
+    .spec-summary .chip-x { font-size: 1rem; padding: 0 0.3rem; line-height: 1; }
+    .spec-summary .ss-note { color: var(--text4); font-size: 0.75rem; }
+    /* Mobile-only collapse toggle for the facet chips (hidden on desktop via .mobile-only). */
+    .spec-toggle { background: none; border: 1px solid var(--border3); color: var(--text2);
+                   border-radius: var(--radius); padding: 0.15rem 0.5rem; cursor: pointer;
+                   font-family: var(--font-ui); font-size: 0.75rem; white-space: nowrap; }
+
+    /* ── 3-panel layout ──────────────────────────────────────────── */
+    .layout { display: grid; grid-template-columns: var(--sidebar-w, 220px) 5px 1fr 42%;
+              flex: 1; overflow: hidden; min-height: 0; }
+
+    /* Drag gutter between sidebar and parts panel. */
+    .resizer { cursor: col-resize; background: transparent; transition: background 0.12s; }
+    .resizer:hover, .resizer.dragging { background: var(--accent); }
+    body.resizing { cursor: col-resize; user-select: none; }
+
+    /* ── Sidebar ─────────────────────────────────────────────────── */
+    .sidebar { border-right: 1px solid var(--border); overflow-y: auto; font-size: 0.78rem; }
+    .mg-header { padding: 0.4rem 0.75rem; background: var(--bg3); color: var(--text3);
+                 cursor: pointer; user-select: none; display: flex; justify-content: space-between;
+                 align-items: center; position: sticky; top: 0; z-index: 1; }
+    .mg-header:hover { background: var(--bg2); color: var(--text2); }
+    .mg-header .arrow { font-size: 0.65rem; transition: transform 0.15s; }
+    .mg-header.open .arrow { transform: rotate(90deg); }
+    .sec-item { padding: 0.25rem 0.75rem 0.25rem 1.2rem; cursor: pointer;
+                color: var(--text2); display: flex; justify-content: flex-start; gap: 0.4rem; }
+    .sec-item:hover { background: var(--bg2); color: var(--text); }
+    .sec-item.active { background: var(--accent-bg); color: var(--accent); }
+    .sec-item .sec-num { flex-shrink: 0; }
+    .sec-item .sec-title { color: var(--text4); font-size: 0.72rem; overflow: hidden;
+                           text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+    .sidebar-placeholder { padding: 1rem; color: var(--text5); font-size: 0.8rem; }
+
+    /* ── Parts panel ─────────────────────────────────────────────── */
+    .parts-panel { display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid var(--border); }
+    .parts-header { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.82rem;
+                    color: var(--text3); flex-shrink: 0; display: flex; align-items: center; gap: 0.5rem; }
+    .parts-header .section-id { color: var(--accent); font-weight: bold; }
+    .parts-header .count { color: var(--text5); font-size: 0.72rem; }
+    .parts-scroll { flex: 1; overflow-y: auto; }
+    table.parts { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    table.parts th { background: var(--bg3); color: var(--text3); padding: 0.3rem 0.5rem; text-align: left;
+                     border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1;
+                     font-weight: normal; white-space: nowrap; }
+    table.parts td { padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--row-border);
+                     vertical-align: top; }
+    table.parts tr:hover td { background: var(--row-hover); }
+    .col-pos         { width: 3.6rem; color: var(--accent); white-space: nowrap; font-family: var(--font-mono); }
+    .pos-paren { color: var(--text3); font-style: italic; }
+    .pos-none  { color: var(--text5); }
+    /* Expander is a real tap target - sized, padded, and shows the hidden count. */
+    .pos-expand { font-size: 0.72rem; cursor: pointer; color: var(--text4); user-select: none;
+                  display: inline-flex; align-items: center; justify-content: center;
+                  vertical-align: middle; margin-right: 3px; line-height: 1;
+                  min-width: 1.3rem; padding: 2px 3px; border-radius: 3px;
+                  font-family: var(--font-ui); }
+    .pos-expand:hover { color: var(--accent); background: var(--accent-bg); }
+    table.parts tr.pos-subrow td { background: var(--bg2); }
+    /* Every column shrinks to its contents (width:1% resolves up to min-content);
+       only .col-desc flexes, so it absorbs all leftover table width. */
+    .col-pn    { width: 1%; white-space: nowrap; color: var(--pn); font-family: var(--font-mono); }
+    .pn-link   { color: inherit; text-decoration: none; }
+    .pn-link:hover { text-decoration: underline; }
+    .col-desc  { width: 100%; }
+    .col-sec   { width: 1%; white-space: nowrap; }
+    .col-qty   { width: 2.5rem; text-align: center; color: var(--text2); font-family: var(--font-mono); }
+    .col-rem   { width: 1%; white-space: nowrap; color: var(--text3); font-size: 0.72rem; font-family: var(--font-mono); }
+    /* Per-vehicle columns - only rendered when a garage vehicle is open. */
+    .col-ok    { width: 1%; text-align: center; }
+    /* min-width, not width: .col-desc's width:100% otherwise starves this column
+       down to the placeholder, since the input's width:100% contributes no
+       min-content of its own. */
+    .col-notes { width: 1%; min-width: 12rem; }
+    .ok-box    { cursor: pointer; accent-color: var(--accent); margin: 0; vertical-align: middle; }
+    .ok-hd     { display: inline-flex; align-items: center; gap: 4px; }
+    .note-input { width: 100%; background: transparent; border: 1px solid transparent;
+                  border-radius: 3px; color: var(--text2); font-family: monospace;
+                  font-size: 0.72rem; padding: 1px 3px; }
+    .note-input::placeholder { color: var(--text6); }
+    .note-input:hover  { border-color: var(--border2); }
+    .note-input:focus  { outline: none; border-color: var(--accent); background: var(--bg); color: var(--text); }
+    table.parts tr.part-ok td.col-pn { color: var(--accent); }
+    .appl-chips { display: flex; flex-wrap: wrap; gap: 2px; margin-top: 0.25rem; }
+    .appl-chip  { border-radius: 2px; padding: 0 0.3rem; font-size: 0.63rem; line-height: 1.6;
+                  white-space: nowrap; border: 1px solid var(--border2); background: var(--bg3);
+                  font-family: var(--font-mono); }
+    .appl-pr    { color: var(--accent); border-color: var(--accent-bd); background: var(--accent-bg2); }
+    .appl-mj    { color: var(--pn); }
+    .appl-dest  { color: var(--text2); }
+    .appl-other { color: var(--text4); }
+
+    /* Always-visible applicability-chip colour key - usable without hover (touch). */
+    .appl-key { margin-left: auto; display: inline-flex; align-items: center; gap: 3px;
+                flex-shrink: 0; }
+    .appl-key .appl-chip { min-width: 1.9rem; text-align: center; }
+    .appl-key-label { color: var(--text4); font-size: 0.66rem; margin-left: 3px;
+                      font-family: var(--font-ui); }
+    .parts-placeholder { padding: 2rem; color: var(--text5); font-size: 0.85rem; text-align: center; }
+
+    /* Search results */
+    .search-result-row td { border-bottom: 1px solid var(--row-border); padding: 0.25rem 0.5rem; vertical-align: top; }
+    .search-result-row:hover td { background: var(--row-hover); }
+    .search-result-row.preview-active td { background: var(--accent-bg); }
+    .col-open { width: 1%; white-space: nowrap; text-align: right; }
+    .open-btn { font-size: 0.68rem; padding: 0.1rem 0.4rem; }
+    .sec-badge { display: inline-block; background: var(--accent-bg2); border: 1px solid var(--accent-bd);
+                 border-radius: 3px; padding: 0 0.3rem; font-size: 0.68rem; color: var(--accent);
+                 font-family: var(--font-mono); }
+
+    /* ── Diagram panel ───────────────────────────────────────────── */
+    /* The viewport (.diagram-scroll) clips; the transformed .diagram-wrap holds the
+       image and callout canvas together, so a single CSS transform zooms/pans both
+       and keeps the overlay registered. Overlays (controls/legend/hint) are siblings
+       of the wrap so they stay put. */
+    .diagram-panel { display: flex; flex-direction: column; overflow: hidden; position: relative; }
+    .diagram-scroll { flex: 1; position: relative; overflow: hidden; background: var(--bg4);
+                      cursor: grab; touch-action: none; }
+    .diagram-scroll.panning { cursor: grabbing; }
+    .diagram-wrap { position: absolute; inset: 0; transform-origin: 0 0; will-change: transform; }
+    .diagram-wrap img { width: 100%; height: 100%; display: block; object-fit: contain;
+                        -webkit-user-drag: none; user-select: none; }
+    #callout-canvas { position: absolute; top: 0; left: 0; cursor: crosshair; }
+    .diagram-placeholder { position: absolute; inset: 0; display: flex; align-items: center;
+                           justify-content: center; color: var(--text6); font-size: 0.85rem; }
+
+    /* On-screen zoom/pan controls + collapse. */
+    .diagram-controls { position: absolute; top: 0.5rem; right: 0.5rem; z-index: 5;
+                        display: flex; gap: 0.25rem; }
+    .diagram-btn { padding: 0.15rem 0.4rem; min-width: 1.9rem; justify-content: center;
+                   background: var(--bg2); font-size: 0.85rem; }
+
+    /* One-time discoverability hint. */
+    .diagram-hint { position: absolute; top: 0.5rem; left: 50%; transform: translateX(-50%);
+                    z-index: 6; background: var(--accent-bg); color: var(--accent);
+                    border: 1px solid var(--accent-bd); border-radius: var(--radius);
+                    padding: 0.3rem 0.6rem; font-size: 0.72rem; cursor: pointer;
+                    font-family: var(--font-ui); box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+                    max-width: 90%; text-align: center; }
+    .diagram-hint .hint-dismiss { margin-left: 0.4rem; opacity: 0.7; }
+
+    /* Collapsed diagram: reclaim the column; a fixed tab brings it back. */
+    .layout.diagram-collapsed { grid-template-columns: var(--sidebar-w, 220px) 5px 1fr 0; }
+    .layout.diagram-collapsed .diagram-panel { display: none; }
+    .diagram-reopen { position: fixed; right: 0; top: 50%; transform: translateY(-50%);
+                      z-index: 20; padding: 0.55rem 0.35rem; background: var(--bg2);
+                      border: 1px solid var(--border3); border-right: none; color: var(--text2);
+                      border-radius: var(--radius) 0 0 var(--radius); cursor: pointer;
+                      font-family: var(--font-ui); font-size: 0.7rem; writing-mode: vertical-rl; }
+    .diagram-reopen:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* ── Part row highlighting ───────────────────────────────────── */
+    table.parts tr.pos-active td { background: var(--accent-bg) !important; }
+    table.parts tr:hover td { background: var(--row-hover); }
+
+    /* Loading spinner */
+    .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--border);
+               border-top-color: var(--accent); border-radius: 50%; animation: spin 0.6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Search results only - a section's table drops filtered parts outright. Search
+       is a way into the catalog, so a hit the filter rejects still has to be there
+       to click through to. */
+    tr.part-no-match td { opacity: 0.25; }
+    tr.part-no-match:hover td { opacity: 0.45; }
+
+    /* ── Mobile single-column view (≤820px) ──────────────────────────
+       Desktop is untouched: the segmented control and the mobile-only
+       affordances are display:none, and every override below lives inside
+       the media query. All three panes stay in the DOM; CSS shows only the
+       active one via .layout[data-mpane]. */
+    .mobile-tabs { display: none; }
+    .mobile-only { display: none; }
+
+    @media (max-width: 820px) {
+      .mobile-tabs { display: flex; gap: 0.35rem; padding: 0.4rem 1rem;
+                     border-bottom: 1px solid var(--border); background: var(--bg2);
+                     flex-shrink: 0; }
+      .mobile-tabs .btn { flex: 1; justify-content: center; }
+      .mobile-only { display: inline-flex; }
+
+      /* Compact top chrome: the section count and the helper prose don't change and
+         eat the vertical space the parts list / diagram actually need. Drop them, and
+         collapse the vehicle's facet chips behind the "N filters" toggle. */
+      #statusBar { display: none; }
+      /* The active vehicle's catalog is fixed and implied by its 🚗 name chip. */
+      .pb-header .cat-chip { display: none; }
+      .spec-summary { padding: 0.3rem 1rem; gap: 0.3rem; }
+      .spec-summary .ss-note { display: none; }
+      .spec-summary .chip { display: none; }
+      .spec-summary.m-open .chip { display: inline-flex; }
+
+      /* Single column, single full-height row. Override the inline --sidebar-w
+         grid and the desktop diagram-collapsed grid alike. */
+      .layout, .layout.diagram-collapsed {
+        grid-template-columns: 1fr; grid-template-rows: 1fr;
+      }
+      .resizer { display: none; }
+      .diagram-reopen { display: none; }
+
+      /* Show only the active pane. Sidebar keeps its natural block display;
+         the flex panes are restored explicitly. These [data-mpane] selectors
+         match the desktop diagram-collapsed rule's specificity and win by
+         source order, so a stale desktop collapse can't hide the diagram here. */
+      .layout[data-mpane="sections"] .parts-panel,
+      .layout[data-mpane="sections"] .diagram-panel,
+      .layout[data-mpane="parts"]    .sidebar,
+      .layout[data-mpane="parts"]    .diagram-panel,
+      .layout[data-mpane="diagram"]  .sidebar,
+      .layout[data-mpane="diagram"]  .parts-panel { display: none; }
+      .layout[data-mpane="parts"]   .parts-panel   { display: flex; }
+      .layout[data-mpane="diagram"] .diagram-panel { display: flex; }
+    }
+  </style>
+</head>
+<body x-data="viewerApp()" x-init="init()">
+
+  <header class="pb-header">
+    <h1>pet-babelfish</h1>
+    <template x-if="activeVehicle">
+      <span class="chip chip-accent" title="Active garage vehicle">
+        <span x-text="activeVehicle.nickname || 'vehicle'"></span>
+      </span>
+    </template>
+
+    <input type="search" class="inp mono" placeholder="Search part number or description…"
+           x-model="query"
+           @input.debounce.300ms="search()"
+           @keydown.escape="clearSearch()"
+           :disabled="!db">
+
+    <!-- Catalog: a free switcher only when browsing unfiltered. Under an active
+         vehicle the catalog is fixed by that vehicle (changing it silently drops
+         vehicle mode), so show it read-only - clear the vehicle to browse another. -->
+    <template x-if="!activeVehicle">
+      <select class="inp" x-model="catalogId" @change="loadCatalog()">
+        <option value="">- select catalog -</option>
+        <template x-for="c in catalogs" :key="c.id">
+          <option :value="c.id" x-text="c.label"></option>
+        </template>
+      </select>
+    </template>
+    <template x-if="activeVehicle">
+      <span class="chip cat-chip" title="Catalog is fixed by the active vehicle - clear it (×) to browse another"
+            x-text="activeCatalogLabel"></span>
+    </template>
+
+    <template x-if="vehicleMode">
+      <button class="btn" :class="{on: hideOk}" @click="hideOk = !hideOk"
+              title="Hide parts marked Ok, and sections where every part is marked Ok">
+        Hide Ok<template x-if="hideOk && okSectionIds.size"><span class="btn-badge" x-text="okSectionIds.size"></span></template>
+      </button>
+    </template>
+
+    <span class="spacer"></span>
+    <span id="statusBar" x-text="status"></span>
+    <a href="index.html">home</a>
+    <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
+  </header>
+
+  <!-- Mobile pane switcher - hidden above the 820px breakpoint. Drives which
+       single pane .layout shows via mobilePane / [data-mpane]. -->
+  <div class="mobile-tabs">
+    <button class="btn" :class="{on: mobilePane==='sections'}" @click="mobilePane='sections'">Sections</button>
+    <button class="btn" :class="{on: mobilePane==='parts'}" @click="mobilePane='parts'">Parts</button>
+    <button class="btn" :class="{on: mobilePane==='diagram'}" @click="mobilePane='diagram'">Diagram</button>
+  </div>
+
+  <!-- Read-only active-spec summary - filtering now comes only from the saved
+       vehicle, so this shows what the vehicle scopes to and links back to edit it. -->
+  <template x-if="activeVehicle">
+    <div class="spec-summary" :class="{'m-open': mSpecOpen}">
+      <!-- Mobile: chips collapse behind this count so the strip is one slim line. -->
+      <button class="spec-toggle mobile-only" @click="mSpecOpen = !mSpecOpen"
+              x-text="(specChips.length ? specChips.length + ' filter' + (specChips.length === 1 ? '' : 's') : 'no filters') + (mSpecOpen ? ' ▴' : ' ▾')"></button>
+      <template x-for="(chip, ci) in specChips" :key="ci">
+        <span class="chip" :title="chip.title || ''" x-text="chip.t"></span>
+      </template>
+      <template x-if="!specChips.length">
+        <span class="ss-note">no spec set - this vehicle shows the whole catalog</span>
+      </template>
+      <a class="btn ss-link" :href="'index.html?edit=' + activeVehicle.id"
+         title="Open this vehicle in the spec editor">Edit vehicle →</a>
+      <span class="chip-x" title="Clear vehicle - browse the catalog unfiltered"
+            @click="clearActiveVehicle()">×</span>
+    </div>
+  </template>
+  <template x-if="!activeVehicle && db">
+    <div class="spec-summary">
+      <a class="btn btn-primary"
+         :href="'index.html?addVehicle=1&catalog=' + encodeURIComponent(catalogId) + '&return=viewer'"
+         title="Pick or create a vehicle to scope this catalog to one car">
+        Filter to a vehicle…
+      </a>
+      <span class="ss-note">Browsing the full catalog - scope it to a car to get Ok/Notes and only its parts.</span>
+    </div>
+  </template>
+
+  <div class="layout" :class="{ 'diagram-collapsed': diagramCollapsed }" :data-mpane="mobilePane">
+
+    <!-- ── Sidebar ─────────────────────────────────────────────── -->
+    <div class="sidebar">
+      <template x-if="!db && !loading">
+        <div class="sidebar-placeholder">Load a catalog to browse sections.</div>
+      </template>
+      <template x-if="loading">
+        <div class="sidebar-placeholder"><span class="spinner"></span> Loading…</div>
+      </template>
+      <template x-for="mg in mainGroups" :key="mg.id">
+        <div x-show="visibleSections(mg).length > 0">
+          <div class="mg-header" :class="{open: mg.open}" @click="mg.open = !mg.open">
+            <span x-text="mg.title || ('Group ' + mg.number)"></span>
+            <span class="arrow">▶</span>
+          </div>
+          <template x-if="mg.open">
+            <div>
+              <template x-for="sec in visibleSections(mg)" :key="sec.id">
+                <div class="sec-item" :class="{active: currentSection && sec.id === currentSection.id}"
+                     @click="selectSection(sec, mg)">
+                  <span class="sec-num" x-text="sec.number"></span>
+                  <span class="sec-title" x-text="sec.title"></span>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </template>
+    </div>
+
+    <div class="resizer" id="sidebar-resizer" role="separator" aria-orientation="vertical"
+         title="Drag to resize - double-click to reset"></div>
+
+    <!-- ── Parts panel ─────────────────────────────────────────── -->
+    <div class="parts-panel">
+      <div class="parts-header">
+        <!-- Mobile-only shortcut into the diagram pane (display:none on desktop). -->
+        <button class="btn mobile-only" x-show="currentSection && currentSection.has_diagram"
+                @click="mobilePane='diagram'" title="View the parts diagram">Diagram →</button>
+        <template x-if="searchMode">
+          <span>
+            Search: <strong x-text="query"></strong>
+            <span class="count" x-text="filterActive
+              ? (searchMatchCount + ' / ' + searchResults.length + ' results match')
+              : (searchResults.length + ' results')"></span>
+            <button style="background:none;border:none;color:var(--text4);cursor:pointer;font-family:monospace;margin-left:0.5rem"
+                    @click="clearSearch()">✕ clear</button>
+          </span>
+        </template>
+        <template x-if="!searchMode && currentSection">
+          <span>
+            <span class="section-id" x-text="currentSection.number"></span>
+            <span x-text="currentSection.title ? ' — ' + currentSection.title : ''"></span>
+            <span x-text="currentSection.title_remark ? ' · ' + currentSection.title_remark : ''"
+                  style="color:var(--text4)"></span>
+            <span x-text="currentSection.title_model ? ' [' + currentSection.title_model + ']' : ''"
+                  style="color:var(--text5);font-size:0.72rem"></span>
+            <!-- Section-level scope gates every part in the section - show it, or a
+                 filtered-out section looks empty for no visible reason. -->
+            <template x-if="currentSectionAppl">
+              <span class="appl-chips" style="display:inline-flex;vertical-align:middle;margin:0 0 0 0.4rem">
+                <template x-for="(chip, ci) in parseAppl(currentSectionAppl)" :key="ci">
+                  <span class="appl-chip" :class="'appl-' + chip.type"
+                        :title="'Applies to the whole section'" x-text="chip.text"></span>
+                </template>
+              </span>
+            </template>
+            <span class="count" x-text="filterActive ? (filterSectionCount + ' / ' + parts.length + ' match') : (parts.length + ' parts')"></span>
+            <span class="count" x-show="hiddenOkCount > 0" x-text="'· ' + hiddenOkCount + ' Ok hidden'"></span>
+          </span>
+        </template>
+        <template x-if="!searchMode && !currentSection">
+          <span style="color:var(--text5)">Select a section</span>
+        </template>
+        <!-- Always-visible colour key for the applicability chips (touch-friendly). -->
+        <span class="appl-key" x-show="currentSection || searchMode"
+              title="Coloured tags on a part show what scopes it to a car">
+          <span class="appl-chip appl-pr">PR</span>
+          <span class="appl-chip appl-mj">MJ</span>
+          <span class="appl-chip appl-dest">mkt</span>
+          <span class="appl-chip appl-other">·</span>
+          <span class="appl-key-label">option · year · market · other</span>
+        </span>
+      </div>
+
+      <div class="parts-scroll">
+        <!-- Search results table -->
+        <template x-if="searchMode">
+          <table class="parts">
+            <thead>
+              <tr>
+                <th class="col-pos">Pos</th>
+                <th class="col-sec">Section</th>
+                <th class="col-pn">Part Number</th>
+                <th class="col-desc">Description</th>
+                <th class="col-qty">Qty</th>
+                <th class="col-open"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-if="searchResults.length === 0">
+                <tr><td colspan="6" class="parts-placeholder">No results.</td></tr>
+              </template>
+              <!-- Clicking a result previews its diagram in the right pane without
+                   leaving the results - so you can click down the list and see each on
+                   its diagram. "Open →" is the explicit jump to that section's parts. -->
+              <template x-for="(p, i) in searchResults" :key="i">
+                <tr class="search-result-row" @click="previewResult(p, i)" style="cursor:pointer"
+                    :class="{'part-no-match': filterActive && !partMatchesVehicle(p.applicability, p._scope),
+                             'preview-active': previewIndex === i}">
+                  <td class="col-pos" x-text="p.position"></td>
+                  <td class="col-sec"><span class="sec-badge" x-text="p.section_number"></span></td>
+                  <td class="col-pn" x-text="p.part_number"></td>
+                  <td class="col-desc" x-text="p.description"></td>
+                  <td class="col-qty" x-text="p.quantity"></td>
+                  <td class="col-open">
+                    <button class="btn open-btn" @click.stop="jumpToSection(p)"
+                            title="Open this section's parts list">Open →</button>
+                  </td>
+                </tr>
+              </template>
+              <template x-if="searchResults.length === 200">
+                <tr><td colspan="6" style="padding:0.4rem 0.5rem;color:var(--text5);font-size:0.72rem">
+                  Showing first 200 results - refine your search.
+                </td></tr>
+              </template>
+            </tbody>
+          </table>
+        </template>
+
+        <!-- Section parts table. These states are flat siblings, not nested inside a
+             single `x-if="!searchMode"`: x-if clones only content.firstElementChild,
+             so wrapping them would render the table and silently drop every placeholder. -->
+        <template x-if="!searchMode && displayRows.length > 0">
+          <table class="parts">
+            <thead>
+              <tr>
+                <th class="col-pos">Pos</th>
+                <th class="col-pn">Part Number</th>
+                <th class="col-desc">Description</th>
+                <th class="col-qty">Qty</th>
+                <th class="col-rem">Remark</th>
+                <template x-if="vehicleMode">
+                  <th class="col-ok">
+                    <span class="ok-hd">
+                      <!-- indeterminate is an IDL property, not an attribute - :indeterminate
+                           would no-op, so drive it from an effect. -->
+                      <input type="checkbox" class="ok-box" :checked="sectionOkState === 'all'"
+                             x-effect="$el.indeterminate = sectionOkState === 'some'"
+                             @change="toggleSectionOk()" :title="sectionOkTitle()">
+                      <span :title="'Physical status on ' + (activeVehicle.nickname || 'this vehicle')">Ok</span>
+                    </span>
+                  </th>
+                </template>
+                <template x-if="vehicleMode">
+                  <th class="col-notes">Notes</th>
+                </template>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="row in displayRows" :key="row._rowid">
+                <tr :class="{
+                      'pos-active': row._basePos !== null && (hoveredPos === row._basePos || selectedPos === row._basePos),
+                      'pos-subrow': !row._isHead,
+                      'part-ok': vehicleMode && partOk(row.part._key)
+                    }"
+                    :data-pos-num="row._basePos"
+                    @click="row._basePos !== null && (selectedPos = (selectedPos === row._basePos ? null : row._basePos))"
+                    @mouseenter="hoveredPos = row._basePos"
+                    @mouseleave="hoveredPos = null">
+                  <td class="col-pos"
+                      :title="row._posText === '-' ? 'Not shown in diagram' : /^\(/.test(row._posText) ? 'May differ from illustration' : ''">
+                    <span class="pos-expand"
+                          :style="row._hasMore ? '' : 'visibility:hidden'"
+                          :title="row._hasMore ? (row._expanded ? 'Collapse' : row._moreCount + ' more at this position') : ''"
+                          @click.stop="row._hasMore && toggleGroup(row._gi)"
+                          x-text="row._expanded ? '▼' : ('▶ ' + row._moreCount)"></span>
+                    <span :class="{'pos-paren': /^\(/.test(row._posText), 'pos-none': row._posText === '-'}"
+                          x-text="row._posText"></span>
+                  </td>
+                  <td class="col-pn">
+                    <a class="pn-link" target="_blank" rel="noopener" @click.stop
+                       :href="'https://www.google.com/search?q=' + encodeURIComponent(row.part.part_number)"
+                       :title="'Search Google for ' + row.part.part_number"
+                       x-text="row.part.part_number"></a>
+                  </td>
+                  <td class="col-desc">
+                    <div x-text="row.part.description"></div>
+                    <template x-if="row.part.applicability">
+                      <div class="appl-chips">
+                        <template x-for="(chip, ci) in parseAppl(row.part.applicability)" :key="ci">
+                          <span class="appl-chip" :class="'appl-' + chip.type" x-text="chip.text"></span>
+                        </template>
+                      </div>
+                    </template>
+                  </td>
+                  <td class="col-qty" x-text="row.part.quantity"></td>
+                  <td class="col-rem" x-text="row.part.remarks"></td>
+                  <template x-if="vehicleMode">
+                    <td class="col-ok" @click.stop>
+                      <input type="checkbox" class="ok-box" :checked="partOk(row.part._key)"
+                             @change="setPartOk(row.part._key, $event.target.checked)"
+                             :title="partOk(row.part._key) ? 'Marked OK' : 'Mark OK'">
+                    </td>
+                  </template>
+                  <template x-if="vehicleMode">
+                    <td class="col-notes" @click.stop>
+                      <input type="text" class="note-input" placeholder="…"
+                             :value="partNotes(row.part._key)"
+                             :title="partNotes(row.part._key)"
+                             @input="setPartNotes(row.part._key, $event.target.value)"
+                             @blur="flushPartNotes(row.part._key)"
+                             @keydown.enter="$event.target.blur()">
+                    </td>
+                  </template>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </template>
+        <template x-if="!searchMode && currentSection && parts.length === 0">
+          <div class="parts-placeholder">No parts extracted for this section.</div>
+        </template>
+        <template x-if="!searchMode && currentSection && parts.length > 0 && displayRows.length === 0 && emptyReason === 'spec'">
+          <div class="parts-placeholder">No part in this section is on this vehicle.</div>
+        </template>
+        <template x-if="!searchMode && currentSection && parts.length > 0 && displayRows.length === 0 && emptyReason === 'ok'">
+          <div class="parts-placeholder">
+            Every part here is marked Ok.
+            <a href="#" style="color:var(--accent)" @click.prevent="hideOk = false">show them</a>
+          </div>
+        </template>
+        <template x-if="!searchMode && !currentSection">
+          <div class="parts-placeholder">Select a section from the sidebar.</div>
+        </template>
+      </div>
+    </div>
+
+    <!-- ── Diagram panel ────────────────────────────────────────── -->
+    <div class="diagram-panel">
+      <div class="diagram-scroll" :class="{ panning: _panning }"
+           @wheel.prevent="onDiagramWheel($event)"
+           @pointerdown="onDiagramPointerDown($event)">
+        <!-- One transform on the wrap zooms/pans the image and its callout canvas
+             together, keeping the overlay registered. See _positionCanvas/onDiagramWheel. -->
+        <div x-show="diagramUrl" class="diagram-wrap"
+             :style="'transform: translate(' + dpanX + 'px,' + dpanY + 'px) scale(' + dzoom + ')'">
+          <img :src="diagramUrl || ''" alt="Parts diagram" @load="onDiagramLoad()" draggable="false">
+          <canvas id="callout-canvas" @click="diagramClick($event)"></canvas>
+        </div>
+        <span x-show="!diagramUrl" class="diagram-placeholder">No diagram</span>
+      </div>
+
+      <!-- Overlays: siblings of the transformed wrap, so they stay put while it moves. -->
+      <div class="diagram-controls" x-show="diagramUrl">
+        <button class="btn diagram-btn" @click="diagramZoom(1/1.3)" title="Zoom out">−</button>
+        <button class="btn diagram-btn" @click="diagramZoom(1.3)" title="Zoom in">+</button>
+        <button class="btn diagram-btn" @click="fitDiagram()" title="Reset zoom & pan">Fit</button>
+        <button class="btn diagram-btn" @click="diagramCollapsed = true" title="Hide diagram pane">✕</button>
+      </div>
+
+      <div class="diagram-hint" x-show="diagramUrl && !diagramHintDismissed"
+           @click="dismissDiagramHint()" title="Dismiss">
+        Click a numbered callout to jump to its part<span class="hint-dismiss">Got it ✕</span>
+      </div>
+    </div>
+
+  </div>
+
+  <button class="diagram-reopen" x-show="diagramCollapsed" @click="diagramCollapsed = false"
+          title="Show the diagram pane">Diagram ◀</button>
+
+  <script>
+    // Sidebar drag-resize. Width lives in --sidebar-w on .layout; persisted across sessions.
+    (function () {
+      const DEFAULT_W = 220, MIN_W = 140, MIN_PARTS = 260, GUTTER = 5, KEY = 'pb-sidebar-w';
+      const layout  = document.querySelector('.layout');
+      const resizer = document.getElementById('sidebar-resizer');
+      const apply = w => layout.style.setProperty('--sidebar-w', Math.round(w) + 'px');
+
+      // The diagram column is a fixed %, so the parts panel absorbs everything the
+      // sidebar takes. Stop before it gets crushed rather than at some viewport fraction.
+      const maxW = () => {
+        const diagram = document.querySelector('.diagram-panel');
+        const avail = layout.clientWidth - (diagram ? diagram.offsetWidth : 0) - GUTTER - MIN_PARTS;
+        return Math.max(MIN_W, avail);
+      };
+
+      const saved = parseInt(localStorage.getItem(KEY), 10);
+      if (saved) apply(Math.min(Math.max(saved, MIN_W), maxW()));
+
+      let dragging = false;
+      resizer.addEventListener('pointerdown', e => {
+        dragging = true;
+        resizer.setPointerCapture(e.pointerId);
+        resizer.classList.add('dragging');
+        document.body.classList.add('resizing');
+        e.preventDefault();
+      });
+      resizer.addEventListener('pointermove', e => {
+        if (!dragging) return;
+        const x = e.clientX - layout.getBoundingClientRect().left;
+        apply(Math.min(Math.max(x, MIN_W), maxW()));
+      });
+      const end = e => {
+        if (!dragging) return;
+        dragging = false;
+        resizer.releasePointerCapture(e.pointerId);
+        resizer.classList.remove('dragging');
+        document.body.classList.remove('resizing');
+        localStorage.setItem(KEY, parseInt(layout.style.getPropertyValue('--sidebar-w'), 10));
+      };
+      resizer.addEventListener('pointerup', end);
+      resizer.addEventListener('pointercancel', end);
+
+      resizer.addEventListener('dblclick', () => {
+        apply(DEFAULT_W);
+        localStorage.setItem(KEY, DEFAULT_W);
+      });
+
+      // Keep the sidebar within bounds if the window shrinks under it.
+      window.addEventListener('resize', () => {
+        const cur = parseInt(layout.style.getPropertyValue('--sidebar-w'), 10);
+        if (cur && cur > maxW()) apply(maxW());
+      });
+    })();
+  </script>
+
+  <script src="vendor/sql.js/sql-wasm.js"></script>
+  <script src="theme.js"></script>
+  <script src="appl.js"></script>
+  <script src="vin.js"></script>
+  <script src="schema.js"></script>
+  <script src="ccitt.js"></script>
+  <script src="catalogs.js"></script>
+  <script src="garage.js"></script>
+  <script>
+    const SQLJS_WASM = 'vendor/sql.js/sql-wasm.wasm';
+
+    // A section's whole scope, in the grammar. Its printed applicability holds the
+    // option and year gates; the typed columns hold the facets the title row states
+    // as bare tokens ("G9750,G9788"). All of them gate every part in the section, and
+    // APPL ANDs across facets, so one string of segments is their conjunction.
+    const sectionScope = (...cols) => cols.filter(Boolean).join(' | ');
+
+    // Nobody knows their car by its EC/TC code, so name it with what the catalog says
+    // about it. A transmission's `type_code` is speeds plus A(utomatik) or
+    // S(chaltgetriebe) - the reading the option-code derivation depends on too. An
+    // unfamiliar shape is left as printed rather than guessed at.
+    const gearboxLabel = (tc, type) => {
+      const m = /^(\d)([AS])$/.exec(String(type || '').toUpperCase());
+      return [tc, type, m && `${m[1]}-speed ${m[2] === 'A' ? 'automatic' : 'manual'}`]
+             .filter(Boolean).join(' — ');
+    };
+    const engineLabel = (ec, displacement, hp) =>
+      [ec, [displacement && displacement + ' l', hp && hp + ' hp'].filter(Boolean).join(', ')]
+      .filter(Boolean).join(' — ');
+
+    // FTS4 matches whole tokens, so "Headlight" misses every "Headlights" - the
+    // catalog pluralises freely and recall must not depend on the user guessing
+    // which form was printed. Each bare term becomes a prefix term.
+    // Left alone: a quoted phrase (the quotes are the user asking for exactly
+    // that), FTS's own operators, a wildcard already typed, and any term not
+    // ending in a word character - "*" after punctuation is a syntax error, and
+    // an error here silently drops the whole query to the LIKE fallback.
+    const FTS_OPERATORS = new Set(['AND', 'OR', 'NOT', 'NEAR']);
+    const ftsPrefixQuery = q =>
+      (String(q).match(/"[^"]*"?|\S+/g) || [])
+        .map(t => (t.startsWith('"') || FTS_OPERATORS.has(t) || !/\w$/.test(t))
+                    ? t : t + '*')
+        .join(' ');
+
+    function viewerApp() {
+      return {
+        catalogs:       [],
+        catalogId:      '',
+        db:             null,
+        SQL:            null,
+        mainGroups:     [],
+        currentSection: null,
+        currentMg:      null,
+        parts:          [],
+        posGroups:      [],
+        displayRows:    [],
+        diagramUrl:     null,
+        _diagramToken:  0,
+        callouts:       [],
+        hoveredPos:     null,
+        selectedPos:    null,
+        query:          '',
+        searchMode:     false,
+        searchResults:  [],
+        previewIndex:   -1,      // which search result is previewed on the diagram
+        _previewMode:   false,   // showing a search-result diagram, not the open section
+        loading:        false,
+        status:         '',
+
+        // file-mode: true when loaded via ?sqlite=URL instead of OPFS
+        sqliteFileMode: false,
+
+        // Vehicle spec - populated by openVehicle() from the saved vehicle and read
+        // (never edited) here; the filtering engine runs entirely off these.
+        vfYear:           '',
+        vfMarket:         '',
+        vfLine:           '',
+        vfBody:           '',
+        vfDrive:          '',
+        vfTrim:           '',
+        vfEngine:         '',
+        vfGearbox:        '',
+        vfChassis:        '',
+        vfEngineNo:       '',
+        vfGearboxNo:      '',
+        vfPrCodes:        [],
+        allPrCodes:       [],   // pr_code labels for the spec summary
+        prUnknown:        [],   // spec codes not in this catalog's pr_code
+
+        // Facet vocabularies, read from the open catalog - see loadFacetOptions.
+        engineOptions:    [],   // { code, label }
+        gearboxOptions:   [],
+        lineOptions:      [],   // plain strings
+        bodyOptions:      [],
+        driveOptions:     [],   // '2'/'4' - offered when the catalog has AWD variants
+        trimOptions:      [],   // 'S'/'GTS'/'RS'/'RS 4.0'
+        marketOptions:    [],
+        _index:           null, // full APPL.buildIndex opts (codeIndex, prCodes, lines, dialect, yearPivot)
+        dialect:          'modern',
+        yearPivot:        null,
+        _vinRanges:       [],   // { from, to } - chassis blocks, for breakpoints
+        _engineNumRanges: [],   // { from, to } - engine-number blocks
+        _transmissRanges: [],   // { from, to } - transmission-number blocks (356/PDK serials)
+        _spec:            null, // vehicleSpec memo
+
+        // Diagram zoom/pan view state. dzoom/dpanX/dpanY compose with the object-fit
+        // callout mapping (see onDiagramWheel / _positionCanvas).
+        dzoom:            1,
+        dpanX:            0,
+        dpanY:            0,
+        _panning:         false,
+        _panMoved:        false,
+        diagramCollapsed: false,
+        diagramHintDismissed: false,
+
+        // Mobile single-column pane switcher (≤820px). Desktop ignores it - all
+        // three panes stay visible above the breakpoint. See the .mobile-tabs
+        // segmented control and the [data-mpane] CSS.
+        mobilePane:       'sections',   // 'sections' | 'parts' | 'diagram'
+        mSpecOpen:        false,         // mobile: facet chips expanded in the spec strip
+
+        // active garage vehicle (opened via ?vehicle=<id>)
+        activeVehicle:    null,
+        partMeta:         {},   // partKey -> { ok, notes } for activeVehicle
+        _noteTimers:      {},   // partKey -> debounce timer for notes writes
+
+        // hide-Ok filter (vehicle mode only)
+        hideOk:           false,
+
+        // Sidebar rollups - sections the sidebar drops. See _recomputeSectionRollups.
+        okSectionIds:     new Set(),   // every in-scope part marked Ok (hide-Ok only)
+        emptySectionIds:  new Set(),   // the spec filter admits none of its parts
+        _sectionParts:    null,  // sectionId -> [{ key, appl, scope }]; see _sectionPartIndex
+        _rollupTimer:     null,
+
+        // Ok/Notes are per-vehicle, so only offer them while actually viewing the
+        // open vehicle's own catalog (the catalog picker can move off it).
+        get vehicleMode() {
+          return !!this.activeVehicle && this.activeVehicle.catalogId === this.catalogId;
+        },
+
+        // Catalog label for the read-only header context shown under an active vehicle.
+        get activeCatalogLabel() {
+          const id = this.activeVehicle && this.activeVehicle.catalogId;
+          const c = this.catalogs.find(c => c.id === id);
+          return (c && c.label) || id || '';
+        },
+
+        // Read-only chips for the active-spec summary strip. Each non-blank facet is
+        // one chip; drive shows as RWD/AWD, PR codes collapse to "+N options".
+        get specChips() {
+          const c = [];
+          const push = (t, title) => c.push(title ? { t, title } : { t });
+          if (this.vfYear)     push('MJ ' + this.vfYear);
+          if (this.vfLine)     push(this.vfLine, 'Model line');
+          if (this.vfBody)     push(this.vfBody, 'Body style');
+          if (this.vfDrive)    push(this.vfDrive === '4' ? 'AWD' : 'RWD', 'Drive');
+          if (this.vfTrim)     push(this.vfTrim, 'Trim');
+          if (this.vfEngine)   push(this.vfEngine, 'Engine code');
+          if (this.vfGearbox)  push(this.vfGearbox, 'Gearbox code');
+          if (this.vfMarket)   push(this.vfMarket, 'Market');
+          if (this.vfChassis)   push(this.vfChassis, 'Chassis number');
+          if (this.vfEngineNo)  push('Eng# ' + this.vfEngineNo, 'Engine number');
+          if (this.vfGearboxNo) push('Gbx# ' + this.vfGearboxNo, 'Gearbox number');
+          if (this.vfPrCodes.length)
+            push('+' + this.vfPrCodes.length + ' option' + (this.vfPrCodes.length === 1 ? '' : 's'),
+                 this.vfPrCodes.join(', '));
+          return c;
+        },
+
+        // Every field the spec filter reads. One list so a new facet can't be added
+        // to the form and silently skipped by the filter, the watchers or the reset.
+        get _specValues() {
+          return [this.vfYear, this.vfMarket, this.vfLine, this.vfBody, this.vfDrive,
+                  this.vfTrim, this.vfEngine, this.vfGearbox, this.vfChassis, this.vfEngineNo,
+                  this.vfGearboxNo];
+        },
+
+        get filterActive() { return !!(this._specValues.some(Boolean) || this.vfPrCodes.length); },
+        get filterCriteriaCount() {
+          return this._specValues.filter(Boolean).length + this.vfPrCodes.length;
+        },
+        get filterSectionCount() {
+          if (!this.filterActive || !this.parts.length) return '0';
+          return String(this.parts.filter(p => this.partMatchesVehicle(p.applicability, this.currentSectionScope)).length);
+        },
+
+        // ── Init ────────────────────────────────────────────────────
+
+        async init() {
+          this.status = 'Loading sql.js…';
+          try { this.diagramHintDismissed = localStorage.getItem('pb-diagram-hint') === '1'; } catch {}
+          this.SQL = await initSqlJs({ locateFile: () => SQLJS_WASM });
+          this.status = '';
+          this.$watch('hoveredPos',  () => this.drawCallouts());
+          this.$watch('selectedPos', () => this.drawCallouts());
+          this.$watch('hideOk', () => { this._rebuildDisplayRows(); this._scheduleRollups(); });
+          // The diagram panel is display:none while collapsed, so its canvas has zero
+          // geometry - re-measure when it comes back.
+          this.$watch('diagramCollapsed', v => { if (!v) requestAnimationFrame(() => this._positionCanvas()); });
+          // On mobile the diagram pane is display:none until selected, so its canvas
+          // has zero geometry - re-measure when it becomes the active pane, mirroring
+          // the diagram-collapsed re-measure above.
+          this.$watch('mobilePane', v => { if (v === 'diagram') requestAnimationFrame(() => this._positionCanvas()); });
+          // The spec filter decides which parts the open section lists, which
+          // sections the sidebar lists at all, which parts a section's Ok rollup
+          // counts, and which callouts belong on the car's diagram.
+          for (const f of ['vfYear', 'vfMarket', 'vfLine', 'vfBody', 'vfDrive', 'vfTrim',
+                           'vfEngine', 'vfGearbox', 'vfChassis', 'vfEngineNo', 'vfGearboxNo',
+                           'vfPrCodes'])
+            this.$watch(f, () => {
+              this._rebuildDisplayRows(); this._scheduleRollups(); this.drawCallouts();
+            });
+          window.addEventListener('resize', () => requestAnimationFrame(() => this._positionCanvas()));
+          this._startQueryBridge();
+
+          const params = new URLSearchParams(location.search);
+          const sqliteUrl = params.get('sqlite');
+          if (sqliteUrl) {
+            await this.loadFromUrl(sqliteUrl);
+          } else {
+            await this.listCatalogs();
+            const vid = params.get('vehicle');
+            if (vid) {
+              await this.openVehicle(vid);
+            } else {
+              const cid = params.get('catalog');
+              if (cid) {
+                this.catalogId = cid;
+                await this.loadCatalog();
+              }
+            }
+          }
+        },
+
+        // ── Garage vehicle ───────────────────────────────────────────
+        // Load a saved vehicle: switch to its catalog and restore its spec filter.
+        async openVehicle(id) {
+          let v = null;
+          try { v = await Garage.get(id); } catch {}
+          if (!v) { this.status = 'Vehicle not found in garage.'; return; }
+          this.activeVehicle = v;
+          this.partMeta      = v.partMeta || {};
+          if (v.catalogId && this.catalogs.some(c => c.id === v.catalogId)) {
+            this.catalogId = v.catalogId;
+            await this.loadCatalog();   // populates allPrCodes for chip labels
+          }
+          const s = v.spec || {};
+          this.vfYear     = s.vfYear || '';
+          this.vfMarket   = s.vfMarket || '';
+          this.vfLine     = s.vfLine || '';
+          this.vfBody     = s.vfBody || '';
+          this.vfDrive    = s.vfDrive || '';
+          this.vfTrim     = s.vfTrim || '';
+          this.vfEngine   = s.vfEngine || '';
+          this.vfGearbox  = s.vfGearbox || '';
+          this.vfChassis   = s.vfChassis || '';
+          this.vfEngineNo  = s.engineNo || '';    // the garage's own key for it
+          this.vfGearboxNo = s.gearboxNo || '';
+          this.vfPrCodes  = Array.isArray(s.vfPrCodes) ? [...s.vfPrCodes] : [];
+          this.prUnknown  = this._unknownPrCodes(this.vfPrCodes);
+        },
+
+        clearActiveVehicle() {
+          this.activeVehicle = null;
+          this.partMeta      = {};
+          this.hideOk        = false;
+          this.okSectionIds  = new Set();
+          this.clearVehicleFilter();
+          this._rebuildDisplayRows();
+        },
+
+        // ── What the table lists ─────────────────────────────────────
+        // Two filters drop rows, and either alone can empty the table. The spec
+        // filter drops parts that aren't on this car. Hide Ok drops parts already
+        // marked, and sections whose every in-scope part is marked from the sidebar
+        // - the "what's left to do" view. Hide-Ok's scope matches the diagram
+        // mark-all (sectionOkTargets): the spec filter decides which parts count, so
+        // a section of parts that aren't on this car is not "done" and stays listed
+        // - the spec filter drops it instead.
+
+        _partVisible(p) {
+          if (this.filterActive && !this.partMatchesVehicle(p.applicability, this.currentSectionScope))
+            return false;
+          return !(this.hideOk && this.vehicleMode && this.partOk(p._key));
+        },
+
+        // Rows Hide Ok alone accounts for. A part the spec filter already dropped is
+        // not on this car, so counting it here would overstate what the toggle holds
+        // back - and the header's "n / m match" already speaks for the spec filter.
+        get hiddenOkCount() {
+          if (!this.hideOk || !this.vehicleMode) return 0;
+          return this.parts.filter(p => this.partOk(p._key) &&
+            (!this.filterActive ||
+             this.partMatchesVehicle(p.applicability, this.currentSectionScope))).length;
+        },
+
+        // Which filter emptied the table. Both can be on; the spec filter is named
+        // first because it is the one with nothing to show, not merely hiding.
+        get emptyReason() {
+          if (this.filterActive && !this.parts.some(p =>
+                this.partMatchesVehicle(p.applicability, this.currentSectionScope))) return 'spec';
+          return 'ok';
+        },
+
+        // The open section always stays listed even once fully marked or filtered
+        // out - otherwise ticking its last part, or a keystroke in the filter, would
+        // yank the sidebar out from under the user.
+        visibleSections(mg) {
+          const ok = this.okSectionIds, empty = this.emptySectionIds;
+          if (!ok.size && !empty.size) return mg.sections;
+          const cur = this.currentSection && this.currentSection.id;
+          return mg.sections.filter(s => s.id === cur || !(ok.has(s.id) || empty.has(s.id)));
+        },
+
+        // Every section's parts keyed as selectSection keys them (same occurrence
+        // counter, same rowid order), so the sidebar rollups can be taken over the
+        // whole catalog without loading each section. Built once per catalog, on
+        // demand - it is a fact about the catalog, not about the car, so it survives
+        // every filter edit.
+        //
+        // Scopes are parsed here rather than at match time: the rollups re-run on
+        // every filter keystroke, and re-parsing 24,000 scopes on each pass is the
+        // whole cost of the pass. A section's own scope is parsed once, not once per
+        // part in it.
+        _sectionPartIndex() {
+          if (this._sectionParts) return this._sectionParts;
+          const idx = new Map();
+          this._sectionParts = idx;
+          if (!this.db) return idx;
+          let rows = [];
+          try {
+            rows = this._query(
+              `SELECT p.section_id, s.number, p.position, p.part_number,
+                      COALESCE(NULLIF(p.applicability, ''), pp.applicability, '') AS appl,
+                      s.applicability, s.engine_code, s.gearbox_code, s.body_line, s.body_style,
+                      s.drive_code, s.trim_code
+               FROM part p JOIN section s ON p.section_id = s.id
+               LEFT JOIN part pp ON pp.id = p.parent_id
+               WHERE p.catalog_id=? ORDER BY p.section_id, p.rowid`,
+              [this.catalogId]
+            );
+          } catch { return idx; }
+          const parse = s => s ? APPL.parse(s, this._index) : null;
+          let curSec = null, occurrence = null, list = null, scope = null;
+          for (const [sid, snum, position, part_number, applicability, ...scopeCols] of rows) {
+            if (sid !== curSec) {
+              curSec = sid; occurrence = this._occurrenceCounter(); list = [];
+              scope = parse(sectionScope(...scopeCols));
+              idx.set(sid, list);
+            }
+            const n = occurrence(position, part_number);
+            list.push({
+              key:   this._partKey(snum, position, part_number, n),
+              appl:  parse(applicability),
+              scope,
+            });
+          }
+          return idx;
+        },
+
+        // partMatchesVehicle's rule, on the scopes _sectionPartIndex parsed once.
+        _entryMatches(e) {
+          if (!this.filterActive) return true;
+          return (!e.appl  || APPL.matches(e.appl,  this.vehicleSpec))
+              && (!e.scope || APPL.matches(e.scope, this.vehicleSpec));
+        },
+
+        // Both sidebar rollups, in one pass over the catalog. A section is dropped
+        // when the spec filter admits none of its parts - its table would render
+        // empty, so the diagram has nothing on this car - and, under Hide Ok, when
+        // every part it does admit is marked.
+        //
+        // A section the ingest found no parts in is in neither list: nothing was
+        // filtered out of it, so hiding it would just be hiding a gap in the data.
+        _recomputeSectionRollups() {
+          clearTimeout(this._rollupTimer);
+          const rollOk = this.hideOk && this.vehicleMode;
+          const ok = new Set(), empty = new Set();
+          if (this.filterActive || rollOk) {
+            for (const [sid, list] of this._sectionPartIndex()) {
+              const targets = list.filter(e => this._entryMatches(e));
+              // With no spec filter every part is a target, so a list that exists at
+              // all has one: `empty` only ever fills while the filter is on.
+              if (!targets.length) empty.add(sid);
+              else if (rollOk && targets.every(e => this.partOk(e.key))) ok.add(sid);
+            }
+          }
+          this.okSectionIds    = ok;
+          this.emptySectionIds = empty;
+        },
+
+        // Spec edits land one field at a time - restoring a garage vehicle sets nine
+        // in a row, and the year box fires per keystroke - and each rollup is a full
+        // catalog pass, so coalesce them into one.
+        _scheduleRollups() {
+          clearTimeout(this._rollupTimer);
+          this._rollupTimer = setTimeout(() => this._recomputeSectionRollups(), 0);
+        },
+
+        // Marks change what the filter hides - refresh both views. The sidebar
+        // rollup is Hide-Ok's alone to change here: a mark cannot alter which parts
+        // the spec filter admits, so with Hide Ok off nothing rebuilds on a click.
+        _afterMarkChange() {
+          if (!this.hideOk) return;
+          this._rebuildDisplayRows();
+          this._scheduleRollups();
+        },
+
+        // ── Per-part ok / notes (active vehicle only) ────────────────
+        // Marks live on the garage vehicle, not the catalog DB - catalog DBs are
+        // rebuilt on re-ingest. See Garage.setPartMeta.
+
+        partOk(key)    { return !!(this.partMeta[key] && this.partMeta[key].ok); },
+        partNotes(key) { return (this.partMeta[key] && this.partMeta[key].notes) || ''; },
+
+        setPartOk(key, ok) {
+          this._applyPartMeta(key, { ok: !!ok });
+          this._afterMarkChange();
+          this._persistPartMeta(key);
+        },
+
+        // ── Mark the whole diagram ───────────────────────────────────
+        // Targets every part in the section the vehicle filter admits - marking
+        // the physical state of a part that isn't on this car is meaningless.
+        // partMatchesVehicle() is true for everything when no filter is set, so
+        // with no filter this is simply all parts. Includes parts hidden inside
+        // collapsed position groups: the scope is the diagram, not the viewport.
+        get sectionOkTargets() {
+          if (!this.vehicleMode) return [];
+          return this.parts.filter(p => p._key && this.partMatchesVehicle(p.applicability, this.currentSectionScope));
+        },
+
+        // The open section's printed scope - what the chips in the header show.
+        get currentSectionAppl() {
+          return (this.currentSection && this.currentSection.applicability) || '';
+        },
+
+        // The open section's full scope, AND-ed into every part match in this section.
+        get currentSectionScope() {
+          return (this.currentSection && this.currentSection.scope) || '';
+        },
+
+        get sectionOkState() {
+          const t = this.sectionOkTargets;
+          if (!t.length) return 'none';
+          const n = t.filter(p => this.partOk(p._key)).length;
+          return n === 0 ? 'none' : n === t.length ? 'all' : 'some';
+        },
+
+        sectionOkTitle() {
+          const t = this.sectionOkTargets;
+          if (!t.length) return 'No parts to mark';
+          const scope = this.filterActive ? 'matching parts' : 'parts';
+          if (this.sectionOkState === 'all') return `Clear Ok on all ${t.length} ${scope} on this diagram`;
+          const n = t.filter(p => this.partOk(p._key)).length;
+          const done = n ? ` (${n} already marked)` : '';
+          return `Mark all ${t.length} ${scope} on this diagram Ok${done}`;
+        },
+
+        // All-or-nothing: partially marked ("some") fills the rest in, matching
+        // the indeterminate checkbox's affordance.
+        toggleSectionOk() {
+          const targets = this.sectionOkTargets;
+          if (!targets.length) return;
+          const ok = this.sectionOkState !== 'all';
+          const meta = { ...this.partMeta }, patches = {};
+          for (const p of targets) {
+            meta[p._key] = { ...(meta[p._key] || { notes: '' }), ok };   // keeps any note
+            patches[p._key] = { ok };
+          }
+          this.partMeta = meta;
+          this._afterMarkChange();
+          this._persistPartMetaMany(patches);
+        },
+
+        // Typing writes through debounced; blur (below) flushes immediately so a
+        // note is safe as soon as the user leaves the field.
+        setPartNotes(key, notes) {
+          this._applyPartMeta(key, { notes });
+          clearTimeout(this._noteTimers[key]);
+          this._noteTimers[key] = setTimeout(() => this._persistPartMeta(key), 400);
+        },
+
+        flushPartNotes(key) {
+          if (this._noteTimers[key]) this._persistPartMeta(key);
+        },
+
+        _applyPartMeta(key, patch) {
+          const cur = this.partMeta[key] || { ok: false, notes: '' };
+          this.partMeta = { ...this.partMeta, [key]: { ...cur, ...patch } };
+        },
+
+        async _persistPartMeta(key) {
+          clearTimeout(this._noteTimers[key]);
+          delete this._noteTimers[key];
+          const e = this.partMeta[key] || {};
+          await this._persistPartMetaMany({ [key]: { ok: !!e.ok, notes: e.notes || '' } });
+        },
+
+        async _persistPartMetaMany(patches) {
+          if (!this.activeVehicle) return;
+          try {
+            await Garage.setPartMetaMany(this.activeVehicle.id, patches);
+          } catch (err) {
+            this.status = 'Could not save mark: ' + err.message;
+          }
+        },
+
+        // Stable identity for a part row across re-ingest. rowid can't be used -
+        // it is reassigned every ingest. Content alone isn't unique either: a
+        // section can repeat a row verbatim (997 601-000 lists "Alloy wheel"
+        // 997 363 156 05 five times), so disambiguate by occurrence index.
+        _partKey(sectionNumber, position, partNumber, n) {
+          return [this.catalogId, sectionNumber, position, partNumber, n].join('|');
+        },
+
+        // One occurrence counter per section, fed rows in rowid order. Both key
+        // producers (selectSection and _sectionPartIndex) go through this: they must
+        // number repeats identically or a mark lands on a different part than the one
+        // that was ticked.
+        _occurrenceCounter() {
+          const seen = new Map();
+          return (position, partNumber) => {
+            const base = position + '|' + partNumber;
+            const n = seen.get(base) || 0;
+            seen.set(base, n + 1);
+            return n;
+          };
+        },
+
+        // ── Catalog list ─────────────────────────────────────────────
+
+        async listCatalogs() {
+          // OPFS catalogs plus bundled ones (docs/catalogs/), the latter copied into
+          // OPFS the first time they're opened. See catalogs.js listAll/install.
+          this.catalogs = await CATALOGS.listAll(this.SQL);
+        },
+
+        // ── Load catalog ─────────────────────────────────────────────
+
+        async loadCatalog() {
+          if (!this.catalogId) return;
+          this.loading = true;
+          this.status  = 'Opening database…';
+          this.mainGroups     = [];
+          this.currentSection = null;
+          this.parts          = [];
+          this._sectionParts  = null;   // per-catalog; rebuilt on demand
+          this._setDiagram(null);
+
+          try {
+            // Bundled-but-not-yet-installed catalog? Copy it into OPFS first.
+            const entry = this.catalogs.find(c => c.id === this.catalogId);
+            if (entry && entry.installed === false) {
+              this.status = 'Fetching catalog…';
+              await CATALOGS.install({ id: entry.id, file: entry.file });
+              entry.installed = true;
+            }
+            const root = await navigator.storage.getDirectory();
+            const dir  = await root.getDirectoryHandle(this.catalogId);
+            const fh   = await dir.getFileHandle('catalog.sqlite');
+            const buf  = await (await fh.getFile()).arrayBuffer();
+            this.db    = new this.SQL.Database(new Uint8Array(buf));
+
+            if (!this._schemaCurrent()) {
+              this.status = `"${this.catalogId}" doesn't match the current schema - ` +
+                            `re-ingest it with tools/ingest.py.`;
+              this.db = null;
+              return;
+            }
+
+            this.loadFacetOptions();   // first: every later parse reads the code index
+            this._buildToc();
+            this.loadPrCodes();
+            this._recomputeSectionRollups();
+            this.status = `${this.mainGroups.length} groups, ${this._scalar('SELECT COUNT(*) FROM section')} sections`;
+          } catch (e) {
+            this.status = 'Error: ' + e.message;
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        // ── File-mode loader ─────────────────────────────────────────
+        // Fetches a SQLite file from a URL and loads it directly (no OPFS).
+        // Diagrams work here too - they ride in section.diagram_blob, so the file
+        // is the whole catalog.
+        // Usage: viewer.html?sqlite=http://localhost:8080/my-catalog.sqlite
+
+        async loadFromUrl(url) {
+          this.loading       = true;
+          this.sqliteFileMode = true;
+          this.status        = 'Fetching database…';
+          this.mainGroups    = [];
+          this.currentSection = null;
+          this.parts         = [];
+          this._sectionParts = null;   // per-catalog; rebuilt on demand
+          this._setDiagram(null);
+          try {
+            const resp = await fetch(url);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`);
+            const buf  = await resp.arrayBuffer();
+            this.db    = new this.SQL.Database(new Uint8Array(buf));
+            if (!this._schemaCurrent()) {
+              this.status = "This database doesn't match the current schema - re-ingest the catalog.";
+              this.db = null;
+              return;
+            }
+            const cat  = this._one('SELECT id, title, model FROM catalog LIMIT 1');
+            if (cat) {
+              this.catalogId = cat[0];
+              this.catalogs  = [{ id: cat[0], label: CATALOGS.label(cat[1], cat[2], cat[0]) }];
+            }
+            this.loadFacetOptions();
+            this._buildToc();
+            this.loadPrCodes();
+            this._recomputeSectionRollups();
+            this.status = `${this.mainGroups.length} groups · ${this._scalar('SELECT COUNT(*) FROM section')} sections (file mode - no diagrams)`;
+          } catch (e) {
+            this.status = 'Error: ' + e.message;
+          } finally {
+            this.loading = false;
+          }
+        },
+
+        // ── Query bridge ──────────────────────────────────────────────
+        // Polls the local relay (query-bridge.ps1 / serve.ps1) so SQL
+        // queries can be sent from the command line while the viewer is open.
+
+        _startQueryBridge() {
+          // Dev-only relay (tools/query-bridge.ps1). It talks to http://localhost:9876,
+          // which is meaningless - and blocked as mixed content - on the hosted HTTPS site.
+          // Only poll when the page is itself served from localhost.
+          if (!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) return;
+          const self = this;
+          const poll = async () => {
+            if (self.db) {
+              try {
+                const r = await fetch('http://localhost:9876/query');
+                if (r.ok) {
+                  const sql = (await r.text()).trim();
+                  if (sql) {
+                    let res;
+                    if (sql === '__EXPORT__') {
+                      const data = self.db.export();
+                      let bin = '';
+                      for (let i = 0; i < data.length; i++) bin += String.fromCharCode(data[i]);
+                      res = { ok: true, export: btoa(bin), filename: (self.catalogId || 'catalog') + '.sqlite' };
+                    } else {
+                      try { res = { ok: true, data: self.db.exec(sql) }; }
+                      catch (e) { res = { ok: false, error: e.message }; }
+                    }
+                    await fetch('http://localhost:9876/result', {
+                      method: 'POST', headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(res),
+                    });
+                  }
+                }
+              } catch { /* bridge not running - ignore */ }
+            }
+            setTimeout(poll, 500);
+          };
+          poll();
+        },
+
+        // ── TOC ──────────────────────────────────────────────────────
+
+        _buildToc() {
+          const mgs = this._query(
+            'SELECT id, number, title FROM main_group WHERE catalog_id=? ORDER BY CAST(number AS INTEGER)',
+            [this.catalogId]
+          );
+          this.mainGroups = mgs.map(([id, number, title]) => {
+            // diagram_blob is deliberately not selected - it would pull every
+            // section's G4 bitstream into memory to build a list of titles. Only its
+            // presence matters here; selectSection() reads the bytes by id.
+            const sections = this._query(
+              `SELECT id, number, title, diagram_blob IS NOT NULL, title_remark, title_model,
+                      applicability, engine_code, gearbox_code, body_line, body_style, drive_code, trim_code
+               FROM section WHERE main_group_id=? ORDER BY number`,
+              [id]
+            ).map(([sid, snum, stitle, hasDiag, tremark, tmodel, sappl, sec, sgc, sbl, sbs, sdc, stc]) => ({
+              id: sid, number: snum, title: stitle, has_diagram: !!hasDiag,
+              title_remark: tremark || '', title_model: tmodel || '',
+              applicability: sappl || '',
+              scope: sectionScope(sappl, sec, sgc, sbl, sbs, sdc, stc),
+            }));
+            return { id, number, title, open: false, sections };
+          });
+        },
+
+        // ── Section selection ────────────────────────────────────────
+
+        async selectSection(sec, mg) {
+          this.currentSection = sec;
+          this.currentMg      = mg;
+          this.searchMode     = false;
+          this._previewMode   = false;
+          this.previewIndex   = -1;
+          // On a narrow screen the sidebar and parts list are separate panes; picking
+          // a section should land the user on its parts. Desktop is unaffected.
+          if (window.matchMedia('(max-width: 820px)').matches) this.mobilePane = 'parts';
+
+          // Load parts. Colour/trim variants are child rows (parent_id) that carry no
+          // applicability of their own - they inherit the parent block's, so resolve
+          // that here rather than letting a child fall through as "applies to all".
+          const rows = this._query(
+            `SELECT p.rowid, p.position, p.part_number, p.colour_code, p.description,
+                    p.quantity, p.remarks,
+                    COALESCE(NULLIF(p.applicability, ''), pp.applicability, '') AS appl,
+                    p.parent_id
+             FROM part p LEFT JOIN part pp ON pp.id = p.parent_id
+             WHERE p.section_id=? ORDER BY p.rowid`,
+            [sec.id]
+          );
+          const occurrence = this._occurrenceCounter();
+          this.parts = rows.map(([rowid, position, part_number, colour_code, description,
+                                  quantity, remarks, applicability, parent_id]) => {
+            const n = occurrence(position, part_number);
+            return {
+              _rowid: rowid, _key: this._partKey(sec.number, position, part_number, n),
+              _parentId: parent_id ?? null,
+              position, part_number, colour_code: colour_code || '',
+              description, quantity, remarks,
+              applicability: applicability || '',
+            };
+          });
+          this.posGroups = this._buildPosGroups(this.parts);
+          this._rebuildDisplayRows();
+
+          // Load callouts
+          this.callouts = this._query(
+            'SELECT number, x0, y0, x1, y1, confidence FROM callout WHERE section_id=?',
+            [sec.id]
+          ).map(([number, x0, y0, x1, y1, confidence]) => ({ number, x0, y0, x1, y1, confidence }));
+          this.hoveredPos  = null;
+          this.selectedPos = null;
+
+          // Load diagram. It travels inside the DB (CCITT G4 bitstream), so this works
+          // in file mode too. Decode happens here, only for the section being shown.
+          this._setDiagram(null);
+          this._resetDiagramView();
+          const token = ++this._diagramToken;
+          if (sec.has_diagram) {
+            const row = this._query(
+              'SELECT diagram_blob, diagram_w, diagram_h FROM section WHERE id=?', [sec.id]
+            )[0];
+            if (row && row[0]) this._showG4Diagram(row[0], row[1], row[2], token);
+          }
+        },
+
+        // ── Search ───────────────────────────────────────────────────
+
+        // Both paths select the same scope the section list does, so a hit carries
+        // its vehicle match with it - search is a way into the catalog, not a way
+        // around the filter.
+        search() {
+          const q = this.query.trim();
+          if (!q || !this.db) { this.searchMode = false; return; }
+          this.searchMode = true;
+          this.previewIndex = -1; this._previewMode = false;
+
+          const COLS =
+            `SELECT p.position, p.part_number, p.description, p.quantity, p.remarks,
+                    s.number, p.section_id,
+                    COALESCE(NULLIF(p.applicability,''), pp.applicability, '') AS appl,
+                    s.applicability, s.engine_code, s.gearbox_code, s.body_line, s.body_style,
+                    s.drive_code, s.trim_code`;
+          // Colour/trim variants are child rows whose scope lives on the parent block.
+          const JOINS =
+            `FROM part p
+             JOIN section s ON p.section_id = s.id
+             LEFT JOIN part pp ON pp.id = p.parent_id`;
+
+          // Try FTS4 first, fall back to LIKE
+          let rows;
+          try {
+            rows = this._query(
+              `${COLS} ${JOINS} JOIN part_fts ON part_fts.docid = p.id
+               WHERE part_fts MATCH ? AND p.catalog_id = ? LIMIT 200`,
+              [ftsPrefixQuery(q), this.catalogId]
+            );
+          } catch {
+            rows = this._query(
+              `${COLS} ${JOINS}
+               WHERE p.catalog_id=? AND (p.part_number LIKE ? OR p.description LIKE ?) LIMIT 200`,
+              [this.catalogId, `%${q}%`, `%${q}%`]
+            );
+          }
+          // The scope travels with the row rather than the verdict: the filter can
+          // change while results are up, and re-running the query to redraw them
+          // would throw away the user's scroll position.
+          this.searchResults = rows.map(
+            ([position, part_number, description, quantity, remarks, section_number, section_id,
+              applicability, ...scopeCols]) => ({
+              position, part_number, description, quantity, remarks, section_number, section_id,
+              applicability: applicability || '', _scope: sectionScope(...scopeCols),
+            })
+          );
+        },
+
+        get searchMatchCount() {
+          return this.searchResults.filter(r => this.partMatchesVehicle(r.applicability, r._scope)).length;
+        },
+
+        clearSearch() {
+          this.query        = '';
+          this.searchMode   = false;
+          this.searchResults = [];
+          this.previewIndex = -1;
+          this._previewMode = false;
+        },
+
+        // Preview a search result's diagram in the right pane WITHOUT leaving the
+        // results list - so you can click down the hits and see each on its diagram.
+        // The explicit "Open →" button (jumpToSection) is the way to the parts list.
+        previewResult(p, i) {
+          this.previewIndex = i;
+          this._previewMode = true;
+          // Callouts for this hit's section - for the overlay and the highlight.
+          this.callouts = this._query(
+            'SELECT number, x0, y0, x1, y1, confidence FROM callout WHERE section_id=?',
+            [p.section_id]
+          ).map(([number, x0, y0, x1, y1, confidence]) => ({ number, x0, y0, x1, y1, confidence }));
+          const pos = this._posNum(p.position);
+          this.hoveredPos = pos; this.selectedPos = pos;
+          // Load this section's diagram (CCITT G4, inside the DB - works in file mode too).
+          this._setDiagram(null);
+          this._resetDiagramView();
+          const token = ++this._diagramToken;
+          const row = this._query(
+            'SELECT diagram_blob, diagram_w, diagram_h FROM section WHERE id=?', [p.section_id]
+          )[0];
+          if (row && row[0]) this._showG4Diagram(row[0], row[1], row[2], token);
+        },
+
+        // ── Applicability ────────────────────────────────────────────
+
+        // The stored form is spaced ("D - MJ 2008>>"), so scan for whole shapes
+        // rather than splitting on whitespace - "MJ" and "2008>>" are one chip.
+        parseAppl(str) {
+          if (!str) return [];
+          const SHAPE = /PR:[\w,-]+|MJ\s*\d{4}(?:\s*>>)?/gi;
+          return str.split(' | ').flatMap(seg => {
+            const chips = [];
+            const push  = (text, type) => { text = text.trim(); if (text) chips.push({ text, type }); };
+            let rest = seg.trim();
+            // Leading market letter: "D - MJ 2008>>", "F >> 99-9S770 428 lhd"
+            const mkt = rest.match(/^([A-Z]{1,3})\s+(?=-|>>|MJ\b)/);
+            if (mkt) { push(mkt[1], 'dest'); rest = rest.slice(mkt[0].length); }
+            let last = 0;
+            for (const m of rest.matchAll(SHAPE)) {
+              push(rest.slice(last, m.index), 'other');
+              push(m[0], /^PR:/i.test(m[0]) ? 'pr' : 'mj');
+              last = m.index + m[0].length;
+            }
+            push(rest.slice(last), 'other');
+            return chips;
+          });
+        },
+
+        async jumpToSection(result) {
+          // Find and open the section in the sidebar
+          for (const mg of this.mainGroups) {
+            const sec = mg.sections.find(s => s.id === result.section_id);
+            if (sec) {
+              mg.open = true;
+              await this.selectSection(sec, mg);
+              this.clearSearch();
+              return;
+            }
+          }
+        },
+
+        // ── Callout overlay ──────────────────────────────────────────
+
+        onDiagramLoad() {
+          const img = document.querySelector('.diagram-wrap img');
+          if (!img) return;
+          const natW = img.naturalWidth, natH = img.naturalHeight;
+          if (!natW || !natH) return;
+          // Defer to rAF so x-show has finished making the element visible and the
+          // browser has completed a layout pass - offsetWidth/Height return 0 otherwise.
+          requestAnimationFrame(() => this._positionCanvas());
+        },
+
+        _positionCanvas() {
+          const img = document.querySelector('.diagram-wrap img');
+          const cvs = document.getElementById('callout-canvas');
+          if (!img || !cvs) return;
+          const natW = img.naturalWidth, natH = img.naturalHeight;
+          if (!natW || !natH) return;
+          // img fills diagram-wrap via object-fit:contain with letterboxing.
+          // Position the canvas over exactly the rendered image region.
+          const boxW = img.offsetWidth, boxH = img.offsetHeight;
+          if (!boxW || !boxH) return;
+          const scale = Math.min(boxW / natW, boxH / natH);
+          const rendW = Math.round(natW * scale);
+          const rendH = Math.round(natH * scale);
+          cvs.style.left   = Math.round((boxW - rendW) / 2) + 'px';
+          cvs.style.top    = Math.round((boxH - rendH) / 2) + 'px';
+          cvs.style.width  = rendW + 'px';
+          cvs.style.height = rendH + 'px';
+          cvs.width  = rendW;
+          cvs.height = rendH;
+          this.drawCallouts();
+        },
+
+        // A callout stands for the parts at its position. It belongs on this car only
+        // if one of them does - a GT2-only callout has no business highlighting on a
+        // Turbo. A callout OCR read at a position the text never lists (90 of 5,000)
+        // answers to no part, so nothing is known against it and it stays.
+        get visibleCallouts() {
+          // In a search preview the callouts belong to a section we're only peeking at,
+          // not the open filtered section, so show them all rather than filtering by
+          // the (stale) parts list.
+          if (this._previewMode || !this.filterActive) return this.callouts;
+          const byPos = new Map();
+          for (const p of this.parts) {
+            const n = this._posNum(p.position);
+            if (n === null) continue;
+            byPos.set(n, (byPos.get(n) || false) ||
+                         this.partMatchesVehicle(p.applicability, this.currentSectionScope));
+          }
+          return this.callouts.filter(c => byPos.get(c.number) !== false);
+        },
+
+        drawCallouts() {
+          const cvs = document.getElementById('callout-canvas');
+          if (!cvs) return;
+          const ctx = cvs.getContext('2d');
+          ctx.clearRect(0, 0, cvs.width, cvs.height);
+          const callouts = this.visibleCallouts;
+          if (!callouts.length) return;
+          const W = cvs.width, H = cvs.height;
+          const PAD = 3;
+          for (const c of callouts) {
+            const x0 = c.x0 / 10000 * W - PAD, y0 = c.y0 / 10000 * H - PAD;
+            const bw  = (c.x1 - c.x0) / 10000 * W + PAD * 2, bh = (c.y1 - c.y0) / 10000 * H + PAD * 2;
+            const sel = c.number === this.hoveredPos || c.number === this.selectedPos;
+            if (sel) {
+              ctx.shadowColor  = 'rgba(255,160,0,0.9)';
+              ctx.shadowBlur   = 8;
+              ctx.strokeStyle  = '#ff9800';
+              ctx.lineWidth    = 3;
+              ctx.strokeRect(x0, y0, bw, bh);
+              ctx.shadowBlur   = 0;
+              ctx.fillStyle    = 'rgba(255,152,0,0.28)';
+              ctx.fillRect(x0, y0, bw, bh);
+            } else {
+              ctx.shadowBlur   = 0;
+              ctx.strokeStyle  = 'rgba(76,175,80,0.65)';
+              ctx.lineWidth    = 1.5;
+              ctx.strokeRect(x0, y0, bw, bh);
+            }
+          }
+        },
+
+        diagramClick(e) {
+          // A drag that ended over the canvas fires a click too - ignore it so panning
+          // doesn't select a callout. The pointerup clears _panMoved on the next tick.
+          if (this._panMoved) return;
+          const cvs = document.getElementById('callout-canvas');
+          const callouts = this.visibleCallouts;
+          if (!cvs || !callouts.length) return;
+          // getBoundingClientRect is post-transform, so this normalises within the
+          // on-screen (zoomed/panned) canvas - the 0–10000 mapping is transform-invariant.
+          const r = cvs.getBoundingClientRect();
+          const x = (e.clientX - r.left)  / r.width;
+          const y = (e.clientY - r.top)   / r.height;
+          const hit = callouts.find(c =>
+            x >= c.x0/10000 && x <= c.x1/10000 &&
+            y >= c.y0/10000 && y <= c.y1/10000
+          );
+          if (!hit) return;
+          this.hoveredPos  = hit.number;
+          this.selectedPos = hit.number;
+          // In a search preview there's no parts table to expand/scroll - just highlight.
+          if (this.searchMode) return;
+          const gi = this.posGroups.findIndex(g => g.basePos === hit.number);
+          if (gi >= 0 && !this.posGroups[gi].expanded) {
+            this.posGroups[gi].expanded = true;
+            this._rebuildDisplayRows();
+          }
+          const row = document.querySelector(`tr[data-pos-num="${CSS.escape(hit.number)}"]`);
+          if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        },
+
+        // ── Diagram zoom / pan / collapse ────────────────────────────
+        // The wrap carries `translate(pan) scale(zoom)` with transform-origin 0 0.
+        // A point p in the (untransformed) viewport shows at pan + zoom*p, so to keep
+        // the point under the cursor fixed across a zoom change: p = (m - pan)/zoom,
+        // then pan' = m - zoom'*p. The callout canvas rides the same transform, so its
+        // 0–10000 mapping and diagramClick hit-testing stay correct without extra math.
+        _resetDiagramView() { this.dzoom = 1; this.dpanX = 0; this.dpanY = 0; },
+        fitDiagram()        { this._resetDiagramView(); },
+
+        _applyZoom(factor, mx, my) {
+          const z2 = Math.min(8, Math.max(1, this.dzoom * factor));
+          if (z2 === this.dzoom) return;
+          const px = (mx - this.dpanX) / this.dzoom;
+          const py = (my - this.dpanY) / this.dzoom;
+          this.dzoom = z2;
+          this.dpanX = mx - z2 * px;
+          this.dpanY = my - z2 * py;
+          // At the fit scale, snap the pan back so object-fit re-centres cleanly.
+          if (z2 === 1) { this.dpanX = 0; this.dpanY = 0; }
+        },
+
+        // Buttons zoom toward the viewport centre; the wheel zooms toward the cursor.
+        diagramZoom(factor) {
+          const s = document.querySelector('.diagram-scroll');
+          if (!s) return;
+          const r = s.getBoundingClientRect();
+          this._applyZoom(factor, r.width / 2, r.height / 2);
+        },
+        onDiagramWheel(e) {
+          if (!this.diagramUrl) return;
+          const s = document.querySelector('.diagram-scroll');
+          if (!s) return;
+          const r = s.getBoundingClientRect();
+          // .diagram-wrap is inset:0 in .diagram-scroll, so scroll-local coords are
+          // also wrap-local (untransformed) coords.
+          this._applyZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top);
+        },
+
+        // Drag-to-pan. Window listeners (not pointer capture) so the canvas still gets
+        // its click for taps; _panMoved tells diagramClick a drag just happened.
+        onDiagramPointerDown(e) {
+          if (e.button !== 0 || !this.diagramUrl) return;
+          this._panning  = true;
+          this._panMoved = false;
+          const start = { x: e.clientX, y: e.clientY, panX: this.dpanX, panY: this.dpanY };
+          const move = ev => {
+            const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+            if (Math.abs(dx) + Math.abs(dy) > 3) this._panMoved = true;
+            this.dpanX = start.panX + dx;
+            this.dpanY = start.panY + dy;
+          };
+          const up = () => {
+            this._panning = false;
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+            setTimeout(() => { this._panMoved = false; }, 0);  // after the click fires
+          };
+          window.addEventListener('pointermove', move);
+          window.addEventListener('pointerup', up);
+        },
+
+        dismissDiagramHint() {
+          this.diagramHintDismissed = true;
+          try { localStorage.setItem('pb-diagram-hint', '1'); } catch {}
+        },
+
+        _setDiagram(url) {
+          if (this.diagramUrl) URL.revokeObjectURL(this.diagramUrl);
+          this.diagramUrl = url;
+        },
+
+        // Decode a section's CCITT G4 bitstream to a displayable image. toBlob is
+        // async, so a token guards against a slow decode clobbering a newer section.
+        _showG4Diagram(bytes, w, h, token) {
+          try {
+            const { pixels } = CCITT.decode(bytes, w, h);
+            const rgba = CCITT.toRGBA(pixels, w, h);
+            const cvs = document.createElement('canvas');
+            cvs.width = w; cvs.height = h;
+            cvs.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0);
+            cvs.toBlob(b => {
+              if (!b || token !== this._diagramToken) return;
+              this._setDiagram(URL.createObjectURL(b));
+            }, 'image/png');
+          } catch (e) {
+            console.error('diagram G4 decode failed', e);
+          }
+        },
+
+        // Extract the position identifier for grouping/callout matching, stripping
+        // only the optional parens. '5' → '5', '(5)' → '5', '3/2' → '3/2',
+        // '(3/1)' → '3/1', '-' → null, '' → null. Compound ids group by their full
+        // id; the digit-only callout OCR can't read them, so they stay unlinked.
+        _posNum(pos) {
+          if (!pos || pos === '-') return null;
+          const m = pos.match(/^\((.+)\)$/);
+          return m ? m[1] : pos;
+        },
+
+        // ── Position grouping ────────────────────────────────────────
+        // Groups collapse to their head row with a ▶ expander. Two things join a
+        // group: a shared position number, and a colour/trim variant joining its
+        // parent block (variants carry no position of their own).
+        //
+        // Built from every part in the section, never the filtered subset: grouping
+        // is a fact about the catalog, not about the car. So a variant stays with its
+        // block even when the filter drops the parent row - a variant that carries
+        // its own scope can outlive its parent - and expand state survives a filter
+        // edit for free. _rebuildDisplayRows() does the dropping.
+        _buildPosGroups(parts) {
+          const groups = [];
+          const byBase = new Map();
+          const byId   = new Map();   // part rowid -> group index
+          for (const p of parts) {
+            if (p._parentId !== null && byId.has(p._parentId)) {
+              groups[byId.get(p._parentId)].parts.push(p);
+              continue;
+            }
+            const base = this._posNum(p.position);
+            let gi;
+            if (base !== null && byBase.has(base)) {
+              gi = byBase.get(base);
+              groups[gi].parts.push(p);
+            } else {
+              gi = groups.length;
+              if (base !== null) byBase.set(base, gi);
+              groups.push({ basePos: base, posLabel: p.position, parts: [p], expanded: false });
+            }
+            byId.set(p._rowid, gi);
+          }
+          return groups;
+        },
+
+        // Rebuild the flat display list from posGroups. A filtered part is dropped
+        // outright, not greyed, so a group's head is its first *surviving* part and a
+        // group the filter empties disappears with its parts. Call after any
+        // expand/collapse or filter change.
+        _rebuildDisplayRows() {
+          const rows = [];
+          for (let gi = 0; gi < this.posGroups.length; gi++) {
+            const g = this.posGroups[gi];
+            const shown = g.parts.filter(p => this._partVisible(p));
+            for (let pi = 0; pi < shown.length; pi++) {
+              if (pi > 0 && !g.expanded) break;
+              rows.push({
+                part:      shown[pi],
+                _rowid:    shown[pi]._rowid,
+                _gi:       gi,
+                _pi:       pi,
+                _isHead:   pi === 0,
+                _hasMore:  pi === 0 && shown.length > 1,
+                _moreCount: shown.length - 1,   // hidden siblings when collapsed
+                _expanded: g.expanded,
+                _basePos:  g.basePos,
+                // A promoted head is a colour/trim variant, which carries no position
+                // of its own. It still sits at its block's callout, so show the
+                // block's number rather than heading the group with a blank cell.
+                _posText:  pi === 0 ? (shown[pi].position || g.posLabel) : shown[pi].position,
+              });
+            }
+          }
+          this.displayRows = rows;
+        },
+
+        toggleGroup(gi) {
+          this.posGroups[gi].expanded = !this.posGroups[gi].expanded;
+          this._rebuildDisplayRows();
+        },
+
+        // ── Vehicle filter ────────────────────────────────────────────
+
+        loadPrCodes() {
+          try {
+            this.allPrCodes = this._query(
+              'SELECT code, description FROM pr_code WHERE catalog_id=? ORDER BY CAST(code AS INTEGER)=0, CAST(code AS INTEGER), code',
+              [this.catalogId]
+            ).map(([code, description]) => ({ code, description }));
+          } catch { this.allPrCodes = []; }
+        },
+
+        // Every facet the user can set is offered from the catalog's own vocabulary:
+        // a fixed list would be wrong for the next model line, and a value no part
+        // carries can only hide the whole catalog. Codes get a readable label -
+        // "G9750" alone tells the owner of a 6-speed car nothing.
+        loadFacetOptions() {
+          this.engineOptions  = [];
+          this.gearboxOptions = [];
+          this.lineOptions    = [];
+          this.bodyOptions    = [];
+          this.marketOptions  = [];
+          this._vinRanges       = [];
+          this._engineNumRanges = [];
+          try {
+            // A code appears once per date range; the x-for is keyed on the code,
+            // and a duplicate key makes Alpine drop the whole option list.
+            const uniq = list => { const seen = new Set();
+              return list.filter(o => !seen.has(o.code) && seen.add(o.code)); };
+            this.engineOptions = uniq(this._query(
+              `SELECT ec, displacement_l, power_hp FROM engine_code WHERE catalog_id=? ORDER BY ec`,
+              [this.catalogId]
+            ).map(([ec, disp, hp]) => ({ code: ec, label: engineLabel(ec, disp, hp) })));
+            this.gearboxOptions = uniq(this._query(
+              `SELECT tc, type_code FROM transmission_code WHERE catalog_id=? ORDER BY tc`,
+              [this.catalogId]
+            ).map(([tc, type]) => ({ code: tc, label: gearboxLabel(tc, type) })));
+
+            // The typed section columns are OR-lists ("TURBO,GT2"); a section scoped
+            // to either offers both, not the pair.
+            const split = col => [...new Set(this._query(
+              `SELECT DISTINCT ${col} FROM section WHERE catalog_id=? AND COALESCE(${col},'')!=''`,
+              [this.catalogId]
+            ).flatMap(([v]) => v.split(',')).map(v => v.trim()).filter(Boolean))].sort();
+            this.lineOptions = split('body_line');
+            this.bodyOptions = split('body_style');
+            this.driveOptions = split('drive_code');
+            this.trimOptions  = split('trim_code');
+
+            // The full parser dictionary - the same APPL.buildIndex the ingest worker
+            // used, rebuilt here from the catalog's own tables so the viewer decodes a
+            // part's scope exactly as ingest typed the sections. dialect and year_pivot
+            // were detected once at ingest and stored on the catalog row; they gate the
+            // old-dialect forms (bare option codes, parenthesised markets, 2-digit
+            // years) so the modern dialect is untouched.
+            const meta = this._one('SELECT dialect, year_pivot FROM catalog LIMIT 1') || [];
+            this.dialect   = meta[0] || 'modern';
+            this.yearPivot = meta[1] || null;
+            this._index = APPL.buildIndex({
+              engineCodes: this.engineOptions.map(e => ({ ec: e.code })),
+              transmCodes: this.gearboxOptions.map(g => ({ tc: g.code })),
+              prCodes:     this._query('SELECT code FROM pr_code WHERE catalog_id=?', [this.catalogId]).map(([code]) => ({ code })),
+              salesTypes:  this._query('SELECT description FROM sales_type WHERE catalog_id=?', [this.catalogId]).map(([description]) => ({ description })),
+              vinRanges:   this._query('SELECT remark FROM vin_range WHERE catalog_id=?', [this.catalogId]).map(([remark]) => ({ remark })),
+              vehicleTypes: this._query(
+                `SELECT vehicle_type FROM engine_number_range WHERE catalog_id=?
+                 UNION SELECT vehicle_type FROM transmission_number_range WHERE catalog_id=?`,
+                [this.catalogId, this.catalogId]).map(([v]) => v).filter(Boolean),
+              dialect:     this.dialect,
+              yearPivot:   this.yearPivot,
+            });
+
+            // The number blocks a chassis/engine/transmission breakpoint is read
+            // against. Each table was write-only until the viewer resolved a car.
+            this._vinRanges = this._query(
+              `SELECT vin_from, vin_to FROM vin_range WHERE catalog_id=?`, [this.catalogId]
+            ).map(([from, to]) => ({ from, to }));
+            this._engineNumRanges = this._query(
+              `SELECT number_from, number_to FROM engine_number_range WHERE catalog_id=?`,
+              [this.catalogId]
+            ).map(([from, to]) => ({ from, to }));
+            this._transmissRanges = this._query(
+              `SELECT number_from, number_to FROM transmission_number_range WHERE catalog_id=?`,
+              [this.catalogId]
+            ).map(([from, to]) => ({ from, to }));
+
+            // Market is free text, not a picker: the codes below are the ones the
+            // catalog gates parts ON, but a car's own market is usually not among
+            // them - a USA car must still be able to say "USA" to drop the parts
+            // printed only for '"ROK"'.
+            this.marketOptions = [...new Set(
+              this._query(
+                `SELECT applicability FROM part WHERE catalog_id=? AND applicability LIKE '%"%'
+                 UNION SELECT applicability FROM section WHERE catalog_id=? AND applicability LIKE '%"%'`,
+                [this.catalogId, this.catalogId]
+              ).flatMap(([a]) => {
+                const p = APPL.parse(a, this._index);
+                return [...p.markets.any, ...p.markets.not];
+              })
+            )].sort();
+          } catch { this._index = null; }
+        },
+
+        // The selected codes with the catalog's labels, in the option list's own
+        // order (numeric codes first, then M-numbers alphabetically) so a code can
+        // be found by eye rather than by paste order. `unknown` only means anything
+        // once the catalog's list is loaded - before that, nothing is flagged.
+        get selectedPrItems() {
+          const desc = new Map(this.allPrCodes.map(p => [p.code, p.description]));
+          const num = c => /^\d+$/.test(c) ? parseInt(c, 10) : Infinity;
+          return [...this.vfPrCodes]
+            .sort((a, b) => num(a) - num(b) || a.localeCompare(b))
+            .map(code => ({ code, desc: desc.get(code) || '',
+                            unknown: desc.size > 0 && !desc.has(code) }));
+        },
+
+        _unknownPrCodes(codes) {
+          const known = new Set(this.allPrCodes.map(p => p.code.toUpperCase()));
+          return codes.filter(c => !known.has(String(c).toUpperCase()));
+        },
+
+        removePrCode(code) {
+          this.vfPrCodes = this.vfPrCodes.filter(p => p !== code);
+          this.prUnknown = this._unknownPrCodes(this.vfPrCodes);
+        },
+
+        clearVehicleFilter() {
+          this.vfYear = ''; this.vfMarket = ''; this.vfPrCodes = [];
+          this.vfLine = ''; this.vfBody = ''; this.vfDrive = ''; this.vfTrim = '';
+          this.vfEngine = ''; this.vfGearbox = '';
+          this.vfChassis = ''; this.vfEngineNo = ''; this.vfGearboxNo = '';
+          this.prUnknown = [];
+        },
+
+        // A part is admitted only if BOTH its own scope and its section's scope admit
+        // the car - 15 sections are gated by a PR code on their title row, 20 carry a
+        // section-level model-year scope, and 57 more are typed to an engine, gearbox,
+        // model line or body style. The two are evaluated separately and AND-ed rather
+        // than concatenated: a part and its section each state their own year window,
+        // and OR-ing two windows into one alternative list would let the section's
+        // window satisfy a part printed for different years. AND-ing the booleans is
+        // the actual intersection.
+        partMatchesVehicle(applStr, sectionScope) {
+          if (!this.filterActive) return true;
+          return this._matchesAppl(applStr) && this._matchesAppl(sectionScope);
+        },
+
+        _matchesAppl(applStr) {
+          if (!applStr) return true;
+          return APPL.matches(APPL.parse(applStr, this._index), this.vehicleSpec);
+        },
+
+        // The car, in the facets the grammar speaks. A blank field is not a filter:
+        // APPL never rejects on a fact we do not know about the car.
+        //
+        // Rebuilt only when the spec changes. A full catalog pass calls this 24,000
+        // times, and reading vfPrCodes - a reactive array - into a fresh Set on each
+        // one costs an order of magnitude more than every parse and match together.
+        // The codes are replaced wholesale on every edit, never mutated in place, so
+        // the array's identity is a sound cache key.
+        get vehicleSpec() {
+          const codes = this.vfPrCodes;
+          const s = this._spec;
+          if (s && s._codes === codes && s.year === this.vfYear && s.market === this.vfMarket &&
+              s.line === this.vfLine && s.body === this.vfBody &&
+              s.drive === this.vfDrive && s.trim === this.vfTrim &&
+              s.engine === this.vfEngine && s.gearbox === this.vfGearbox &&
+              s.chassis === this.vfChassis && s.engineNum === this.vfEngineNo &&
+              s.transmissionNum === this.vfGearboxNo) return s;
+          return (this._spec = {
+            line:    this.vfLine,
+            body:    this.vfBody,
+            drive:   this.vfDrive,
+            trim:    this.vfTrim,
+            engine:  this.vfEngine,
+            gearbox: this.vfGearbox,
+            // A breakpoint only speaks about cars in its own number block, so the
+            // car's block travels with it. Resolved from the catalog's own tables:
+            // the same serial names a different car in each block, and comparing
+            // across them is how "up to 780473" comes to hide a 784090 USA car
+            // that the changeover never touched.
+            chassis:        this.vfChassis,
+            chassisBlock:   this._numberBlock(this._vinRanges, this.vfChassis),
+            engineNum:      this.vfEngineNo,
+            engineNumBlock: this._numberBlock(this._engineNumRanges, this.vfEngineNo),
+            // Gearbox serial breakpoints (356 gearbox numbers, PDK serials). The
+            // transmission ranges can't NAME the gearbox (A9750/G9750 print alike),
+            // but a part's changeover printed against a gearbox number still gates
+            // on the number itself, in its own block. See ARCHITECTURE.md.
+            transmissionNum:   this.vfGearboxNo,
+            transmissionBlock: this._numberBlock(this._transmissRanges, this.vfGearboxNo),
+            // The market the year segment leads with ("D - MJ 2008>>") is only ever
+            // D or absent, so it says nothing and APPL does not enforce it. This is
+            // the QUOTED market code ('"ROK"', '-"CN."'), which genuinely splits
+            // parts - 601-005 lists a Korea and a non-Korea version of one part.
+            market:  this.vfMarket,
+            year:    this.vfYear,
+            _codes:  codes,
+            prCodes: new Set(codes),
+          });
+        },
+
+        // The row of a number table whose span contains this serial - the block the
+        // catalog itself put the car in. Ranges are keyed on the prefix as well as
+        // the number: a MY2008 chassis and a MY2009 one can share a serial.
+        _numberBlock(rows, value) {
+          if (!value || !rows || !rows.length) return null;
+          const k = APPL.serialKey(value);
+          if (!k) return null;
+          return rows.find(r => {
+            const lo = APPL.serialKey(r.from);
+            if (!lo || lo.prefix !== k.prefix) return false;
+            const hi  = APPL.serialKey(r.to);
+            const top = (hi && hi.prefix === k.prefix) ? hi.serial : lo.serial;
+            return k.serial >= lo.serial && k.serial <= top;
+          }) || null;
+        },
+
+        // ── SQL helpers ───────────────────────────────────────────────
+
+        // A DB that doesn't match the schema throws "no such column" deep inside
+        // _buildToc, so check up front and say what to do about it instead.
+        _schemaCurrent() {
+          return SCHEMA.matches(this.SQL, this.db);
+        },
+
+        _query(sql, params = []) {
+          const result = this.db.exec(sql, params);
+          return result[0]?.values ?? [];
+        },
+        _one(sql, params = []) {
+          return this._query(sql, params)[0] ?? null;
+        },
+        _scalar(sql, params = []) {
+          return this._one(sql, params)?.[0] ?? null;
+        },
+      };
+    }
+  </script>
+  <script src="vendor/alpinejs/cdn.min.js" defer></script>
+</body>
+</html>
