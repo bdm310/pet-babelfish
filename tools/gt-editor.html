@@ -165,7 +165,7 @@
 <div id="help">
   <div id="helpBox">
     <div class="top">
-      <h2>Callout Ground-Truth Editor — controls</h2>
+      <h2>Callout Ground-Truth Editor - controls</h2>
       <button id="helpClose" title="Close (Esc)">✕</button>
     </div>
     <p style="color:var(--muted);margin:0 0 4px">
@@ -174,15 +174,15 @@
 
     <h3>Box layers &amp; colours</h3>
     <div>
-      <span class="lg"><span class="sw" style="border-color:var(--gt)"></span><b>GT</b> — ground truth (editable)</span>
+      <span class="lg"><span class="sw" style="border-color:var(--gt)"></span><b>GT</b> - ground truth (editable)</span>
       <span class="lg"><span class="sw" style="border-color:var(--sel);background:rgba(255,210,60,.15)"></span>Selected box</span>
       <span class="lg"><span class="sw" style="border-color:var(--vis);border-style:dashed"></span>Vision (reference)</span>
       <span class="lg"><span class="sw" style="border-color:var(--tess);border-style:dashed"></span>Tesseract (reference)</span>
-      <span class="lg"><span class="sw" style="border-color:#e879f9"></span>OCR-flagged (re-OCR read a different number — labelled <span style="color:#e879f9">OCR:x</span>)</span>
+      <span class="lg"><span class="sw" style="border-color:#e879f9"></span>OCR-flagged (re-OCR read a different number - labelled <span style="color:#e879f9">OCR:x</span>)</span>
     </div>
     <p class="d" style="font-size:12px;color:var(--muted);margin:6px 0 0">
       Toggle each layer with the checkboxes in the toolbar. Vision &amp; Tesseract boxes are read-only
-      references — <b>click one to copy it into GT</b> (skipped if it overlaps a GT box of the same number).</p>
+      references - <b>click one to copy it into GT</b> (skipped if it overlaps a GT box of the same number).</p>
 
     <div class="cols">
       <div>
@@ -239,8 +239,8 @@
     <table>
       <tr><td class="k"><span class="dot tier-gold" style="display:inline-block"></span> gold / <span class="dot tier-silver" style="display:inline-block"></span> silver / <span class="dot tier-none" style="display:inline-block"></span> none</td><td class="d">Ground-truth tier of the section</td></tr>
       <tr><td class="k"><span class="badge b-ok">✓</span></td><td class="d">Verified by a human</td></tr>
-      <tr><td class="k"><span class="badge b-flag">⚑2</span></td><td class="d">2 boxes where a fresh OCR read a different number — check the <span style="color:#e879f9">OCR:x</span> label. Fixing/deleting the box clears it.</td></tr>
-      <tr><td class="k"><span class="badge b-ovl">⧉1</span></td><td class="d">1 pair of overlapping boxes (<span style="color:#ff5c5c">red dashed</span> outline) — usually one glyph boxed twice; delete the wrong one.</td></tr>
+      <tr><td class="k"><span class="badge b-flag">⚑2</span></td><td class="d">2 boxes where a fresh OCR read a different number - check the <span style="color:#e879f9">OCR:x</span> label. Fixing/deleting the box clears it.</td></tr>
+      <tr><td class="k"><span class="badge b-ovl">⧉1</span></td><td class="d">1 pair of overlapping boxes (<span style="color:#ff5c5c">red dashed</span> outline) - usually one glyph boxed twice; delete the wrong one.</td></tr>
       <tr><td class="k"><span class="badge b-miss">3m</span></td><td class="d">3 expected callouts still have no box</td></tr>
       <tr><td class="k"><span class="badge b-disp">≠</span></td><td class="d">Tesseract found more boxes than GT (check for missed repeats / false positives)</td></tr>
       <tr><td class="k">trailing number</td><td class="d">Current GT box count · progress bar = verified / total</td></tr>
@@ -404,7 +404,7 @@ function redraw(){
     const r=boxRect(b,'box tess'+(hlOn(b)?' hl':'')); r.onpointerdown=e=>{e.stopPropagation();acceptCandidate(b);}; add(r);
     add(lbl(b,'lbl tessl',b.num)); }
   // Match each OCR mismatch flag to the nearest GT box that still carries the
-  // flagged number — so a 10→5 flag lands on the box labelled 10 (not a nearby 5),
+  // flagged number - so a 10→5 flag lands on the box labelled 10 (not a nearby 5),
   // and correcting/deleting that box makes the flag disappear on its own.
   const flagByIdx={};
   (S.data.flags||[]).forEach(f=>{
@@ -414,7 +414,7 @@ function redraw(){
       if(d<bd){bd=d;best=i;} });
     if(best>=0 && bd < 600*600) flagByIdx[best]=f;
   });
-  // flag boxes that overlap another GT box (IoU>0.5) — usually one glyph boxed twice
+  // flag boxes that overlap another GT box (IoU>0.5) - usually one glyph boxed twice
   const overl=new Set();
   const cs=S.data.callouts;
   for(let a=0;a<cs.length;a++)for(let b2=a+1;b2<cs.length;b2++)
@@ -460,7 +460,7 @@ function renderChecklist(){
   if(!exp.length && !have.size) c.innerHTML='<span class="hint">no expected set for this section</span>';
 }
 // Clicking a checklist chip highlights every box carrying that number (GT + reference
-// layers) — handy for locating the many spurious "1" strokes. Toggles off on re-click.
+// layers) - handy for locating the many spurious "1" strokes. Toggles off on re-click.
 function hlActive(n){ return S.hl!=null && String(S.hl)===String(n); }
 function toggleHl(n){ S.hl = hlActive(n) ? null : n; redraw(); }
 

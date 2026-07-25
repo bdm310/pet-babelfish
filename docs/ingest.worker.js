@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// ingest.worker.js — PET catalog ingestion pipeline
+// ingest.worker.js - PET catalog ingestion pipeline
 //
 // Receives: { type:'ingest', buffer:ArrayBuffer, catalogId:string }
 // Posts:    { type:'status',   message:string }
@@ -45,10 +45,10 @@ ort.env.wasm.wasmPaths  = ORT_CDN;
 // for the same reason: the viewer checks a DB against the definition that wrote it.
 importScripts(new URL('./appl.js', self.location.href).href);
 importScripts(new URL('./schema.js', self.location.href).href);
-// CCITT Group 4 codec — diagrams are stored as its bitstream, encoded here.
+// CCITT Group 4 codec - diagrams are stored as its bitstream, encoded here.
 importScripts(new URL('./ccitt.js', self.location.href).href);
 
-// Prevent pdf.min.js from spawning a nested worker — it should use the
+// Prevent pdf.min.js from spawning a nested worker - it should use the
 // already-running pdf.worker.min.js indirectly via the fake worker path.
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -62,32 +62,32 @@ const PDFJS_OPTS = {
 const SQLJS_WASM    = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.wasm';
 const DIAGRAM_SCALE = 2.0;
 
-// OCR parameters — tuned for Porsche PET callout digits at ~7pt
+// OCR parameters - tuned for Porsche PET callout digits at ~7pt
 // 6pt catches diagrams whose callouts render smaller (~5.5–6.5pt) because a large,
 // sprawling illustration is scaled down to fit the frame (e.g. 604-015 / p268).
 // 16/20/28pt catch OVERSIZED callouts: some sections (e.g. 996 320-06) draw the
-// position numbers very large, well above 12pt — the old cascade top-cut left those
+// position numbers very large, well above 12pt - the old cascade top-cut left those
 // whole sections at 0 detections. These are FALLBACK-only (see OCR_FALLBACK_PT): a big
 // downscale scale can find more *spurious* blobs than the right scale finds real ones,
 // so if it competed on "most digits" it would corrupt normal sections. It only runs
-// when the primary sizes found nothing — i.e. genuinely oversized-callout sections.
+// when the primary sizes found nothing - i.e. genuinely oversized-callout sections.
 const OCR_FONT_PT_CANDIDATES = [6, 7, 8, 9, 12, 16, 20, 28];  // pt sizes, cascade order
 const OCR_FALLBACK_PT = new Set([16, 20, 28]);                // tried only if primary found none
 const OCR_TARGET_PX  = 40;   // upscale digits to this height before OCR
 const OCR_BIN_THRESH = 128;
 const OCR_MIN_CONF   = 90;
-// Callout numbers are 1-2 digits, value <= ~60 — never 3+. A merged group above this
+// Callout numbers are 1-2 digits, value <= ~60 - never 3+. A merged group above this
 // is two adjacent callouts fused (e.g. "20"+"21"->"2021"), so the grouper refuses it.
 const OCR_MAX_CALLOUT = 99;
 // Narrow-blob "1" recovery. Among digits only "1" is a thin vertical stroke, so a
 // callout-height blob in this aspect (w/h) band that OCR rejected is almost certainly a
-// "1" whose lone bar read below conf or as a wrong char — the dominant 996 miss (the
+// "1" whose lone bar read below conf or as a wrong char - the dominant 996 miss (the
 // "1" of "12"/"10"/"16" dropped, leaving "2"/"0"/"6"). Real 996 "1"s measure 0.24-0.49;
 // thinner blobs are leader-line fragments (kept out to protect precision).
 const OCR_ONE_AR_MIN = 0.24;
 const OCR_ONE_AR_MAX = 0.50;
 // Compound callouts ("3/2", "10/1") in the old catalogs (911, 356-family sub-positions).
-// The slash reads as a "1" per glyph — indistinguishable in isolation — so the digit
+// The slash reads as a "1" per glyph - indistinguishable in isolation - so the digit
 // grouper never yields the "/". Instead a second pass pairs adjacent digit groups on one
 // row whose gap leaves room for a slash, and OCRs their WHOLE span with "/" whitelisted;
 // the retrained model reads the slash from context (ocr/COMPOUND_PLAN.md). Additive and
@@ -120,7 +120,7 @@ const OCR_USE_MODEL    = true;
 // ceiling: non-compound candidate-recall 0.9952. See ocr/RETRAIN5_REPORT.md.)
 const OCR_MODEL_THRESH = 0.35;
 // Recall-safe precision gates on the model path's EMITTED groups, keyed on the CNN's own
-// probability (not a new heuristic — the learned signal already separates these). The
+// probability (not a new heuristic - the learned signal already separates these). The
 // global 0.06 accept gate is kept low to admit the genuine low-prob callout tail; these
 // two gates then remove the specific low-prob shapes that tail does NOT contain. Both were
 // validated to drop ~0 real callouts on 996 AND 997TT (params fixed on 996 / general
@@ -132,12 +132,12 @@ const OCR_ONE_PROB_MIN     = 0.20;
 //    A real callout never sits amid several sub-0.5-prob callouts (real callouts score
 //    ~0.99); so a marginal group with >= MIN_NB marginal neighbours within RADIUS median
 //    callout-heights is a legend member. Isolated marginal groups (a genuine low-prob lone
-//    callout) are protected — that is what keeps this recall-safe.
+//    callout) are protected - that is what keeps this recall-safe.
 const OCR_CLUSTER_PROB_MIN = 0.50;
 const OCR_CLUSTER_MIN_NB   = 2;
 const OCR_CLUSTER_RADIUS   = 6;
 const OCR_MODEL_URL    = new URL('./callout-cnn.onnx', self.location.href).href;
-// Candidate band — must match ocr/dataset.py candidates() exactly (Phase 1).
+// Candidate band - must match ocr/dataset.py candidates() exactly (Phase 1).
 const OCR_CC_MIN_H     = 8;      // drop blobs shorter than this
 const OCR_CC_MAX_FRAC  = 0.06;   // drop blobs taller/wider than this fraction of the crop
 const OCR_CC_MIN_AREA  = 12;     // drop specks below this ink-pixel count
@@ -147,7 +147,7 @@ const OCR_CTX          = 2.75;   // patch window side = OCR_CTX * max(bbox_w, bb
 // Tessdata served alongside the worker
 const TESSDATA_URL = new URL('./tessdata', self.location.href).href;
 
-// Canvas factory using OffscreenCanvas — passed to getDocument() so PDF.js
+// Canvas factory using OffscreenCanvas - passed to getDocument() so PDF.js
 // never needs to call document.createElement('canvas') for internal operations.
 const CANVAS_FACTORY = {
   create(w, h)   { const c = new OffscreenCanvas(w || 1, h || 1); return { canvas: c, context: c.getContext('2d') }; },
@@ -232,7 +232,7 @@ async function ingest(buffer, catalogId) {
     if (OCR_USE_MODEL) { await getOrtSession(); post('status', { message: 'Callout model loaded.' }); }
     post('status', { message: `${POOL_SIZE} OCR workers ready.` });
   } catch (e) {
-    post('status', { message: `OCR unavailable (${e.message}) — callouts will be skipped.` });
+    post('status', { message: `OCR unavailable (${e.message}) - callouts will be skipped.` });
   }
   TIMING.tesseractInit = performance.now() - t;
 
@@ -248,7 +248,7 @@ async function ingest(buffer, catalogId) {
   const { title, sections } = await parseOutline(outline, pdf);
   TIMING.tocParse = performance.now() - t;
 
-  if (!sections.length) throw new Error('No sections found in TOC — is this a PET catalog?');
+  if (!sections.length) throw new Error('No sections found in TOC - is this a PET catalog?');
 
   post('status', { message: 'Parsing model/option information…' });
   t = performance.now();
@@ -262,7 +262,7 @@ async function ingest(buffer, catalogId) {
 
   insertVPageData(db, catalogId, vp);
   // V-pages are parsed before any section, so the code index comes straight from
-  // this parse — no re-query and no second pass over the sections.
+  // this parse - no re-query and no second pass over the sections.
   const codeIndex = buildCodeIndex(vp);
   const dialectInfo = { dialect: vp.dialect, yearPivot: vp.yearPivot, yearEnd: vp.yearEnd };
   TIMING.vPageParse = performance.now() - t;
@@ -276,7 +276,7 @@ async function ingest(buffer, catalogId) {
     'INSERT INTO callout (section_id, number, x0, y0, x1, y1, confidence) VALUES (?,?,?,?,?,?,?)'
   );
 
-  // ── Phase 1: parallel — render diagrams (with OCR) and extract parts ─────────
+  // ── Phase 1: parallel - render diagrams (with OCR) and extract parts ─────────
   // This whole map fans out over POOL_SIZE workers, so the internal TIMING.*
   // accumulators sum CPU-seconds across all workers (they overlap in wall time).
   // The only honest wall figure for the phase is this single bracket around it.
@@ -311,7 +311,7 @@ async function ingest(buffer, catalogId) {
   }));
   TIMING.diagramPhaseWall = performance.now() - tPhase;
 
-  // ── Phase 2: sequential — insert collected results into the database ──────────
+  // ── Phase 2: sequential - insert collected results into the database ──────────
   for (let i = 0; i < sections.length; i++) {
     const { sec, diagramResult, partsResults } = sectionResults[i];
     const { imgBytes, w, h, callouts } = diagramResult;
@@ -361,7 +361,7 @@ async function ingest(buffer, catalogId) {
   // ── Timing summary ────────────────────────────────────────────────────────
   const T = TIMING;
   // The diagram phase runs across `workers` threads in parallel, so every TIMING.*
-  // accumulated inside it is CPU-seconds summed across all of them — it can (and
+  // accumulated inside it is CPU-seconds summed across all of them - it can (and
   // does) exceed wall time. Only serial stages and the phase-wall bracket are
   // meaningful as a % of TOTAL; the parallel internals get a ÷workers wall estimate.
   const workers = pool ? POOL_SIZE : 1;
@@ -513,7 +513,7 @@ async function parseVPages(pdf, firstDiagramPage) {
     const pageText = rows.map(r => r.join(' ')).join('\n');
 
     // Every V-page repeats "Model: 997T07 Model life 2007>>2009". The code is not
-    // one token — "356 50" and "9PA 03" contain a space — so "Model life" is the
+    // one token - "356 50" and "9PA 03" contain a space - so "Model life" is the
     // only reliable right edge. The life-start year is the century pivot for the
     // old dialect's two-digit years.
     if (!model) model = pageText.match(/Model:\s*(.+?)\s+Model life/)?.[1] ?? '';
@@ -538,7 +538,7 @@ async function parseVPages(pdf, firstDiagramPage) {
 }
 
 // `state.current` is the open entry and is owned by the caller, because a description
-// can wrap past a page break — 567 is "Windscreen tinted, upper part darker coloured",
+// can wrap past a page break - 567 is "Windscreen tinted, upper part darker coloured",
 // and "darker coloured" lands after the repeated header on the next page. A per-page
 // `current` is null there, so the tail was silently dropped. The caller flushes the
 // last open entry once every page has been read.
@@ -638,7 +638,7 @@ function parseVINRangesPage(rows, vinRanges, state) {
 // 356 row:   *  356 COUPE  50  05001>05410  369/1100
 //   tokens:  *  [vehicle]  MY  from>to      engine
 //
-// Continuation rows (356 only): just an extra from>to on its own line — inherit last vehicle+MY.
+// Continuation rows (356 only): just an extra from>to on its own line - inherit last vehicle+MY.
 function parseSummaryTypesPage(rows, vinRanges, state) {
   // VIN/chassis range token: optional prefix letters then digits>digits, OR an
   // open-ended "150001>" (356 production tail) with nothing after the '>'.
@@ -703,8 +703,8 @@ function parseSummaryTypesPage(rows, vinRanges, state) {
       vehicle = pre.slice(0, myIdx).join(' ') || state.lastVehicle;
       my      = pre[myIdx];
 
-      // The 996 family prints the MY column as two tokens — the 2-digit year plus a
-      // one-char MY code (W=1998, X=1999, Y=2000, then digits) — and the VIN prefix
+      // The 996 family prints the MY column as two tokens - the 2-digit year plus a
+      // one-char MY code (W=1998, X=1999, Y=2000, then digits) - and the VIN prefix
       // ("99XS6") is a THIRD token. The old find(/[A-Z]/) grabbed the code letter
       // "X" instead, mangling "99XS6 20061" into prefix "X". Read the prefix by its
       // shape positionally; otherwise (Cayenne/356) fall back to the first lettered
@@ -870,8 +870,8 @@ function parseTransmissionNumbersPage(rows, transmNumbers, state) {
 // × model year. One parser fills both the *_code and *_number_range tables.
 // Without them these six catalogs ingested zero code rows, leaving every dotted
 // code (M96.03, G96.50) untyped and every engine/gearbox breakpoint unenforceable.
-// Their number ranges are NOT the ambiguous modern ones — 356/Cayenne serials are
-// distinct per type — so deriving from them is sound.
+// Their number ranges are NOT the ambiguous modern ones - 356/Cayenne serials are
+// distinct per type - so deriving from them is sound.
 
 // Expand a 2-digit model year using the Model-life pivot (pivot 1998: "05"→2005).
 function pivotYear(yy, pivot) {
@@ -1061,8 +1061,8 @@ function parseSummaryTransmissionsPage(rows, transmCodes, transmNumbers, state, 
                /^(?:SPEEDSTER|CONVERTIBLE|CABRIO(?:LET)?|COUPE|HARDTOP|ROADSTER|\([A-Z]{1,4}\))$/.test(texts[0])) {
       // Continuation: a lone body word (356: SPEEDSTER, CONVERTIBLE) or market
       // token (911: "(CDN)") on its own line extends the previous row's vehicle.
-      // Whitelisted so the LEGENDS/NOTICES page the open table spills onto — all
-      // caps too — cannot bleed its prose into the last row's vehicle_type.
+      // Whitelisted so the LEGENDS/NOTICES page the open table spills onto - all
+      // caps too - cannot bleed its prose into the last row's vehicle_type.
       state.lastNum.vehicleType = `${state.lastNum.vehicleType} ${texts[0]}`.trim();
     }
   }
@@ -1071,7 +1071,7 @@ function parseSummaryTransmissionsPage(rows, transmCodes, transmNumbers, state, 
 // ── Parts extraction ──────────────────────────────────────────────────────────
 //
 // The PDF is BLOCK-oriented, not row-oriented. A part is a header row followed by
-// continuation rows that extend each column INDEPENDENTLY — and one continuation
+// continuation rows that extend each column INDEPENDENTLY - and one continuation
 // row can carry several columns at once. Column origins are constant across all
 // parts pages (Pos=14, Part Number=57, Description=162, Remark=346, Qty=445,
 // Model=488) but are still calibrated per page from the header row.
@@ -1083,29 +1083,29 @@ function parseSummaryTransmissionsPage(rows, transmCodes, transmNumbers, state, 
 //                            [162]D >> - MJ 2007                                           <- year footer, scopes FSA
 //
 // Rows are routed BY COLUMN, never by sniffing the whole row:
-//   Pos / Qty   — header row only. Accumulating them would corrupt values that
+//   Pos / Qty   - header row only. Accumulating them would corrupt values that
 //                 are currently exact.
-//   Model       — extends the CURRENT row. A Model-only continuation (no part
+//   Model       - extends the CURRENT row. A Model-only continuation (no part
 //                 number) extends the parent block; a row that carries a part
 //                 number is a new child and owns whatever Model text it carries.
-//   Description — applicability-shaped text ("D - MJ 2008>>", "F >> 99-9S770 428")
+//   Description - applicability-shaped text ("D - MJ 2008>>", "F >> 99-9S770 428")
 //                 scopes the CURRENT row; anything else extends the current row's
 //                 description (the parent, or the last variant).
-//   Remark      — extends the current row's remark.
+//   Remark      - extends the current row's remark.
 //
 // A colour variant (Part Number but no Pos) becomes a CHILD of the open block: it
 // stays orderable and searchable but occupies no position of its own.
 //
-// A year/chassis footer scopes exactly the ONE row it is printed under — never a
+// A year/chassis footer scopes exactly the ONE row it is printed under - never a
 // run of rows, and never the whole block. 809-020 (p487) proves it: the same
 // "D >> - MJ 2007" is reprinted under each of three consecutive colours, and
 // colours with no footer sit BETWEEN footered ones ("M7Z GT Silver" between two
 // "D >> - MJ 2008" rows). Sweeping a footer back over the preceding run would
 // restrict long-running colours to the year in which a neighbour was introduced.
 //
-// Because a child's scope must survive on its own — the viewer resolves a child
+// Because a child's scope must survive on its own - the viewer resolves a child
 // through COALESCE(child.applicability, parent.applicability), which REPLACES
-// rather than merges — a child that carries any scope of its own is given the
+// rather than merges - a child that carries any scope of its own is given the
 // parent's scope too. Storing only the child's own footer would silently drop the
 // parent's PR gate from every such row.
 
@@ -1114,7 +1114,7 @@ function parseSummaryTransmissionsPage(rows, transmCodes, transmNumbers, state, 
 // the block (applicability continuations still route normally). "comprising:"
 // lists a kit's contents, "We take back:" names the core a part is exchanged
 // against, "Group:" and "use if required:" point at a technical manual or an
-// alternative number — none of them describe the part they sit under, so the
+// alternative number - none of them describe the part they sit under, so the
 // marker and everything after it accumulate into the row's REMARK instead.
 const ANNOT_RE = /^(?:with:|without:|also use:|use if required:|only in conj\. with:|see illustration|comprising:|we take back:|group:)/i;
 
@@ -1126,13 +1126,13 @@ const FLAG_RE = /^Discontinued part$/i;
 
 // "Valid up to:" / "Valid from:" head the F/M breakpoint rows printed beneath
 // them. The direction is already carried by where each clause puts its '>>', so
-// the label adds nothing — but it must NOT close the block the way a cross-
+// the label adds nothing - but it must NOT close the block the way a cross-
 // reference does, because those clauses still have to reach the row they scope.
 const SCOPE_LABEL_RE = /^(?:valid up to:|valid from:)/i;
 
 // A labelled value rather than prose: the label sits in the Description column
 // while the value it names is over in Remark ("relay location/code no.:" | "S4").
-// The pair belongs in the remark — the label alone pollutes the description, and
+// The pair belongs in the remark - the label alone pollutes the description, and
 // the bare "S4" is the only thing telling three otherwise identical relays apart.
 const REMARK_LABEL_RE = /^relay location\/code no\.:/i;
 
@@ -1140,7 +1140,7 @@ const REMARK_LABEL_RE = /^relay location\/code no\.:/i;
 // It joins the market vocabulary the catalog already quotes ('"AUS"', '"GB."',
 // '"J.."', '"ROK"', '"CN."') and leads year clauses with ("D" = Deutschland):
 // those are international vehicle registration codes, under which Australia is
-// AUS and Austria would be A — so the reading is not ambiguous. 001-005 prints
+// AUS and Austria would be A - so the reading is not ambiguous. 001-005 prints
 // the Australia-only fuel sticker as '"AUS"'; this is its complement.
 // Only a name we can place is mapped. Anything else stays description text: a
 // country silently mapped to the wrong code hides parts that do fit the car.
@@ -1152,7 +1152,7 @@ const MARKET_NAME_CODE = { AUSTRALIEN: 'AUS' };
 const CUT_LENGTH_RE = /^shorten to:/i;
 
 // A Pos value: plain "5", or "(5)" when the part differs from the illustration.
-// Old catalogs (911 1975) add a compound sub-position: "3/2", "(3/1)" — one
+// Old catalogs (911 1975) add a compound sub-position: "3/2", "(3/1)" - one
 // optional "/<num>" after the base, still a real part with a diagram callout.
 const POS_RE = /^(?:\d{1,3}(?:\/\d{1,3})?|\(\d{1,3}(?:\/\d{1,3})?\))$/;
 
@@ -1164,7 +1164,7 @@ const COLOUR_CODE_X = 130;
 // "D - MJ 2008>>", "D >> - MJ 2007", "F 99-7S780 790>>", "M >> 816 14410".
 // The leading 1-3 letter market/breakpoint token is what makes this safe: real
 // description text such as "Identification: >> >>" or "M 12 X 1,5" cannot match.
-// One breakpoint prints glued ("F>>998S4794076", 501-001 p226) — the digit right
+// One breakpoint prints glued ("F>>998S4794076", 501-001 p226) - the digit right
 // after the '>>' keeps that arm as safe as the spaced one.
 function isApplicabilityText(t) {
   if (/^[FM]>>\s*\d/.test(t)) return true;
@@ -1178,9 +1178,9 @@ function isApplicabilityModel(t) {
 
 // A colour variant's Model text is its scope only if the whole value parses as
 // scope. No code index here: extraction runs before any DB handle exists, and a
-// variant never carries an engine/gearbox code — shape alone settles every value
+// variant never carries an engine/gearbox code - shape alone settles every value
 // we see. A value that is NOT scope (the paints section prints the paint code
-// there — "A 1", "9 S", 004-000 p24) is kept in the remark instead of dropped.
+// there - "A 1", "9 S", 004-000 p24) is kept in the remark instead of dropped.
 function variantScope(model) {
   return model && APPL.isScope(model) ? model : '';
 }
@@ -1202,7 +1202,7 @@ function makeBlock(pos, partNumber, colourCode, description, qty, remark, model)
   return {
     pos, partNumber, colourCode,
     description, qty, remark,
-    applicability: model,   // Model column of the header row — the biggest single
+    applicability: model,   // Model column of the header row - the biggest single
     applDesc:      [],      // fix: this never used to reach the DB at all.
     annotClosed:   false,
     awaitNotFor:   false,   // a "Not for:" marker is waiting for its country row
@@ -1215,7 +1215,7 @@ function makeChild(partNumber, colourCode, description, remark, model) {
     pos: null, partNumber, colourCode,
     description, qty: '', remark,
     applicability: model,   // a variant's own Model text is its own scope, not the
-    applDesc:      [],      // parent's — the parent may carry none at all.
+    applDesc:      [],      // parent's - the parent may carry none at all.
   };
 }
 
@@ -1226,7 +1226,7 @@ function blockApplicability(b) {
 }
 
 // Which kind of breakpoint a segment states, if any. "PR:XMJ" is an option code,
-// not a year — only a MJ followed by a year is one.
+// not a year - only a MJ followed by a year is one.
 function segmentKind(seg) {
   if (/\bMJ\s*\d{4}/.test(seg))    return 'year';
   if (/^F(?:\s|>>)/.test(seg))     return 'chassis';
@@ -1242,7 +1242,7 @@ function segmentKind(seg) {
 // Where both state the SAME kind of breakpoint the child's wins outright, because
 // the two are an intersection and segments of one kind read as alternatives: a
 // Sycamore door handle runs ">> - MJ 2008" and its Palm green variant ">> - MJ 2007",
-// which is MY2007 and under — keeping both would read as "either", widening the
+// which is MY2007 and under - keeping both would read as "either", widening the
 // variant back out to the parent's range. The parent's facets (line, option) are
 // never dropped; those the child only ever adds to.
 function childApplicability(child, block) {
@@ -1261,7 +1261,7 @@ function childApplicability(child, block) {
 // Old dialect prints part scope in the REMARK column, not the Model column: 2-digit
 // year windows ("-02", "03-", "00-01") and parenthesised markets ("(J)", "-(CN)").
 // The viewer only filters `applicability`, so recognise those tokens and fold them
-// into the block's Description-scope list (applDesc) — the existing block/child
+// into the block's Description-scope list (applDesc) - the existing block/child
 // applicability logic then carries them through, and appl.js (dialect='old',
 // yearPivot set) interprets them. The raw remark string is left intact for display.
 //   info: { dialect, yearPivot, yearEnd }
@@ -1306,7 +1306,7 @@ async function extractParts(pdf, pageNum, carry = {}) {
   // may be printed at the top of the next page.
   let block  = carry.block  ?? null;  // open parent block
   let curRow = carry.curRow ?? null;  // parent, or its last colour variant
-  // The last block that carried a part number — the stock a "shorten to:" row is
+  // The last block that carried a part number - the stock a "shorten to:" row is
   // cut from. It is printed once, above a run of cut lengths, and can sit on the
   // previous page.
   let bulk   = carry.bulk   ?? null;
@@ -1339,17 +1339,17 @@ async function extractParts(pdf, pageNum, carry = {}) {
     const texts = row.items.map(it => it.str.trim()).filter(Boolean);
     if (!texts.length) continue;
 
-    // Section header line — "Illustration: 101-000"
+    // Section header line - "Illustration: 101-000"
     if (texts.length === 1 && texts[0].startsWith('Illustration:')) continue;
 
-    // Model filter line — "Model: 997T07  Model life 2007>>2009"
+    // Model filter line - "Model: 997T07  Model life 2007>>2009"
     if (texts.some(t => t === 'Model:' || t.startsWith('Model:'))) continue;
 
-    // Page footer — "19.07.2018   - 2   Kat P30". Its columns land in Description
+    // Page footer - "19.07.2018   - 2   Kat P30". Its columns land in Description
     // and Model, so it must be dropped before any accumulation.
     if (/^\d{2}\.\d{2}\.\d{4}/.test(texts[0])) continue;
 
-    // Column header row — sets column origins for all subsequent rows on this page
+    // Column header row - sets column origins for all subsequent rows on this page
     if (!colOrigins) {
       if (texts.filter(t => COL_HEADER_SET.has(t)).length >= 4)
         colOrigins = calibrateCols(row.items);
@@ -1368,12 +1368,12 @@ async function extractParts(pdf, pageNum, carry = {}) {
     const isAnnot  = !!desc && ANNOT_RE.test(desc);
     const fullPn   = colour ? (pn ? pn + ' ' + colour : colour) : pn;
 
-    // ── Part header row. The Pos token must actually live in the Pos column —
+    // ── Part header row. The Pos token must actually live in the Pos column -
     //    testing texts[0] alone let "997" (a part number) pass as a position.
     if (pos && POS_RE.test(pos)) {
       titleClosed = true;
       // A cut length owns a position and a callout, so it is a part in its own
-      // right rather than a variant of the bulk row — but the number and the
+      // right rather than a variant of the bulk row - but the number and the
       // description of the stock it comes from are printed only on that row, and
       // without them it is unorderable and reads as a bare "shorten to:".
       if (!fullPn && bulk && CUT_LENGTH_RE.test(desc)) {
@@ -1390,7 +1390,7 @@ async function extractParts(pdf, pageNum, carry = {}) {
       continue;
     }
 
-    // ── Dash position — a part that exists but is not shown in the diagram.
+    // ── Dash position - a part that exists but is not shown in the diagram.
     //    A bare "-" also introduces annotations ("- primed") and grouping headings
     //    ("- Signs/notices" over the stickers that follow, "- Gear wheel sets" over
     //    a see-illustration xref). The Qty column separates them: a line item says
@@ -1409,7 +1409,7 @@ async function extractParts(pdf, pageNum, carry = {}) {
         parts.push(block);
         curRow = block;
       } else {
-        block = null; curRow = null;   // annotation or heading — nothing may attach
+        block = null; curRow = null;   // annotation or heading - nothing may attach
       }
       continue;
     }
@@ -1421,7 +1421,7 @@ async function extractParts(pdf, pageNum, carry = {}) {
       continue;
     }
 
-    // ── Colour variant — a Part Number with no Pos. Becomes a child of the block.
+    // ── Colour variant - a Part Number with no Pos. Becomes a child of the block.
     //    It owns its Model text: a seat-belt colour row states the PR option that
     //    selects that colour, and the parent often states nothing at all.
     if (pn && /[0-9A-Za-z]/.test(pn)) {
@@ -1439,7 +1439,7 @@ async function extractParts(pdf, pageNum, carry = {}) {
 
     // ── Diagram title block: rows before the first data row of the section ──
     if (!titleClosed) {
-      if (isAnnot) { titleClosed = true; continue; } // notes/attention block — stop
+      if (isAnnot) { titleClosed = true; continue; } // notes/attention block - stop
       if (desc) {
         // A section-level model-year scope (20 sections) rather than title text
         if (isApplicabilityText(desc)) titleApplDesc.push(desc);
@@ -1463,19 +1463,19 @@ async function extractParts(pdf, pageNum, carry = {}) {
     // The Model column is read BEFORE the Description column is even looked at,
     // because the columns are independent: a marker in Description says nothing
     // about the row's Model. 805-000 p363 prints one windscreen's "PR:440,568" on
-    // an "also use:" row and its sibling's on a plain row — the same gate, and
+    // an "also use:" row and its sibling's on a plain row - the same gate, and
     // skipping the row whole would keep one and drop the other. 904-000 p696
     // (PR:268), 902-005 p667 (-"CN.") and 809-020 p487 (PR:XME) are the same
     // shape: a Model continuation that happens to share a row with a marker.
     //
     // A Model-only continuation carries no part number of its own, so it can only
-    // be extending the parent — including a PR list wrapped across two rows, which
+    // be extending the parent - including a PR list wrapped across two rows, which
     // must not be handed to whatever colour variant happens to be open.
     if (model) block.applicability = appendModelToken(block.applicability, model);
 
     // Cross-reference markers carry their target in the Remark column; the pair
     // is an annotation on the row it is printed under, so it lands in that row's
-    // remark — and closes description accumulation, because the annotation's own
+    // remark - and closes description accumulation, because the annotation's own
     // continuation lines print back at the Description origin.
     if (isAnnot) {
       block.annotClosed = true;
@@ -1509,7 +1509,7 @@ async function extractParts(pdf, pageNum, carry = {}) {
         (curRow ?? block).applDesc.push(desc);   // scopes the row it is printed under
       } else if (curRow) {
         // Once an annotation is open, Description-column text is the annotation's
-        // continuation and joins the remark — except the discontinued flag, which
+        // continuation and joins the remark - except the discontinued flag, which
         // is the part's own and keeps its place in the description.
         if (!block.annotClosed || FLAG_RE.test(desc))
           curRow.description = appendText(curRow.description, desc);
@@ -1524,7 +1524,7 @@ async function extractParts(pdf, pageNum, carry = {}) {
 
   // "PR:480" on the title row gates the WHOLE section (15 sections); the variant
   // and code tokens beside it are the section's own scope. They are split apart
-  // here only because `model` is the display string the viewer prints verbatim —
+  // here only because `model` is the display string the viewer prints verbatim -
   // the typed facets are derived from the same tokens downstream. A sub-title's
   // Model entry (titleModelIsScope=false) stays display-only.
   const titleScopeToks  = titleModelIsScope ? titleModelToks : [];
@@ -1571,7 +1571,7 @@ function calibrateCols(headerItems) {
 }
 
 // Assign each item to the rightmost column whose x-origin is ≤ item.x (+5pt tolerance).
-// Returns the ITEMS (not strings) so callers can still see x — the Part Number column
+// Returns the ITEMS (not strings) so callers can still see x - the Part Number column
 // has a sub-column (the colour/trim code) that only x can separate.
 function assignColumns(items, colOrigins) {
   const cols = Object.fromEntries(colOrigins.map(c => [c.name, []]));
@@ -1607,7 +1607,7 @@ async function extractSectionParts(pdf, firstPartsPage, nextDiagramPage) {
     }
     TIMING.extractParts += performance.now() - t;
     TIMING.partsPagesCount++;
-    // Bounded by the section's page range — never break on an empty page, or a
+    // Bounded by the section's page range - never break on an empty page, or a
     // notes-only page mid-run would silently drop every page after it.
     carry = r.carry;
     out.push(r);
@@ -1625,7 +1625,7 @@ async function initTesseract() {
     // Don't cache the model: several OCR workers init concurrently, and their shared
     // OPFS/IndexedDB cache races ("InvalidStateError: state had changed since read").
     // It also served a STALE model after a retrain. Each worker just loads from the
-    // served file — the byte cost is paid once at ingest, not per catalog.
+    // served file - the byte cost is paid once at ingest, not per catalog.
     cacheMethod: 'none',
     logger:     () => {},
   });
@@ -1634,7 +1634,7 @@ async function initTesseract() {
 // A dedicated Tesseract worker for the compound-callout pass, configured ONCE with the
 // "/"-inclusive whitelist and never used for the digit passes. Flipping a shared
 // worker's whitelist/PSM between the per-blob digit reads and the whole-span compound
-// read left it mis-reading the slash ("2/1" → "21") — an identical image reads
+// read left it mis-reading the slash ("2/1" → "21") - an identical image reads
 // correctly on a worker that only ever does compound. Recognitions are serialized on
 // this single worker (compound spans are rare; no need for a pool).
 let COMPOUND_TWORKER = null;
@@ -1704,7 +1704,7 @@ function imageRectsFromOpList(opList) {
   return results;
 }
 
-// Grayscale hard-threshold — returns new OffscreenCanvas
+// Grayscale hard-threshold - returns new OffscreenCanvas
 function binarize(src, threshold) {
   const dst = new OffscreenCanvas(src.width, src.height);
   const ctx = dst.getContext('2d');
@@ -1719,7 +1719,7 @@ function binarize(src, threshold) {
   return dst;
 }
 
-// Bilinear resample — returns new OffscreenCanvas. Handles BOTH up- and downscaling:
+// Bilinear resample - returns new OffscreenCanvas. Handles BOTH up- and downscaling:
 // downscaling matters for oversized callouts (a large-font scale needs factor < 1 to
 // bring the glyph down to targetPx). Only a near-identity factor is passed through.
 function upscale(src, factor) {
@@ -1762,7 +1762,7 @@ function findBlobs(canvas) {
   return { blobs, ink, W, H };
 }
 
-// Containment-nesting depth of every ink pixel — used to drop callouts that sit INSIDE
+// Containment-nesting depth of every ink pixel - used to drop callouts that sit INSIDE
 // a closed shape (a mark/feature enclosed by a part outline read as a digit). Real
 // callouts float on the drawing; enclosed detections are ~90% spurious. Frame-agnostic:
 // depth is relative, so a page border just shifts everyone down together.
@@ -1860,7 +1860,7 @@ function renderBlobCanvas(ink, W, H, blob, pad) {
 
 // Render the ink INSIDE a tight bbox onto a white canvas that carries a white-only
 // `margin` border. Unlike renderBlobCanvas (one flooded component) this draws the
-// whole glyph run in the box — a compound callout's full "n/n" span — but only ink
+// whole glyph run in the box - a compound callout's full "n/n" span - but only ink
 // *within* [x0,x1)×[y0,y1): the margin is pure whitespace, so a leader-line stub
 // sitting just outside the box (which a padded ink region would pull in and OCR as a
 // stray "-") is excluded. Tesseract still gets the surrounding whitespace it wants.
@@ -1970,7 +1970,7 @@ function runOrt(feeds) {
 // cv2 INTER_AREA decimation weights for one axis, ported verbatim from OpenCV's
 // computeResizeAreaTab. Returns per-dst-pixel list of {si, alpha} (area-weighted
 // average). Works for up- and downscale; for upscale each dst maps to a sub-pixel
-// source interval (nearest-like) — exactly what ocr/dataset.py's resize produces.
+// source interval (nearest-like) - exactly what ocr/dataset.py's resize produces.
 function areaTab(ssize, dsize) {
   const scale = ssize / dsize;
   const tab = [];
@@ -2073,7 +2073,7 @@ async function ocrDiagramModel(canvas, opList, vp, tWorker, diagRect = null, par
   const { blobs, ink, W, H } = findBlobs(binned);
   TIMING.findBlobs += performance.now() - t;
 
-  // 3: permissive band — identical to ocr/dataset.py candidates() (no aspect filter).
+  // 3: permissive band - identical to ocr/dataset.py candidates() (no aspect filter).
   const cand = blobs.filter(b =>
     b.h >= OCR_CC_MIN_H &&
     b.h <= OCR_CC_MAX_FRAC * H && b.w <= OCR_CC_MAX_FRAC * W &&
@@ -2112,7 +2112,7 @@ async function ocrDiagramModel(canvas, opList, vp, tWorker, diagRect = null, par
   if (dbg) dbg.accepted = accepted.map(a => norm(a.blob));
   if (!accepted.length) { done(); return { callouts: [], _debug: dbg }; }
 
-  // 6: recognition — Tesseract reads each accepted blob (native ink upscaled to targetPx).
+  // 6: recognition - Tesseract reads each accepted blob (native ink upscaled to targetPx).
   // No confidence gate: the model already decided it's a callout; Tesseract only supplies
   // the value. A thin blob Tesseract can't read falls back to "1"; anything else is dropped.
   // The CNN prob rides along (`prob`) for the two emitted-group precision gates below.
@@ -2175,7 +2175,7 @@ async function ocrDiagramModel(canvas, opList, vp, tWorker, diagRect = null, par
     if (!placed) numGroups.push({ digits: [dr], x0: b.x0, y0: b.y0, x1: b.x1, y1: b.y1 });
   }
 
-  // Containment filter — reused verbatim from the heuristic (containmentDepth), the ONE
+  // Containment filter - reused verbatim from the heuristic (containmentDepth), the ONE
   // geometric gate the CNN doesn't subsume: a number read from a feature enclosed inside a
   // closed part outline nests deeper than a real callout, which floats free on the drawing.
   // Native detection here (scale = 1), so group coords index `binned` directly (no /scale).
@@ -2219,7 +2219,7 @@ async function ocrDiagramModel(canvas, opList, vp, tWorker, diagRect = null, par
     return true;
   });
 
-  // 6b: compound pass — pair adjacent digit groups whose gap leaves room for a slash
+  // 6b: compound pass - pair adjacent digit groups whose gap leaves room for a slash
   // and OCR the whole span with "/" whitelisted (see OCR_COMPOUND). byX is x-sorted, so
   // the per-`a` gap grows monotonically and the scan can stop once it exceeds the cap.
   // A taken span consumes its pair and any group sitting inside it (the slash often
@@ -2288,7 +2288,7 @@ function ocrDiagram(canvas, opList, vp, tWorker, diagRect = null, params = {}) {
 // Extract callout numbers from a rendered diagram canvas.
 // Returns { callouts, strip, stats } where callouts are normalized 0–10000 in PNG pixel space.
 // diagRect: if provided, canvas is already cropped to that rect (skip internal crop step).
-// params: { binThresh, targetPx, minConf, debug } — fall back to module constants when omitted.
+// params: { binThresh, targetPx, minConf, debug } - fall back to module constants when omitted.
 //   debug: when true, builds a strip canvas of blobs fed to Tesseract and populates stats.
 async function ocrDiagramHeuristic(canvas, opList, vp, tWorker, diagRect = null, params = {}) {
   const {
@@ -2390,7 +2390,7 @@ async function ocrDiagramHeuristic(canvas, opList, vp, tWorker, diagRect = null,
 
     // Narrow-blob "1" recovery: a callout-height blob in the "1" aspect band that OCR
     // rejected is almost certainly a "1" (its lone bar reads below conf / as a wrong
-    // char) — but ONLY inject it when it sits directly beside an already-accepted digit
+    // char) - but ONLY inject it when it sits directly beside an already-accepted digit
     // on the same baseline, i.e. it is the "1" of a 2-digit callout ("12"/"10"/"16"
     // whose "1" dropped, leaving "2"/"0"/"6"). Requiring an accepted neighbour is what
     // keeps precision: injecting every band blob (incl. isolated noise) floods false 1s.
@@ -2426,7 +2426,7 @@ async function ocrDiagramHeuristic(canvas, opList, vp, tWorker, diagRect = null,
     // never displace a good primary scale on the "most digits" rule.
     if (OCR_FALLBACK_PT.has(fontPt) && digitResults && digitResults.length) continue;
     t = performance.now();
-    // Primary sizes keep the >=1 clamp (never downscale — on high-res native images even
+    // Primary sizes keep the >=1 clamp (never downscale - on high-res native images even
     // 9/12pt scales compute s<1, and downscaling them shrank callouts out of the window,
     // which regressed detection). ONLY the oversized fallback sizes may downscale (s<1),
     // to bring a genuinely huge glyph down to targetPx.
@@ -2454,7 +2454,7 @@ async function ocrDiagramHeuristic(canvas, opList, vp, tWorker, diagRect = null,
     if (!candidates.length) continue;
 
     const out = await tryAtScale(candidates, ink, W, H);
-    // Keep the scale that found the most digits — don't stop early, since a later
+    // Keep the scale that found the most digits - don't stop early, since a later
     // candidate may find more real callouts than an earlier one found false positives.
     if (out && (!digitResults || out.digitResults.length > digitResults.length)) {
       scale = s; digitResults = out.digitResults;
@@ -2484,7 +2484,7 @@ async function ocrDiagramHeuristic(canvas, opList, vp, tWorker, diagRect = null,
   // full digit-width or more. Digits here are all ~targetPx tall (they passed the
   // scale's height window), so targetPx-scaled thresholds are size-normalized.
   // Two hard caps encode the domain: a callout is at most 2 digits and never exceeds
-  // OCR_MAX_CALLOUT — so two adjacent callouts can never fuse into "2021"/"252627".
+  // OCR_MAX_CALLOUT - so two adjacent callouts can never fuse into "2021"/"252627".
   // Keep the gap/row tolerances TIGHT (baseline-proven): loosening them merged adjacent
   // single-digit callouts ("3"+"4"->"34", "4"+"5"->"45"). The 996 doubled-1 that looked
   // like a grouping gap is really a detection gap (the 2nd stroke isn't always found),
@@ -2563,16 +2563,16 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
   const opfsRoot  = await navigator.storage.getDirectory();
   let catalogDir;
   try { catalogDir = await opfsRoot.getDirectoryHandle(catalogId); }
-  catch { throw new Error(`No existing catalog "${catalogId}" — run a full ingest first.`); }
+  catch { throw new Error(`No existing catalog "${catalogId}" - run a full ingest first.`); }
 
   let db;
   try {
     const fh   = await catalogDir.getFileHandle('catalog.sqlite');
     const file = await fh.getFile();
     db = new SQL.Database(new Uint8Array(await file.arrayBuffer()));
-  } catch { throw new Error(`catalog.sqlite not found for "${catalogId}" — run a full ingest first.`); }
+  } catch { throw new Error(`catalog.sqlite not found for "${catalogId}" - run a full ingest first.`); }
 
-  // A schema change (a new column) means the old DB can't be updated in place — and
+  // A schema change (a new column) means the old DB can't be updated in place - and
   // this project never migrates, it rebuilds. But re-rendering diagrams and re-OCRing
   // would be wasteful when only the interpretation layer changed, so carry the old
   // DB's diagrams and callouts across into a fresh, current-schema DB keyed by section
@@ -2581,7 +2581,7 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
   const oldCallouts = new Map();   // section number → [callout rows]
   let rebuilt = false;
   if (!SCHEMA.matches(SQL, db)) {
-    post('status', { message: 'Schema changed — rebuilding (diagrams kept, no OCR)…' });
+    post('status', { message: 'Schema changed - rebuilding (diagrams kept, no OCR)…' });
     const idToNum = new Map();
     let st = db.prepare('SELECT id, number, diagram_blob, diagram_w, diagram_h FROM section WHERE catalog_id=?');
     st.bind([catalogId]);
@@ -2641,7 +2641,7 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
       pool = await createWorkerPool(POOL_SIZE);
       if (OCR_USE_MODEL) await getOrtSession();
     } catch (e) {
-      post('status', { message: `OCR unavailable (${e.message}) — callouts will be skipped.` });
+      post('status', { message: `OCR unavailable (${e.message}) - callouts will be skipped.` });
     }
   } else {
     post('status', { message: `Found ${targets.length} section(s). Extracting parts…` });
@@ -2688,7 +2688,7 @@ async function reingestSections(buffer, catalogId, sectionNums, partsOnly) {
         if (secStmt.step()) secId = secStmt.getAsObject().id;
         secStmt.free();
         if (secId == null) {
-          post('status', { message: `Section ${sec.sectionNum} not in DB — skipping` });
+          post('status', { message: `Section ${sec.sectionNum} not in DB - skipping` });
           continue;
         }
       }
@@ -2743,7 +2743,7 @@ const TIMING = {
   tesseractInit:   0,  // initTesseract
   opfsSetup:       0,  // navigator.storage.getDirectory + handle setup
   tocParse:        0,  // pdf.getOutline + parseOutline
-  vPageParse:      0,  // parseVPages() — PR codes, sales types, VIN ranges
+  vPageParse:      0,  // parseVPages() - PR codes, sales types, VIN ranges
   diagramPhaseWall:0,  // wall time of the whole parallel diagram+parts fan-out
   extractParts:    0,  // extractParts() across all pages of all sections (CPU-s, summed across workers)
   dbInserts:       0,  // calloutStmt.run + partStmt.run + insertSection
@@ -2775,7 +2775,7 @@ async function renderDiagram(pdf, pageNum, tWorker) {
   const vp     = page.getViewport({ scale: DIAGRAM_SCALE });
   const canvas = new OffscreenCanvas(Math.round(vp.width), Math.round(vp.height));
 
-  // Get op list and render in parallel — op list is used for OCR image-rect detection.
+  // Get op list and render in parallel - op list is used for OCR image-rect detection.
   // Render must complete before native extraction; Promise.all ensures both finish first.
   let t = performance.now();
   const [opList] = await Promise.all([
@@ -2819,8 +2819,8 @@ async function renderDiagram(pdf, pageNum, tWorker) {
   page.cleanup();
 
   // Save native image (or 2× render fallback) binarized to a CCITT Group 4
-  // bitstream for display — bilevel line art, ~44% the size of lossy WebP.
-  // ocrCanvas is native when available — no upscaling wasted on the stored file.
+  // bitstream for display - bilevel line art, ~44% the size of lossy WebP.
+  // ocrCanvas is native when available - no upscaling wasted on the stored file.
   t = performance.now();
   const binCanvas = binarize(ocrCanvas, OCR_BIN_THRESH);
   const w = binCanvas.width, h = binCanvas.height;
@@ -2927,8 +2927,8 @@ function insertPartBlocks(db, partStmt, secId, catalogId, parts, info) {
 }
 
 // The parser's dictionaries come straight from the catalog's OWN tables (see
-// APPL.buildIndex) — engine/transmission codes, option codes, the line words its
-// sales_type/vin_range enumerate — plus the dialect and century pivot detected at
+// APPL.buildIndex) - engine/transmission codes, option codes, the line words its
+// sales_type/vin_range enumerate - plus the dialect and century pivot detected at
 // V-page parse. Nothing is hardcoded per catalog and nothing is guessed by shape.
 function buildCodeIndex(vp) {
   const vehicleTypes = [...(vp.engineNums ?? []), ...(vp.transmNums ?? [])]
@@ -2939,10 +2939,10 @@ function buildCodeIndex(vp) {
 // A section title is often an OR-list of WHOLE variants, not a token soup:
 // "CARRERA 4 CARRERA 4S TARGA TARGA S" means (Carrera 4) OR (Carrera 4S) OR Targa
 // OR (Targa S). Flattening it into one column per facet and AND-ing them wrongly
-// demands line=CARRERA AND body=TARGA — hiding a C4 coupe. So split the title at
+// demands line=CARRERA AND body=TARGA - hiding a C4 coupe. So split the title at
 // each head token (a line or body word; slash-joined tokens like "TURBO/COUPE"
 // stay one variant) and populate a facet column ONLY when that facet appears in
-// EVERY variant — the union of its values, OR-ed. A facet that varies across the
+// EVERY variant - the union of its values, OR-ed. A facet that varies across the
 // alternatives (body here) is dropped; the parts inside carry their own scope.
 function isHeadToken(tok, opts) {
   const p = APPL.parse(tok, opts);
@@ -3059,7 +3059,7 @@ async function ocrPage({ buffer, pageNum, binThresh = OCR_BIN_THRESH, targetPx =
   const kindLabel = native ? (['?','1bpp','RGB','RGBA'][nativeKind] ?? '?') : null;
   const srcLabel  = native
     ? `native ${ocrCanvas.width}×${ocrCanvas.height} (${kindLabel}, ${Math.round(dpi)} DPI)`
-    : `render×${DIAGRAM_SCALE} ${cw}×${ch} (${Math.round(dpi)} DPI — fallback)`;
+    : `render×${DIAGRAM_SCALE} ${cw}×${ch} (${Math.round(dpi)} DPI - fallback)`;
 
   const transfer = [pngBuf];
   if (stripBuf) transfer.push(stripBuf);

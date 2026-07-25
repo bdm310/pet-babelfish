@@ -133,8 +133,8 @@ def _iou(a, b):
 def dedup(dets):
     """Collapse overlapping detections of one physical callout, keeping the
     higher-confidence box (we scan highest-conf first, so the first kept box wins):
-      · SAME number, IoU>0.3  — a double-read of the same glyph.
-      · DIFFERENT number, IoU>0.5 — one glyph read two ways (e.g. multi-scale calls
+      · SAME number, IoU>0.3  - a double-read of the same glyph.
+      · DIFFERENT number, IoU>0.5 - one glyph read two ways (e.g. multi-scale calls
         it 6 and 9); keep the more confident reading rather than stacking both.
     Genuinely separate repeats (a callout stamped elsewhere on a symmetric diagram)
     don't overlap, so they survive as distinct instances."""
@@ -159,7 +159,7 @@ def numeric_words(annotation, w, h):
                     if not m:
                         continue
                     n = int(m.group(1))
-                    if n == 0:            # no callout is "0" — always a misread
+                    if n == 0:            # no callout is "0" - always a misread
                         continue
                     xs = [v.x for v in word.bounding_box.vertices]
                     ys = [v.y for v in word.bounding_box.vertices]
@@ -290,7 +290,7 @@ if vision_json.exists() and not no_cache:
 #
 # Stored blobs render small/sparse diagrams tiny, and OCR (Vision *and* the shipping
 # Tesseract) chokes on tiny digits: on a 700px diagram Vision found 3 of 12 callouts,
-# but upscaled 3-4x it found most of them — no single scale is complete, so we OCR at
+# but upscaled 3-4x it found most of them - no single scale is complete, so we OCR at
 # several scales and union. Coords normalize to the same 0-10000 space at every scale,
 # so cross-scale dedup is trivial. LANCZOS upscales; native is always included.
 TARGET_LONG = (2600, 3800)   # upscale so the diagram's long side reaches these
@@ -342,8 +342,8 @@ vision_json.write_text(json.dumps(results, indent=1), encoding='utf-8')
 # thread specs), so an "extra" detection is usually NOT an OCR error and the parts
 # list cannot adjudicate it. What the list *can* verify is the lower bound: every
 # expected callout number should appear. So the human queue is driven by MISSING
-# (a callout Vision didn't find). Repeats (REPT) are usually real — a callout stamped
-# on both sides of a symmetric diagram — so after spatial dedup they're kept as
+# (a callout Vision didn't find). Repeats (REPT) are usually real - a callout stamped
+# on both sides of a symmetric diagram - so after spatial dedup they're kept as
 # multiple boxes, not treated as failures.
 #
 #   CLEAN     every expected callout found        -> silver ground truth
@@ -395,7 +395,7 @@ with open(out_dir / 'reconcile.csv', 'w', newline='', encoding='utf-8') as f:
 
 (out_dir / 'groundtruth.json').write_text(json.dumps(silver, indent=1), encoding='utf-8')
 (out_dir / 'queue.txt').write_text('\n'.join(queue) + ('\n' if queue else ''), encoding='utf-8')
-# expected callout set per section — the completeness oracle, needed by the queue merge
+# expected callout set per section - the completeness oracle, needed by the queue merge
 (out_dir / 'expected.json').write_text(
     json.dumps({str(k): sorted(v, key=natkey) for k, v in expected.items()}, indent=1), encoding='utf-8')
 

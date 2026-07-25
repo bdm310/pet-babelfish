@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Re-tighten every ground-truth box to the actual glyph bounds — deterministically.
+Re-tighten every ground-truth box to the actual glyph bounds - deterministically.
 
 Human review placed boxes roughly; this snaps each one to the true digit box via
 the same connected-component tightener used to build the data (tighten-box.snap),
 seeded from the box's own centre. It only replaces a box when the snap clearly lands
 on the same glyph (guards below), so a mis-snap or a leader-line fusion leaves the
-original box untouched. Numbers, source and conf are preserved — only coords change.
+original box untouched. Numbers, source and conf are preserved - only coords change.
 
 Guards (skip, keep original) when the snapped box:
   · is None (no glyph near the centre)
@@ -145,9 +145,9 @@ def montage(sample):
 print(f"=== re-tighten {cat} ===")
 print(f"  callouts total        : {n_total}")
 print(f"  would change          : {n_changed}" + (" (APPLIED)" if apply else ""))
-print(f"  kept — no glyph found : {n_none}")
-print(f"  kept — snap off (IoU<{IOU_MIN}) : {n_lowiou}")
-print(f"  kept — oversize (>{MAX_GROW}x)   : {n_oversize}")
+print(f"  kept - no glyph found : {n_none}")
+print(f"  kept - snap off (IoU<{IOU_MIN}) : {n_lowiou}")
+print(f"  kept - oversize (>{MAX_GROW}x)   : {n_oversize}")
 print(f"  overlaps removed after tighten  : {n_dedup}")
 if ious:
     ious.sort()
@@ -163,4 +163,4 @@ else:
     sample = random.Random(1).sample(changes, min(15, len(changes))) if changes else []
     p = montage(sample)
     if p: print(f"\n  preview (red=before, green=after) → {p}")
-    print("  dry run — re-run with --apply to write")
+    print("  dry run - re-run with --apply to write")

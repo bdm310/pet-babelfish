@@ -1,11 +1,11 @@
 # Diagram-callout OCR
 
-Parts diagrams carry cross-reference **callout** numbers baked into the image as pixels — confirmed
+Parts diagrams carry cross-reference **callout** numbers baked into the image as pixels - confirmed
 absent from the PDF text layer, so OCR is the only route. The pipeline has two independent halves:
 
-1. **Detection** — *where* are the callouts? A trained CNN classifies connected-component
+1. **Detection** - *where* are the callouts? A trained CNN classifies connected-component
    candidates. This is the part under active development.
-2. **Recognition** — *what digit* is in each accepted box? Tesseract.js with a custom model. Stable.
+2. **Recognition** - *what digit* is in each accepted box? Tesseract.js with a custom model. Stable.
 
 Both run in the browser inside `docs/ingest.worker.js`. Their output is the `callout` table
 (one row per detected box, coords normalized per-axis to 0–10000).
@@ -20,10 +20,10 @@ diagram (CCITT G4)
   → callout rows
 ```
 
-## Detection — the CNN gate
+## Detection - the CNN gate
 
 Candidate generation (connected components) has **candidate-recall ≥ 0.995** on every gold catalog,
-so it's not the bottleneck — the classifier's whole job is **precision**: reject the ~68% of
+so it's not the bottleneck - the classifier's whole job is **precision**: reject the ~68% of
 candidates that are part edges, bolts, leader stubs, and legend digits.
 
 **Model:** `callout-cnn.onnx` (~25.5k params, 102 KB, opset 13). Trained on 5 gold catalogs (996,
@@ -55,13 +55,13 @@ uv run ocr/train_classifier.py  # train → ocr/callout-cnn.onnx (+ .meta.json, 
   G4 with `ccitt_decode.py`, and emits labeled 48×48 patches (`patches.npz`, `manifest.jsonl`).
   Positives = CC blobs that overlap a GT box (+ a safety-net patch per box); negatives = CC blobs
   outside every GT box. Inside a compound-callout box (`3/1`) the **digit** components are labeled
-  positive (aligned left-to-right to the number's chars) but the **`/` stroke stays ignore** — an
+  positive (aligned left-to-right to the number's chars) but the **`/` stroke stays ignore** - an
   isolated slash is indistinguishable from a `1`, so making it a positive would cost precision.
 - `train_classifier.py` trains with augmentation that helped (rot ±10°, trans ±4px, scale ±15%; no
-  flips — they tilt digits) and `pos_weight` for imbalance. Verified vs PyTorch to 1e-7; same 102 KB
+  flips - they tilt digits) and `pos_weight` for imbalance. Verified vs PyTorch to 1e-7; same 102 KB
   ONNX / identical I/O contract each retrain.
 - **Generalization:** the model transfers cleanly across modern catalogs, but each **old typeface**
-  needs its own gold to reach full recall (leave-one-catalog-out recall drops on unseen old glyphs —
+  needs its own gold to reach full recall (leave-one-catalog-out recall drops on unseen old glyphs -
   e.g. unseen-911 0.688 → trained-911 0.969). Extend gold, don't port heuristics.
 
 ### Retraining loop
@@ -70,17 +70,17 @@ Add gold for a catalog → `dataset.py` → `train_classifier.py` → deploy to 
 → re-eval (below) → keep `OCR_USE_MODEL=true` only if it clears the bar (F1 ≥ heuristic and no
 failure bucket regresses on any gold catalog).
 
-## Recognition — Tesseract
+## Recognition - Tesseract
 
 Tesseract.js reads the digits in each accepted group, loading a custom `porsche` model from
 `docs/tessdata/`. Recognition is strong and stable; almost all remaining callout misses are
 detection, not misreads.
 
-**Model:** `ocr/porsche.traineddata` — a fine-tune of Tesseract `4.0.0_best/eng` (the model
+**Model:** `ocr/porsche.traineddata` - a fine-tune of Tesseract `4.0.0_best/eng` (the model
 Tesseract.js's WASM is compiled against; fast/integer models can't be fine-tuned). Trained on
 **14,937 real digit glyphs harvested from GT boxes** (both catalog fonts), which replaced the
 original single synthetic font, plus **whole-box compound crops** so it reads the `/` in
-compound callouts (`3/2`) in context — an isolated slash is indistinguishable from a `1`, so it
+compound callouts (`3/2`) in context - an isolated slash is indistinguishable from a `1`, so it
 can only be learned from the full box; see [COMPOUND_PLAN.md](COMPOUND_PLAN.md).
 
 ```
@@ -99,27 +99,27 @@ does nothing.
 
 ### Tesseract training on Windows (UB-Mannheim), two non-obvious bugs
 
-- **`Deserialize header failed`** — the lstmf files are in a Tesseract-4 binary format
+- **`Deserialize header failed`** - the lstmf files are in a Tesseract-4 binary format
   `lstmtraining` 5.x can't read. Fix: point `--tessdata-dir` at the installed UB-Mannheim tessdata
   (whose `lstm.train` sets *both* `tessedit_train_line_recognizer` and `tessedit_init_config_only`);
   don't build a stripped-down tessdata-local.
-- **`Encoding of string failed! Failure bytes: 9 30`** — the WordStr box file's optional second
+- **`Encoding of string failed! Failure bytes: 9 30`** - the WordStr box file's optional second
   line (`\t0 0 0 0 0`) bleeds a tab into the transcription, which isn't in the unicharset. Fix:
   write a single-line WordStr box in binary mode (`\n`, no `\r\n`).
 
 ## Ground truth
 
-Evaluation and training data live under `groundtruth/<catalog>/` (gitignored — the only copies are
+Evaluation and training data live under `groundtruth/<catalog>/` (gitignored - the only copies are
 local). Boxes are per-axis 0–10000, the same space as the `callout` table. Tiers: **gold**
 (human-verified), **silver** (Vision-derived, unverified).
 
 Built and reviewed with the `tools/` GT pipeline (see [../tools/README.md](../tools/README.md)):
 Cloud Vision multi-scale OCR (recall ~93%; single-scale only 86% because small diagrams render
 tiny) proposes boxes and reconciles them against the parts-list expected set; a **Sonnet** resolver
-locates the misses (Haiku mislocated ~40% — don't use it); `tighten-box.py` snaps to glyph bounds;
+locates the misses (Haiku mislocated ~40% - don't use it); `tighten-box.py` snaps to glyph bounds;
 `gt-editor.py`/`.html` is the human last-mile editor. Note: callouts are **not** a subset of part
-positions — the shared diagram shows every position while the parts list shows only the applicable
-ones — so some real callouts have no part row, and gating callouts by the parts list *regresses*
+positions - the shared diagram shows every position while the parts list shows only the applicable
+ones - so some real callouts have no part row, and gating callouts by the parts list *regresses*
 the eval. Don't do it.
 
 Compound ids (`2/1`, `(3/1)`, old catalogs) are **human-gold only**: the digit-only OCR can't read
@@ -127,7 +127,7 @@ the `/`, so they surface as expected-but-missing and stay unmatched FNs in the e
 
 ## Evaluation
 
-`tools/ocr-eval.py` grades the `callout` table against `groundtruth.json` — per-instance P/R/F1 at
+`tools/ocr-eval.py` grades the `callout` table against `groundtruth.json` - per-instance P/R/F1 at
 IoU≥thr, mean IoU, detection-only recall. Reference points (callout-level, IoU≥0.3):
 
 | Catalog | Heuristic (old) | CNN model (current) |
@@ -137,7 +137,7 @@ IoU≥thr, mean IoU, detection-only recall. Reference points (callout-level, IoU
 
 `ocr-diagnose.py` buckets every FN/FP (missed / misread-near / spurious); `ocr-render.py` draws the
 boxes. Use `tools/export-opfs.py` to get a diagram-bearing SQLite for these first. The `ocr-lab.py`
-harness uses **system** Tesseract, so it's for detection/grouping iteration only — re-check
+harness uses **system** Tesseract, so it's for detection/grouping iteration only - re-check
 recognition claims in-browser (production uses dual-PSM Tesseract.js).
 
 ## Gotchas
@@ -146,7 +146,7 @@ recognition claims in-browser (production uses dual-PSM Tesseract.js).
   `Promise.all`; concurrent `session.run()` clobbered the shared output binding and threw, silently
   dropping every callout in the slowest sections. Inference is serialized through `runOrt()`;
   Tesseract stays parallel (net ~0.1 s/diagram, no speed cost).
-- **Python tools can't `Image.open()` a diagram blob** — it's a raw CCITT G4 bitstream, not a
+- **Python tools can't `Image.open()` a diagram blob** - it's a raw CCITT G4 bitstream, not a
   container. Decode with `ccitt_decode.py` using `section.diagram_w/diagram_h`.
 
 ## Files
@@ -157,7 +157,7 @@ recognition claims in-browser (production uses dual-PSM Tesseract.js).
 | `callout-cnn.meta.json` / `.pr_curve.csv` | Threshold/metadata + full PR curve. |
 | `dataset.py` | Build CNN training patches from gold GT. |
 | `train_classifier.py` | Train the detector CNN → ONNX. |
-| `ccitt_decode.py` | Python port of `docs/ccitt.js` — decode G4 diagram blobs. |
+| `ccitt_decode.py` | Python port of `docs/ccitt.js` - decode G4 diagram blobs. |
 | `harvest.py` | Harvest real digit glyphs from GT boxes for Tesseract training. |
 | `train.py` | Tesseract LSTM fine-tune pipeline → `porsche.traineddata`. |
 | `generate.py` / `ipa_font.ttf` | Legacy synthetic-glyph generation (superseded by `harvest.py`). |

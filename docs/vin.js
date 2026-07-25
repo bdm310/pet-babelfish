@@ -77,7 +77,7 @@
   // sections' typed scope columns). A token we cannot place is dropped: gating a
   // car behind a facet value no part carries would hide the whole catalog.
   //
-  // `allRemarks` is every vin_range remark in the catalog — the body style is
+  // `allRemarks` is every vin_range remark in the catalog - the body style is
   // often stated only by omission (see below), which needs the whole set to read.
   function variantFacets(remark, allRemarks, lineOptions, bodyOptions) {
     const set    = opts => new Set((opts || []).map(o => String(o).toUpperCase()));
@@ -87,7 +87,7 @@
     const toks   = tokens(pm.variant);
     const last   = (ts, vocab) => ts.filter(t => vocab.has(t)).pop() || '';
 
-    // The family is named first and narrowed after — "997 Turbo GT2" is a GT2 —
+    // The family is named first and narrowed after - "997 Turbo GT2" is a GT2 -
     // so the LAST token the catalog knows as a line is the specific one.
     const line = last(toks, lines);
 
@@ -127,7 +127,7 @@
   // Find every vin_range row whose prefix matches and whose [from,to] serial span
   // contains the decoded chassis. Rows: { from, to, ...passthrough }.
   //
-  // An empty `to` means "from this serial onward" — the open-ended form the old
+  // An empty `to` means "from this serial onward" - the open-ended form the old
   // catalogs use (911 Turbo lists only a start per type). Modern ranges always
   // carry both bounds, so this widening never touches the 17-char VIN path.
   function matchChassis(chassis, rows) {

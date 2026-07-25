@@ -1,6 +1,6 @@
 # Dev tooling
 
-Automation and diagnostics for the pipeline. None of it ships in the app (`docs/`) — it's for
+Automation and diagnostics for the pipeline. None of it ships in the app (`docs/`) - it's for
 ingesting in bulk, inspecting the live in-browser database, and running the OCR/ground-truth loop.
 Python is run via `uv`; PowerShell scripts are `.ps1`.
 
@@ -14,12 +14,12 @@ uv run --with playwright python -m playwright install chromium
 
 ## Ingest & inspect
 
-### `ingest.py` — automated PDF ingest
+### `ingest.py` - automated PDF ingest
 Starts a local server, uploads the PDF to `ingest.html` via Playwright, waits for the worker.
 ```powershell
-# First ingest — full pipeline incl. diagram render + OCR (slow)
+# First ingest - full pipeline incl. diagram render + OCR (slow)
 uv run --with playwright python tools/ingest.py catalog.pdf --catalog-id 997tt
-# Re-extract parts text only — skips OCR (fast; iterating on part extraction)
+# Re-extract parts text only - skips OCR (fast; iterating on part extraction)
 uv run --with playwright python tools/ingest.py catalog.pdf --catalog-id 997tt --parts-only
 # Re-run everything incl. OCR (diagram/OCR logic changed)
 uv run --with playwright python tools/ingest.py catalog.pdf --catalog-id 997tt --force
@@ -27,7 +27,7 @@ uv run --with playwright python tools/ingest.py catalog.pdf --catalog-id 997tt -
 `--parts-only` falls back to full ingest if the catalog doesn't exist yet.
 `ingest-all.ps1` batch-ingests every source PDF; `verify-all.ps1` batch-verifies.
 
-### `verify.py` — DB summary + screenshots
+### `verify.py` - DB summary + screenshots
 Exports the SQLite from OPFS, runs summary queries with Python `sqlite3`, and takes four viewer
 screenshots. Output goes to a timestamped `verify-output/` dir (gitignored).
 ```powershell
@@ -35,13 +35,13 @@ uv run --with playwright python tools/verify.py --catalog-id 997tt
 uv run --with playwright python tools/verify.py --catalog-id 997tt --section 101-000 --search "Bremsbelag"
 ```
 
-### `screenshot.py` — single-shot screenshot / JS eval
+### `screenshot.py` - single-shot screenshot / JS eval
 ```powershell
 uv run --with playwright python tools/screenshot.py --catalog 997tt --start-server
 uv run --with playwright python tools/screenshot.py --eval "document.getElementById('statusBar').textContent"
 ```
 
-### `inspect-pdf.py` — dump source-PDF page text
+### `inspect-pdf.py` - dump source-PDF page text
 For comparing the PDF against ingested DB data.
 ```powershell
 uv run --with pdfplumber python tools/inspect-pdf.py catalog.pdf --toc
@@ -82,7 +82,7 @@ The pipeline is documented in **[../ocr/README.md](../ocr/README.md)**; the tool
 |---|---|
 | `ocr-groundtruth.py` | Build GT for a catalog (Cloud Vision multi-scale + parts-list reconcile). |
 | `gt-init.py` | Seed a GT folder with no Vision (heuristic/model callouts as a baseline). |
-| `gt-editor.py` + `.html` | Browser GT editor — review/add/move/resize callout boxes per section. |
+| `gt-editor.py` + `.html` | Browser GT editor - review/add/move/resize callout boxes per section. |
 | `gt-queue-prep.py` / `gt-queue-merge.py` | Render the human-review queue / fold results back into GT. |
 | `tighten-box.py` / `gt-retighten.py` | Snap GT boxes to true glyph bounds (deterministic). |
 | `gt-ocr-verify.py` | Re-OCR every GT box to flag mislabeled numbers. |

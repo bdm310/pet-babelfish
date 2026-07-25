@@ -1,4 +1,4 @@
-"""CCITT Group 4 (ITU-T T.6) bilevel decoder — Python port of the decode half of
+"""CCITT Group 4 (ITU-T T.6) bilevel decoder - Python port of the decode half of
 docs/ccitt.js. Diagrams are stored as raw T.6 bitstream (no header); width/height
 ride alongside. Convention: white=0, black=1, MSB-first bit packing (FillOrder 1).
 

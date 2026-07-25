@@ -92,10 +92,10 @@ def compound_digit_boxes(img, g):
 
     Connected-components the ink in the box and aligns them left-to-right to the
     number's characters (same method as ocr/harvest_compound.py). Returns the boxes
-    of the DIGIT chars only — the '/' stroke is excluded so it stays an ignore region
+    of the DIGIT chars only - the '/' stroke is excluded so it stays an ignore region
     (an isolated slash is indistinguishable from a '1', so teaching the gate to accept
     it would cost precision). Returns [] when the component count doesn't match the
-    char count (fused/broken glyphs), leaving the whole box as ignore — never guess.
+    char count (fused/broken glyphs), leaving the whole box as ignore - never guess.
     """
     num, gx0, gy0, gx1, gy1 = g
     chars = str(num)
@@ -325,7 +325,7 @@ def write_outputs(all_rows, all_stats, cats):
 
 
 def write_report(all_stats, catalogs, labels, sources, cats):
-    lines = ["# Phase 1 dataset — callout patch training set (5 GOLD catalogs)", ""]
+    lines = ["# Phase 1 dataset - callout patch training set (5 GOLD catalogs)", ""]
     lines.append("Patches built for every gold catalog; the trainer assigns train/val/test "
                  "at train time (this file bakes in no split).")
     lines.append("Compound callouts ('2/1') are IGNORE regions: no positive patch, and CC "

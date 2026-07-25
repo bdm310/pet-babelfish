@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Snap rough callout locations to pixel-tight glyph boxes — deterministically.
+Snap rough callout locations to pixel-tight glyph boxes - deterministically.
 
 An agent only has to say roughly WHERE a number is (grid reading). This tool does
 the precision: it binarizes the section's diagram, labels connected components, and

@@ -3,13 +3,13 @@
 Harvest REAL per-digit glyph images from the ground-truth callout boxes of every
 ingested catalog and write them as Tesseract training triples (.tif/.gt.txt/.box)
 into ocr/train/ground-truth/. This replaces the single-synthetic-font training set
-(ipa_font only) with real glyphs from BOTH the 996 and 997 fonts — the fix for the
+(ipa_font only) with real glyphs from BOTH the 996 and 997 fonts - the fix for the
 996 "1"/"11" recognition gap, which is a font-coverage problem.
 
 Method: for each GT callout box, connected-component the ink inside it. If the number
 of digit-sized components equals the number of digits, assign components left->right to
 the digits and emit one training image per (component, digit). Boxes whose component
-count disagrees (touching or broken glyphs) are skipped — never guess a label.
+count disagrees (touching or broken glyphs) are skipped - never guess a label.
 
 Each emitted glyph is normalized exactly like the detector normalizes a candidate
 (height OCR_H, white pad) so training matches inference.

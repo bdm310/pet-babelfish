@@ -33,7 +33,7 @@ LSTMTRAIN = TESS_DIR / "lstmtraining.exe"
 COMBINE   = TESS_DIR / "combine_tessdata.exe"
 TESSDATA  = TESS_DIR / "tessdata"
 
-# Fine-tuning requires a floating-point (best) model — fast/integer models cannot
+# Fine-tuning requires a floating-point (best) model - fast/integer models cannot
 # be continued from. Use the 4.0.0_best from projectnaptha, which matches the
 # architecture Tesseract.js's WASM was compiled against (not the 5.x tessdata_best
 # from UB-Mannheim, which triggers DotProductSSE paths absent from the WASM binary).
@@ -81,7 +81,7 @@ def gen_lstmf() -> None:
     lstmtraining 5.x expects.  A custom tessdata-local with only the first flag
     produces an incompatible (Tesseract 4-era) format.
 
-    Box files must be single-line WordStr format — the trailing \\t end-of-word
+    Box files must be single-line WordStr format - the trailing \\t end-of-word
     line bleeds into the transcription and causes encoding failures.
     """
     LSTMF_DIR.mkdir(exist_ok=True)
@@ -111,7 +111,7 @@ def gen_lstmf() -> None:
 def write_lists() -> None:
     all_lstmf = sorted(LSTMF_DIR.glob("*.lstmf"))
     if not all_lstmf:
-        sys.exit("No .lstmf files found — lstmf generation may have failed")
+        sys.exit("No .lstmf files found - lstmf generation may have failed")
     random.seed(0)
     random.shuffle(all_lstmf)
     n_eval = max(1, len(all_lstmf) // 10)
@@ -150,7 +150,7 @@ def main() -> None:
         if not exe.exists():
             sys.exit(f"Missing: {exe}\n  Install: winget install UB-Mannheim.TesseractOCR")
     if not GT_DIR.exists() or not any(GT_DIR.glob("*.tif")):
-        sys.exit("No training data — run generate.py first:\n  uv run ocr/generate.py")
+        sys.exit("No training data - run generate.py first:\n  uv run ocr/generate.py")
 
     download_best()
     extract_lstm()

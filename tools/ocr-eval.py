@@ -3,11 +3,11 @@
 Grade the shipping Tesseract callout OCR against the ground-truth dataset.
 
 Ground truth (groundtruth/<catalog>/groundtruth.json) holds, per section, the true
-callout instances {num, box} in the 0-10000 space — silver (Vision multi-scale on
+callout instances {num, box} in the 0-10000 space - silver (Vision multi-scale on
 CLEAN sections) + gold (Vision+agent, every missing callout resolved/confirmed).
 The system under test is the `callout` table in that catalog's SQLite (Tesseract's
 own detections, same 0-10000 space). We match predictions to truth and report
-per-instance precision/recall/F1 and localization IoU — a real metric, unlike the
+per-instance precision/recall/F1 and localization IoU - a real metric, unlike the
 old set-recall-only coverage check.
 
 A prediction is a TRUE POSITIVE when it shares a truth callout's NUMBER and their

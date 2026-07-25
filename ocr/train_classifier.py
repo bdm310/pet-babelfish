@@ -504,15 +504,15 @@ def write_report(args, n_params, onnx_size, thr, best_epoch, R, fp, fn, onnx_ok,
     ename = "TEST" if has_test else "val"
     lines = []
     A = lines.append
-    A("# Phase 2 — callout CNN classifier: training report\n")
+    A("# Phase 2 - callout CNN classifier: training report\n")
     A("Binary classifier that gates candidate connected-component blobs into "
       "callout / not-callout. It does **not** read the digit (Tesseract does); "
-      "its job is **precision** — reject ~67% non-callout candidates while keeping "
+      "its job is **precision** - reject ~67% non-callout candidates while keeping "
       "essentially all real callouts.\n")
     if has_test:
         A(f"Split: **leave-one-catalog-out**, test = `{args.holdout}` (LOCO sanity run).\n")
     else:
-        A("Split: **final all-5-gold model** — trained on 996 + 997TT + 356 + Boxster + 911, "
+        A("Split: **final all-5-gold model** - trained on 996 + 997TT + 356 + Boxster + 911, "
           "with a held-out val split of sections (per catalog) for early-stop + threshold "
           "selection. This is the model that ships to seed the held-out catalogs.\n")
 
@@ -520,7 +520,7 @@ def write_report(args, n_params, onnx_size, thr, best_epoch, R, fp, fn, onnx_ok,
     A("3× (Conv3×3-BN-ReLU-MaxPool2) with channels 1→16→32→64, "
       "GlobalAvgPool → FC(64→32)-ReLU-Dropout(0.3) → FC(32→1) logit.\n")
     A(f"- Parameters: **{n_params:,}**")
-    A(f"- ONNX size: **{onnx_size/1024:.1f} KB** (opset 13, dynamic batch) — target <1 MB met")
+    A(f"- ONNX size: **{onnx_size/1024:.1f} KB** (opset 13, dynamic batch) - target <1 MB met")
     A(f"- ONNX vs PyTorch max abs diff on 64 {ename.lower()} patches: **{max_diff:.2e}** (verified close)\n")
 
     A("## Preprocessing contract (Phase 3 MUST replicate exactly)\n")
@@ -553,7 +553,7 @@ def write_report(args, n_params, onnx_size, thr, best_epoch, R, fp, fn, onnx_ok,
         A(row(R[k]))
     A("")
 
-    A(f"### Operating points — {ename} cc-only\n")
+    A(f"### Operating points - {ename} cc-only\n")
     A("The chosen max-F1 threshold is recall-heavy; since the gate's job is precision, "
       "downstream may prefer a higher threshold. Best precision at each recall floor "
       "(full curve in `ocr/callout-cnn.pr_curve.csv`):\n")
@@ -563,17 +563,17 @@ def write_report(args, n_params, onnx_size, thr, best_epoch, R, fp, fn, onnx_ok,
         A(f"| ≥{rf:.3f} | {pr:.4f} | {rc:.4f} | {th:.4f} |")
     A("")
 
-    A(f"## Confusion matrix — {ename} cc-only, at chosen threshold\n")
+    A(f"## Confusion matrix - {ename} cc-only, at chosen threshold\n")
     A("| | pred callout | pred not |")
     A("|---|---|---|")
     A(f"| **actual callout** | TP {ec['tp']} | FN {ec['fn']} |")
     A(f"| **actual not** | FP {ec['fp']} | TN {ec['tn']} |\n")
 
     A(f"## What are the errors? ({ename} cc-only, via manifest bboxes)\n")
-    A(f"**False positives ({fp.get('count',0)})** — non-callouts scored as callouts. "
+    A(f"**False positives ({fp.get('count',0)})** - non-callouts scored as callouts. "
       f"median blob w×h = {fp.get('w_median','?')}×{fp.get('h_median','?')} px; "
       f"{fp.get('narrow_w_le12',0)} are narrow (w≤12px, lone-stroke / clip / part-edge shaped).")
-    A(f"\n**False negatives ({fn.get('count',0)})** — real callouts missed. "
+    A(f"\n**False negatives ({fn.get('count',0)})** - real callouts missed. "
       f"median w×h = {fn.get('w_median','?')}×{fn.get('h_median','?')} px; "
       f"{fn.get('tall_thin(w<=12,h>=20)',0)} are the thin tall lone-'1' shape (w≤12,h≥20). "
       f"Missed-digit histogram: {fn.get('digit_hist_top',{})}; "
@@ -585,7 +585,7 @@ def write_report(args, n_params, onnx_size, thr, best_epoch, R, fp, fn, onnx_ok,
         verdict = (
             "GENERALIZES WELL" if gen_gap < 0.03 else
             "GENERALIZES (minor gap)" if gen_gap < 0.08 else
-            "PARTIAL — measurable cross-catalog drop"
+            "PARTIAL - measurable cross-catalog drop"
         )
         A("## Cross-catalog generalization (the point of leave-one-catalog-out)\n")
         A(f"- val cc-only AUC-PR = **{vc['ap']:.4f}**, F1 = {vc['f1']:.4f}")

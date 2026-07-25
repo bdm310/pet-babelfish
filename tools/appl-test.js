@@ -104,7 +104,7 @@ const IDX = { codeIndex: { engines: ['9770', '9770S'], gearboxes: ['A9750', 'G97
   ok('rejects a car with 101', !APPL.matches(p, { prCodes: new Set(['101']) }));
 }
 
-// ── '/' spans facets OR alternates within one — decided by classification ─────
+// ── '/' spans facets OR alternates within one - decided by classification ─────
 {
   const p = APPL.parse('TURBO/COUPE', IDX);
   eq('line side', p.lines.any, ['TURBO']);
@@ -114,7 +114,7 @@ const IDX = { codeIndex: { engines: ['9770', '9770S'], gearboxes: ['A9750', 'G97
   ok('not a GT2 Coupe', !APPL.matches(p, { line: 'GT2', body: 'COUPE' }));
 }
 {
-  // Same facet on both sides — an unconditional AND here would hide the part
+  // Same facet on both sides - an unconditional AND here would hide the part
   // from every car, since no car is both a Coupe and a Cabrio.
   const p = APPL.parse('COUPE/CABRIO', IDX);
   eq('one body group, two alternatives', p.bodies.any, ['COUPE', 'CABRIO']);
@@ -176,7 +176,7 @@ eq('spaced serial keys like the table form', APPL.serialKey('99-8S780 473'),
    APPL.serialKey('99-8S780473'));
 eq('engine serial likewise', APPL.serialKey('628 01460'), APPL.serialKey('62801460'));
 
-// 107-005 p84 — the one breakpoint that speaks to the test car's own engine block.
+// 107-005 p84 - the one breakpoint that speaks to the test car's own engine block.
 {
   const up = APPL.parse('M >> 628 01460', IDX);
   ok('engine 62807297 is past the changeover', !APPL.matches(up, CAR));
@@ -185,7 +185,7 @@ eq('engine serial likewise', APPL.serialKey('628 01460'), APPL.serialKey('628014
   ok('engine number unknown ⇒ not enforced', APPL.matches(up, {}));
   ok('  block unknown ⇒ not enforced', APPL.matches(up, { engineNum: '62807297' }));
 }
-// 813-025 p560 — both breakpoints sit in block 627 (MY2007); the car's engine is
+// 813-025 p560 - both breakpoints sit in block 627 (MY2007); the car's engine is
 // in 628. A flat compare would read 62807297 > 62700889 and hide the part.
 {
   const p = APPL.parse('PR:249,480 | M >> 627 00765 | M >> 627 00889', IDX);
@@ -193,7 +193,7 @@ eq('engine serial likewise', APPL.serialKey('628 01460'), APPL.serialKey('628014
     ...CAR, prCodes: new Set(['480']),
   }));
 }
-// 809-000 p443 — one breakpoint per VIN block: Turbo RoW, Cabrio RoW, GT2. The
+// 809-000 p443 - one breakpoint per VIN block: Turbo RoW, Cabrio RoW, GT2. The
 // catalog prints none for the USA block the test car is in.
 {
   const up = APPL.parse('F >> 99-8S780 473 | F >> 99-8S786 563 | F >> 99-8S794 072', IDX);
@@ -212,7 +212,7 @@ eq('engine serial likewise', APPL.serialKey('628 01460'), APPL.serialKey('628014
   const CAB = { chassis: '99-8S786900', chassisBlock: CABRIO08 };
   ok('Cabrio past 786563 loses the early part', !APPL.matches(up, CAB));
 }
-// 905-000 p704 — a range that runs from a MY2008 block into a MY2009 one. The
+// 905-000 p704 - a range that runs from a MY2008 block into a MY2009 one. The
 // upper bound is in another block and must leave that side open, not reject.
 {
   const p = APPL.parse('F 99-8S782 392>> 99-9S760 152', IDX);
@@ -227,7 +227,7 @@ eq('engine serial likewise', APPL.serialKey('628 01460'), APPL.serialKey('628014
   eq('unreadable breakpoint kept raw', p.chassis.length, 1);
   ok('  and never enforced', APPL.matches(p, CAR));
 }
-// 501-001 p226 — the one glued breakpoint in the PDF ("F>>998S4794076", also a
+// 501-001 p226 - the one glued breakpoint in the PDF ("F>>998S4794076", also a
 // stray digit in the serial). It must read as a chassis segment, not a facet,
 // and its corrupt serial sits in no block, so it stays permissive.
 {
@@ -390,7 +390,7 @@ const OLD = { dialect: 'old', prCodes: ['M480', 'IX51', 'IXAA', 'M030'],
   eq('modern bare code ⇒ unknown, not PR', p.prGroups, []);
 }
 
-// ── WS5: LINE_SHAPE catch-all demoted — unknown words no longer enforce ───────
+// ── WS5: LINE_SHAPE catch-all demoted - unknown words no longer enforce ───────
 {
   const p = APPL.parse('AEROKIT BERUCOAT GAL SPORTS', OLD);
   eq('junk words are not enforced lines', p.lines.any, []);

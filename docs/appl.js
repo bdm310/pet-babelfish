@@ -1,4 +1,4 @@
-// Applicability grammar — the scope language of the Model column and of the
+// Applicability grammar - the scope language of the Model column and of the
 // applicability-shaped footers printed in the Description column.
 // Pure, dependency-free. Exposed as self.APPL (browser <script>, worker
 // importScripts) and module.exports (node test).
@@ -12,9 +12,9 @@
 //   └─ facets ─┘ └─ option ──┘   └─ year/market ┘
 //
 //   ' | '  separates segments. A segment carrying a year clause is an ALTERNATIVE
-//          to every other year segment — "D >> - MJ 2007 | D - MJ 2008>>" is a part
+//          to every other year segment - "D >> - MJ 2007 | D - MJ 2008>>" is a part
 //          sold up to MY2007 *and again* from MY2008, not the empty intersection.
-//   ','    OR — within a PR list ("PR:375,377" = either option slot value) and
+//   ','    OR - within a PR list ("PR:375,377" = either option slot value) and
 //          between codes ("G9750,G9788" = either gearbox).
 //   '+'    AND. It frequently DANGLES at the end of a column ("9770+") because the
 //          right operand was routed to a different column; the operator survives the
@@ -24,18 +24,18 @@
 //          model line AND a body style, but "COUPE/CABRIO" and "TURBO/GT2" are two
 //          alternatives WITHIN one facet. Classifying each side independently and
 //          letting the facet rule (OR within, AND across) sort it out is what makes
-//          both read correctly — an unconditional AND would make "COUPE/CABRIO"
+//          both read correctly - an unconditional AND would make "COUPE/CABRIO"
 //          unsatisfiable and hide the part from every car.
 //   '-'    negates: "-422" excludes an option, '-"CN."' excludes a market.
 //
 // Facets are kept SEPARATE and typed. A flat string cannot distinguish
-// "(TURBO or GT2) and PR:480" from "GT2 and PR:098" — both are just tokens.
+// "(TURBO or GT2) and PR:480" from "GT2 and PR:098" - both are just tokens.
 (function (root) {
   'use strict';
 
   // Body styles are stable across model lines, so a literal set generalises where
   // a per-catalog vocabulary would not. Everything else alphabetic is a model line
-  // (TURBO, GT2, CARRERA, …) — enumerating those per catalog would not generalise.
+  // (TURBO, GT2, CARRERA, …) - enumerating those per catalog would not generalise.
   const BODY_STYLES = new Set(['COUPE', 'CABRIO', 'TARGA', 'ROADSTER', 'SPYDER']);
 
   // A token dominated by digits is a code (engine/gearbox/option), never a line:
@@ -47,7 +47,7 @@
   // A model line may carry a trailing digit (GT2) but must start with letters.
   const LINE_SHAPE = /^[A-Z][A-Z0-9]*$/;
 
-  // '"GB."' / '-"CN."' — a quoted market code, padded to three chars with dots.
+  // '"GB."' / '-"CN."' - a quoted market code, padded to three chars with dots.
   const QUOTED_MARKET = /^(-)?"([^"]+)"$/;
 
   // Old-dialect markets print parenthesized instead of quoted: "(J)", "(AUS)",
@@ -79,7 +79,7 @@
   const RS40        = /^(?:RS[-\s]?)?4[.,]0$/;
   const TRIM_WORDS  = new Set(['S', 'GTS', 'RS']);
 
-  // A serial as the parts pages print it — "99-8S780 473", "628 01460". The space
+  // A serial as the parts pages print it - "99-8S780 473", "628 01460". The space
   // is column padding, not structure: the catalog's own V-page tables write the
   // same numbers unbroken ("99-8S780061", "628 00501"), so both forms must key
   // identically. The trailing digit run is the number; whatever precedes it
@@ -111,8 +111,8 @@
 
   // Uppercase; "GT-2"/"GT_2" and "GT2" are the same car printed several ways, and
   // any exact-match filter splits them into separate populations if we do not fold
-  // them here. The GT2 RS is the worst offender — printed GT2RS / GT-2 RS / GT_2-RS
-  // — so its separator is folded too, leaving decompose() to split line from trim.
+  // them here. The GT2 RS is the worst offender - printed GT2RS / GT-2 RS / GT_2-RS
+  // - so its separator is folded too, leaving decompose() to split line from trim.
   function normalizeToken(t) {
     return String(t || '').trim().toUpperCase()
       .replace(/\bGT[-_](\d)/g, 'GT$1');
@@ -132,8 +132,8 @@
   }
 
   // The parser is only as good as the dictionaries the caller feeds it. Every set
-  // is the catalog's OWN vocabulary — code tables, option table, and the line words
-  // enumerated by sales_type/vin_range.remark — so nothing here is hardcoded per
+  // is the catalog's OWN vocabulary - code tables, option table, and the line words
+  // enumerated by sales_type/vin_range.remark - so nothing here is hardcoded per
   // catalog. `dialect` ('old'|'modern') is detected once at ingest from V-page
   // header vocabulary; it gates the forms unique to the old catalogs (bare PR codes,
   // parenthesised markets, two-digit years) so the modern dialect is never touched.
@@ -203,7 +203,7 @@
   }
 
   // Route one atomic token into its facet. Anything we cannot place lands in
-  // `unknown`, which is never enforced — a code the catalog references but whose
+  // `unknown`, which is never enforced - a code the catalog references but whose
   // V-page table does not exist (a front-axle differential, say) must stay
   // permissive rather than reject every vehicle. Since WS5, a token that is neither
   // a known code, a known line, nor a drive/trim atom is left in `unknown` too:
@@ -229,7 +229,7 @@
     // A line is enforced only when it is in the catalog's own line vocabulary. When
     // no vocabulary was supplied, a multi-character all-caps word is still taken as
     // a line (the modern-dialect fallback the tests exercise), but a single stray
-    // letter or an L/R marker is not — those go to unknown, permissive.
+    // letter or an L/R marker is not - those go to unknown, permissive.
     if (LINE_SHAPE.test(atom)) {
       if (idx.lines.size) {
         if (idx.lines.has(atom)) return addTo(out.lines, atom, negated);
@@ -259,7 +259,7 @@
       const pm = tok.match(PAREN_MARKET);
       if (pm) return addTo(out.markets, normalizeMarket(pm[2]), !!pm[1]);
 
-      // "-02" / "03-" / "00-01" — a Remark-column year window. Only expanded when a
+      // "-02" / "03-" / "00-01" - a Remark-column year window. Only expanded when a
       // century pivot is known, so an ambiguous two-digit run is never invented into
       // a year without the "Model life" header to anchor it.
       if (idx.yearPivot) {
@@ -309,7 +309,7 @@
     return found ? { from, to, market: market || null } : null;
   }
 
-  // "D >> - 31.07.2008" — a calendar-date window with the same '>>' direction rule
+  // "D >> - 31.07.2008" - a calendar-date window with the same '>>' direction rule
   // as MJ. The date maps to the model year via its calendar year, so it feeds the
   // same mjRanges list and needs no separate matcher.
   function parseDateSegment(seg, market) {
@@ -364,7 +364,7 @@
       // A segment with a year clause is its own alternative. Its leading letter is
       // the market the window applies to; the rest of the segment is the clause.
       // MJ and calendar-date clauses come FIRST because they too lead with a letter
-      // and carry '>>' — reading them as serial breakpoints would drop the year.
+      // and carry '>>' - reading them as serial breakpoints would drop the year.
       const dated = /\bMJ\b/.test(seg) || DATE_CLAUSE.test(seg);
       DATE_CLAUSE.lastIndex = 0;
       if (dated) {
@@ -381,7 +381,7 @@
         continue;
       }
 
-      // Serial breakpoint — the lead letter routes the block: F = chassis (Fahr-
+      // Serial breakpoint - the lead letter routes the block: F = chassis (Fahr-
       // gestell), M = engine (Motor), anything else (C = PDK, G = 356 gearbox) is a
       // transmission serial. The letter is a block key, never an enforced facet.
       const lead = serialLead(seg);
@@ -402,7 +402,7 @@
   // Is this whole string scope, or is it some other use of the column? The paints
   // section prints a two-character paint code in the Model column ("A 1", "9 S");
   // taking its halves for a model line would gate the part behind a line no car
-  // has. Demanding that EVERY token classify keeps such columns out — the caller
+  // has. Demanding that EVERY token classify keeps such columns out - the caller
   // then falls back to whatever it did before, which is never worse.
   function isScope(str, opts) {
     const p = parse(str, opts);
@@ -446,7 +446,7 @@
   }
 
   // Is this serial inside the number block the catalog assigned to the car?
-  // `block` is one vin_range / engine_number_range row — { from, to } as printed.
+  // `block` is one vin_range / engine_number_range row - { from, to } as printed.
   function inBlock(key, block) {
     if (!key || !block) return false;
     const lo = serialKey(block.from);
@@ -457,15 +457,15 @@
   }
 
   // Serial breakpoints (chassis, engine number) are NOT a flat number line. The
-  // catalog allocates a separate block per variant and market — the same MY2008
+  // catalog allocates a separate block per variant and market - the same MY2008
   // car is 99-8S780xxx as a rest-of-world Turbo, 99-8S786xxx as a Cabrio and
-  // 99-8S794xxx as a GT2 — so a part that changed at one point in production
+  // 99-8S794xxx as a GT2 - so a part that changed at one point in production
   // prints one breakpoint per block. Comparing a car against another block's
   // breakpoint is meaningless: 99-8S784090 is "before" the Cabrio's 786563 and
   // "after" the Turbo's 780473 while being neither.
   //
   // So only a breakpoint printed for the car's OWN block may speak, and those
-  // that do are ALTERNATIVES — the same rule as mjRanges. When the car's block
+  // that do are ALTERNATIVES - the same rule as mjRanges. When the car's block
   // states no breakpoint the catalog has not said anything about this car, and
   // silence must admit: inventing an answer here is what turns a false positive
   // into a false negative, which hides a part the owner actually needs.
@@ -476,7 +476,7 @@
     const usable = ranges.filter(r => inBlock(r.from, block) || inBlock(r.to, block));
     if (!usable.length) return true;
     // A bound sitting in a different block cannot exclude this car, so it leaves
-    // that side of the range open — "from MY2008 ... to MY2009" still admits a
+    // that side of the range open - "from MY2008 ... to MY2009" still admits a
     // MY2008 car whose own block only names the lower bound.
     return usable.some(r =>
       !(r.from && r.from.prefix === v.prefix && v.serial < r.from.serial) &&
@@ -500,7 +500,7 @@
 
   // vehicle: { line, body, drive, trim, engine, gearbox, market, year, prCodes:Set,
   //            chassis, chassisBlock, engineNum, engineNumBlock,
-  //            transmissionNum, transmissionBlock }  — each block is {from,to}.
+  //            transmissionNum, transmissionBlock }  - each block is {from,to}.
   // Chassis, engine number and transmission number are separate serial facets: F is
   // the car, M is the engine, C/G the gearbox, and a part can gate on any. `unknown`
   // is captured but never enforced.
@@ -522,14 +522,14 @@
 
   // Gearbox-trait words that read like a line but name a transmission: an enforced
   // line no car carries would hide every part that mentions one. Excluded from the
-  // derived line whitelist. Not a per-catalog list — these generalise.
+  // derived line whitelist. Not a per-catalog list - these generalise.
   const NON_LINE_WORDS = new Set(['TIPTRONIC', 'MANUAL', 'AUTOMATIC', 'PDK', 'GANG',
     'SPEED', 'ZYL', 'KW', 'PS', 'HP', 'MJ', 'PR', 'FL', 'FACELIFT', 'KAT']);
 
   // Build the parser's dictionaries from the catalog's OWN reference tables. One
   // implementation, called identically by the ingest worker (from the freshly
   // parsed V-pages) and the viewer (from the ingested tables), so the two never
-  // drift. Everything is derived — nothing is hardcoded per catalog. `dialect` and
+  // drift. Everything is derived - nothing is hardcoded per catalog. `dialect` and
   // `yearPivot` are detected once at ingest (V-page header vocabulary, Model-life
   // header) and stored on the catalog row for the viewer to read back.
   //   tables: { engineCodes:[{ec}], transmCodes:[{tc}], prCodes:[{code}],
@@ -537,7 +537,7 @@
   //             vehicleTypes:[string], dialect, yearPivot }
   // The old dialect has no sales_type and prints only "996 COUPE" in its VIN remark,
   // so its line words (CARRERA, …) come from the number-range tables' vehicle_type
-  // ("911 CARRERA", "911 CARRERA +M620 C4") — passed as vehicleTypes.
+  // ("911 CARRERA", "911 CARRERA +M620 C4") - passed as vehicleTypes.
   function buildIndex(tables) {
     const t = tables || {};
     const lineSet = new Set();

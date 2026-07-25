@@ -1,10 +1,10 @@
-// Garage store — persistent, multi-vehicle collection kept OUTSIDE catalog SQLite
+// Garage store - persistent, multi-vehicle collection kept OUTSIDE catalog SQLite
 // (catalog DBs are regenerated on re-ingest). One JSON file in OPFS root.
 //
 // A vehicle bundles an identity (nickname / VIN / decoded fields) with a saved
 // spec filter { vfYear, vfMarket, vfLine, vfBody, vfEngine, vfGearbox, engineNo,
 // gearboxNo, vfChassis, vfPrCodes } so "Open in viewer" restores the exact parts
-// view, plus `partMeta` —
+// view, plus `partMeta` -
 // the owner's per-part ok/notes marks (see setPartMeta). Every spec field is one
 // facet of the catalog's applicability grammar; a blank one does not filter.
 // Reserved field (savedParts) is carried through untouched for later phases.
@@ -93,11 +93,11 @@
   // ── Per-part metadata ───────────────────────────────────────────────
   // vehicle.partMeta maps a part key -> { ok, notes }: the owner's record of a
   // part's physical condition on their own car. Keys come from the viewer
-  // (`_partKey`) and are content-derived — catalog rowids are reassigned on
+  // (`_partKey`) and are content-derived - catalog rowids are reassigned on
   // re-ingest, which would silently move marks onto different parts.
 
   // Merge a patch ({ ok?, notes? }) into each key of `patches` in ONE file
-  // rewrite — marking a whole diagram must not cost one read-modify-write per
+  // rewrite - marking a whole diagram must not cost one read-modify-write per
   // part. A patch merges over the existing entry, so setting `ok` in bulk keeps
   // any note already on that part. Entries left carrying no information are
   // dropped so the file stays sparse. Returns the vehicle's partMeta, or null if

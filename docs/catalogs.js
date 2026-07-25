@@ -1,4 +1,4 @@
-// catalogs.js — the OPFS catalog directory, read the same way everywhere.
+// catalogs.js - the OPFS catalog directory, read the same way everywhere.
 // Exposed as self.CATALOGS (browser <script>), the same module pattern as
 // appl.js and schema.js.
 //
@@ -42,7 +42,7 @@
         db = new SQL.Database(new Uint8Array(buf));
         const row = db.exec('SELECT title, model FROM catalog LIMIT 1')[0]?.values?.[0];
         if (row) [title, model] = row;
-      } catch { /* unreadable or pre-title schema — fall back to the id */ }
+      } catch { /* unreadable or pre-title schema - fall back to the id */ }
       finally { if (db) db.close(); }
 
       found.push({ id, title: title || '', model: model || '', label: label(title, model, id) });
@@ -62,8 +62,8 @@
     } catch { return []; }
   }
 
-  // Copy a bundled catalog into OPFS under its id so the rest of the app — which
-  // only ever reads OPFS — can open it. A catalog already in OPFS (installed
+  // Copy a bundled catalog into OPFS under its id so the rest of the app - which
+  // only ever reads OPFS - can open it. A catalog already in OPFS (installed
   // earlier, or re-ingested locally under the same id) is left untouched: we never
   // overwrite the user's own copy. Idempotent; returns when the file is present.
   async function install(entry) {

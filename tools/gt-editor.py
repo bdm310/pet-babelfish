@@ -6,8 +6,8 @@
 Local web editor for reviewing and fixing diagram-callout ground truth.
 
 Serves a single-page UI over the groundtruth/<catalog>/ files. For each section it
-shows the diagram with three box layers — GT (editable, green), Vision (blue) and
-Tesseract (orange) as reference — plus the parts-list expected set as a completeness
+shows the diagram with three box layers - GT (editable, green), Vision (blue) and
+Tesseract (orange) as reference - plus the parts-list expected set as a completeness
 checklist. You can add/move/resize/delete boxes, fix numbers, one-click-accept a
 reference box into GT, edit the absent list, and mark a section verified. Saves write
 straight back to groundtruth.json (atomic replace).
@@ -15,7 +15,7 @@ straight back to groundtruth.json (atomic replace).
 Diagram blobs are CCITT Group-4 bitstreams (not images), so /api/diagram decodes
 them to PNG server-side via ocr/ccitt_decode.py before serving.
 
-Usage (deps auto-install from the inline script metadata above — note: no `python`):
+Usage (deps auto-install from the inline script metadata above - note: no `python`):
     uv run tools/gt-editor.py              # http://localhost:8770
     uv run tools/gt-editor.py --port 9000
 """

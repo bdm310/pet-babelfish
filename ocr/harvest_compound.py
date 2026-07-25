@@ -4,12 +4,12 @@ triples, so the recognition model learns to read the slash *in context*.
 
 Why whole-box and not per-glyph (harvest.py): in the old typefaces an isolated "/"
 glyph is visually indistinguishable from a "1" (both thin near-vertical strokes), so
-per-glyph training can't learn it — the disambiguating signal is that the slash sits
+per-glyph training can't learn it - the disambiguating signal is that the slash sits
 *between two digit groups*. Training on the full compound box as a sequence lets the
 LSTM use that context. See ocr/COMPOUND_PLAN.md.
 
 Reads diagrams from the shipped CCITT catalogs (docs/catalogs/<id>.sqlite) via
-ccitt_decode — the GT-dir catalog.sqlite is gitignored/local-only and harvest.py's
+ccitt_decode - the GT-dir catalog.sqlite is gitignored/local-only and harvest.py's
 Image.open() path predates the CCITT change.
 
     uv run --with opencv-python-headless --with pillow --with numpy \

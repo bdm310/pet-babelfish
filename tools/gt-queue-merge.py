@@ -96,7 +96,7 @@ for res_file in sorted(queue_dir.glob('*.result.json')):
     for c in res.get('callouts', []):
         cnum = str(c['num']).strip()     # string id token
         cbox = [int(c['x0']), int(c['y0']), int(c['x1']), int(c['y1'])]
-        # If this overlaps a seed box of the same number it's the SAME occurrence —
+        # If this overlaps a seed box of the same number it's the SAME occurrence -
         # keep Vision's. Otherwise it's a DISTINCT repeat the agent found (a callout
         # stamped more than once): add it so multiplicity is preserved.
         if any(s['num'] == cnum and iou([s['x0'], s['y0'], s['x1'], s['y1']], cbox) > 0.3

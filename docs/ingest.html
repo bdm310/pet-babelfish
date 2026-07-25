@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ingest a catalog — pet-babelfish</title>
+  <title>Ingest a catalog - pet-babelfish</title>
   <script>(function(){var t=localStorage.getItem('pb-theme');if(t)document.documentElement.dataset.theme=t;})()</script>
   <link rel="stylesheet" href="theme.css">
   <style>
@@ -142,7 +142,7 @@
       <div class="field">
         <label for="catalogId">Name this catalog</label>
         <input type="text" class="inp mono" id="catalogId" placeholder="e.g. 997TT-2005">
-        <div class="sub-hint muted">Used as the storage key. Auto-filled from the file name — edit if you like.</div>
+        <div class="sub-hint muted">Used as the storage key. Auto-filled from the file name - edit if you like.</div>
       </div>
 
       <button class="btn btn-primary" id="ingestBtn" disabled>Ingest</button>
@@ -157,7 +157,7 @@
           </div>
           <label class="check-row">
             <input type="checkbox" id="partsOnly">
-            <span>Parts only <span class="muted">— skip diagram re-render / OCR (faster)</span></span>
+            <span>Parts only <span class="muted">- skip diagram re-render / OCR (faster)</span></span>
           </label>
         </div>
       </details>
@@ -179,7 +179,7 @@
           <span class="step" data-stage="save"><span class="dot">4</span>Save</span>
         </div>
         <progress id="progressBar" value="0" max="100"></progress>
-        <div id="progressLabel" class="muted">—</div>
+        <div id="progressLabel" class="muted">-</div>
       </div>
 
       <div id="result">
@@ -278,7 +278,7 @@
       if (!file || !file.name.endsWith('.pdf')) return;
       selectedFile = file;
       dropzone.innerHTML =
-        `✓ ${file.name}<div class="dz-hint">${(file.size / 1024 / 1024).toFixed(1)} MB — click to choose a different file</div>`;
+        `✓ ${file.name}<div class="dz-hint">${(file.size / 1024 / 1024).toFixed(1)} MB - click to choose a different file</div>`;
       dropzone.appendChild(fileInput);
       dropzone.classList.add('loaded');
       // Pre-fill catalog ID from filename if empty
@@ -354,7 +354,7 @@
 
           case 'progress':
             progressBar.value = data.pct;
-            progressLabel.textContent = `${data.pct}% — ${data.label}`;
+            progressLabel.textContent = `${data.pct}% - ${data.label}`;
             appendLog(`[${String(data.pct).padStart(3)}%] ${data.label}`, 'info');
             setStage('extract'); // per-section work = extracting parts & diagrams
             break;
@@ -367,8 +367,8 @@
             progressLabel.textContent = 'Done';
             appendLog(
               partial
-                ? `✓ Done — ${data.sectionCount} section(s) re-ingested, ${data.partCount} parts.`
-                : `✓ Done — ${data.sectionCount} sections, ${data.partCount} parts ingested.`,
+                ? `✓ Done - ${data.sectionCount} section(s) re-ingested, ${data.partCount} parts.`
+                : `✓ Done - ${data.sectionCount} sections, ${data.partCount} parts ingested.`,
               'ok'
             );
             resultStats.innerHTML = `
@@ -387,8 +387,8 @@
 
           case 'error':
             appendLog(`✗ Error: ${data.message}`, 'err');
-            statusLine.textContent = 'Failed — see details';
-            progressLabel.textContent = 'Failed — see log';
+            statusLine.textContent = 'Failed - see details';
+            progressLabel.textContent = 'Failed - see log';
             ingestBtn.disabled = false;
             worker = null;
             break;
@@ -397,7 +397,7 @@
 
       worker.onerror = (e) => {
         appendLog(`✗ Worker error: ${e.message}`, 'err');
-        statusLine.textContent = 'Failed — see details';
+        statusLine.textContent = 'Failed - see details';
         ingestBtn.disabled = false;
         worker = null;
       };

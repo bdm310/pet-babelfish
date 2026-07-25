@@ -1,8 +1,8 @@
-// CCITT Group 4 (ITU-T T.6) bilevel codec — the diagram storage format.
+// CCITT Group 4 (ITU-T T.6) bilevel codec - the diagram storage format.
 //
 // Diagrams are pure black/white line art. Stored as raw T.6 bitstream in
 // section.diagram_blob (no TIFF container); width/height ride in
-// section.diagram_w/diagram_h because T.6 has no header — width is required to
+// section.diagram_w/diagram_h because T.6 has no header - width is required to
 // decode and height bounds the row count. ~44% smaller than the lossy RGB WebP
 // it replaces, with zero pixel loss.
 //
@@ -54,7 +54,7 @@
     1216:'0000001110111',1280:'0000001010010',1344:'0000001010011',1408:'0000001010100',1472:'0000001010101',1536:'0000001011010',
     1600:'0000001011011',1664:'0000001100100',1728:'0000001100101'};
 
-  // Extended makeup 1792..2560 — shared by both colours.
+  // Extended makeup 1792..2560 - shared by both colours.
   const SHARED_MAKEUP = {
     1792:'00000001000',1856:'00000001100',1920:'00000001101',1984:'000000010010',2048:'000000010011',
     2112:'000000010100',2176:'000000010101',2240:'000000010110',2304:'000000010111',2368:'000000011100',

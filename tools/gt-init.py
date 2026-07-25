@@ -13,7 +13,7 @@ For each catalog it writes groundtruth/<catalog-id>/:
   expected.json     {sid: sorted(int)} parts-list completeness oracle
   groundtruth.json  {sid: {number,tier,source,callouts:[...]}} seeded from `callout`
                     (silver / tesseract) for every section that has callouts
-  vision.json       {sid: {number,w,h,detections:[]}} — section scaffold, NO Vision
+  vision.json       {sid: {number,w,h,detections:[]}} - section scaffold, NO Vision
                     detections (blue layer empty). The editor enumerates sections
                     from this file and can't be modified here, so it must exist and
                     list every diagram section; detections stay [].
@@ -21,7 +21,7 @@ For each catalog it writes groundtruth/<catalog-id>/:
   queue.txt         section numbers whose expected callouts aren't all detected
 
 Coordinate space: the `callout` table x0..y1 are already round(px/imgDim*10000),
-the identical 0-10000 space groundtruth.json/vision.json use — no conversion.
+the identical 0-10000 space groundtruth.json/vision.json use - no conversion.
 
 Usage:
     # all four no-Vision catalogs
@@ -130,7 +130,7 @@ def build_catalog(cat, sqlite_path):
         if t:
             expected.setdefault(sid, set()).add(t)
 
-    # sections that have a rendered diagram — these define the editor's worklist
+    # sections that have a rendered diagram - these define the editor's worklist
     sections = cur.execute(
         "SELECT id, number, diagram_w, diagram_h FROM section "
         "WHERE diagram_blob IS NOT NULL ORDER BY number").fetchall()
@@ -243,7 +243,7 @@ try:
 
         for cat in targets:
             if cat not in catalog_ids:
-                print(f"  ! '{cat}' not in OPFS — skipping. Available: {', '.join(catalog_ids)}")
+                print(f"  ! '{cat}' not in OPFS - skipping. Available: {', '.join(catalog_ids)}")
                 continue
             print(f"Exporting {cat}/catalog.sqlite from OPFS…")
             sqlite_path, nbytes = load_catalog_sqlite(page, cat)

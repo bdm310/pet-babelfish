@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Automated PDF ingest via Playwright — no human interaction required.
+Automated PDF ingest via Playwright - no human interaction required.
 Starts a local HTTP server, uploads the PDF to ingest.html, waits for completion.
 OPFS data persists in tools/.playwright-profile/ for subsequent verify.py runs.
 
@@ -144,10 +144,10 @@ try:
             # --force always runs full ingest regardless of everything else
             do_parts_only = False
         elif parts_only and already:
-            # Catalog exists and we only care about parts — skip OCR
+            # Catalog exists and we only care about parts - skip OCR
             do_parts_only = True
         elif parts_only and not already:
-            # Can't skip OCR on first ingest — diagrams haven't been extracted yet
+            # Can't skip OCR on first ingest - diagrams haven't been extracted yet
             print("Note: catalog not found in OPFS; running full ingest (OCR required for first ingest).")
             do_parts_only = False
         elif already:
@@ -185,7 +185,7 @@ try:
 
         # Poll until done or error. Completion is signalled by the #result panel
         # becoming visible (the worker un-hides it on 'done'); check real visibility
-        # via offsetParent, NOT viewerLink.style.display — the link carries no inline
+        # via offsetParent, NOT viewerLink.style.display - the link carries no inline
         # display, so a style check reads '' and fires before the ingest even starts.
         result_handle = page.wait_for_function(
             """() => {

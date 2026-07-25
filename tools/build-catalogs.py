@@ -3,8 +3,8 @@
 
 Source is catalogs.zip (gitignored, exported from OPFS via catalog-browser.html),
 whose entries are `<catalogId>/catalog.sqlite`. Each becomes a flat, committed
-`docs/catalogs/<catalogId>.sqlite` — one distinct object per catalog so a re-ingest
-is a well-scoped diff — plus a manifest the app reads to list and lazily install them.
+`docs/catalogs/<catalogId>.sqlite` - one distinct object per catalog so a re-ingest
+is a well-scoped diff - plus a manifest the app reads to list and lazily install them.
 
 The manifest carries each catalog's vin_range rows so a VIN can pick a bundled
 catalog before the (multi-MB) DB is downloaded; everything else is read after the

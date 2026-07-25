@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Inspect a Porsche PET catalog PDF — show page text, TOC, and structure.
+Inspect a Porsche PET catalog PDF - show page text, TOC, and structure.
 Useful for comparing what the source PDF contains against what was ingested.
 
 Usage:
@@ -117,7 +117,7 @@ with pdfplumber.open(pdf_path) as pdf:
 
         shown += 1
         if shown >= 50:
-            print(f"\n[Stopped after 50 pages — use --pages to narrow range]")
+            print(f"\n[Stopped after 50 pages - use --pages to narrow range]")
             break
 
     if shown == 0:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-OCR detection lab — fast offline iteration on callout candidate-detection + grouping,
+OCR detection lab - fast offline iteration on callout candidate-detection + grouping,
 graded against the ground truth. Uses cv2 for blob work and system Tesseract 5.4
 (same porsche model the pipeline ships) so the algorithm can be tuned without the
 browser round-trip. Once an approach wins here it is ported to ingest.worker.js.
@@ -172,7 +172,7 @@ def detect_callouts(im_gray):
             digits.append(dict(d=txt, conf=conf, x0=x, y0=y, x1=x+w, y1=y+h, w=w, h=h))
 
     # group into numbers: two digits of one callout are on the same baseline and their
-    # inter-glyph gap scales with FONT SIZE (glyph height), not width — a width-based gap
+    # inter-glyph gap scales with FONT SIZE (glyph height), not width - a width-based gap
     # is skewed tiny by narrow "1"s and wrongly splits "11"/"19". A callout is 1-2 digits,
     # value<=MAX_VALUE, so any wider run is a coincidence of two separate callouts.
     digits.sort(key=lambda g: g['x0'])

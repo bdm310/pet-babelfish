@@ -56,7 +56,7 @@
     .browse { margin-top: var(--sp-5); }
     .browse h3 { font-size: 0.95rem; color: var(--text3); margin: 0 0 var(--sp-3);
                  border-bottom: 1px solid var(--border); padding-bottom: var(--sp-2); }
-    /* The whole row is the button — no separate control. */
+    /* The whole row is the button - no separate control. */
     .browse-row { display: flex; align-items: center; gap: var(--sp-3);
                   border: 1px solid var(--border2); background: var(--bg2);
                   border-radius: var(--radius); padding: var(--sp-3);
@@ -170,12 +170,12 @@
       <div class="hero">
         <h2>No catalogs loaded yet</h2>
         <p>A local-first browser for Porsche PET parts catalogs. Everything runs in your
-           browser — no server, no upload. Catalogs are distributed as prebuilt database
+           browser - no server, no upload. Catalogs are distributed as prebuilt database
            files; once one is loaded, here's the flow:</p>
         <ol class="steps">
-          <li><span class="num">1</span><span><strong>Get a catalog</strong> — a prebuilt parts + diagram database, stored in your browser.</span></li>
-          <li><span class="num">2</span><span><strong>Save a vehicle</strong> — a VIN or spec picks the exact filter for one catalog.</span></li>
-          <li><span class="num">3</span><span><strong>Browse</strong> — open the vehicle to see only the parts that apply to it.</span></li>
+          <li><span class="num">1</span><span><strong>Get a catalog</strong> - a prebuilt parts + diagram database, stored in your browser.</span></li>
+          <li><span class="num">2</span><span><strong>Save a vehicle</strong> - a VIN or spec picks the exact filter for one catalog.</span></li>
+          <li><span class="num">3</span><span><strong>Browse</strong> - open the vehicle to see only the parts that apply to it.</span></li>
         </ol>
         <p class="muted" style="font-size:0.82rem">Building your own from a PET PDF? Use
            <a href="ingest.html">Ingest a catalog</a> in the developer tools below.</p>
@@ -190,7 +190,7 @@
           <span class="spacer"></span>
           <button class="btn btn-primary" @click="newVehicle()">+ Add a vehicle</button>
         </div>
-        <div class="empty">No vehicles yet. Add one to save a catalog and spec filter for one-click browsing — or browse a catalog unfiltered below.</div>
+        <div class="empty">No vehicles yet. Add one to save a catalog and spec filter for one-click browsing - or browse a catalog unfiltered below.</div>
 
         <div class="browse">
           <h3>Browse a catalog unfiltered</h3>
@@ -281,8 +281,8 @@
 
           <div class="modal-body">
             <!-- VIN-first -->
-            <p class="lead-msg">Decode a VIN — or, for a pre-VIN car (356/911/996/Cayenne),
-               its chassis number — to prefill, or set the spec manually below.</p>
+            <p class="lead-msg">Decode a VIN - or, for a pre-VIN car (356/911/996/Cayenne),
+               its chassis number - to prefill, or set the spec manually below.</p>
             <div class="frow">
               <label class="flabel">VIN / chassis</label>
               <input type="text" class="inp mono" x-model="form.vin" maxlength="17"
@@ -306,7 +306,7 @@
                 <label class="flabel">Catalog</label>
                 <select class="inp" x-model="form.catalogId" @change="onCatalogChange()"
                         style="flex:1;min-width:12rem">
-                  <option value="">— select catalog —</option>
+                  <option value="">- select catalog -</option>
                   <template x-for="c in catalogs" :key="c.id">
                     <option :value="c.id" x-text="c.label" :selected="c.id === form.catalogId"></option>
                   </template>
@@ -376,7 +376,7 @@
                 <label class="flabel" style="width:auto">Engine no.</label>
                 <input type="text" class="inp mono" x-model="form.engineNo" @input="deriveSpec()"
                        placeholder="62807297" style="width:8rem"
-                       title="Stamped on the engine — looks the code up in the catalog's own serial ranges, and filters parts whose changeover is printed against it">
+                       title="Stamped on the engine - looks the code up in the catalog's own serial ranges, and filters parts whose changeover is printed against it">
               </div>
               <div class="frow" x-show="opts.gearboxes.length">
                 <label class="flabel">Gearbox</label>
@@ -389,10 +389,10 @@
                 <label class="flabel" style="width:auto">Gearbox no.</label>
                 <input type="text" class="inp mono" x-model="form.gearboxNo"
                        placeholder="7803214" style="width:8rem"
-                       title="Stamped on the gearbox — filters parts whose changeover is printed against a gearbox number (356, PDK). It cannot name the gearbox type; pick that above.">
+                       title="Stamped on the gearbox - filters parts whose changeover is printed against a gearbox number (356, PDK). It cannot name the gearbox type; pick that above.">
               </div>
               <div class="frow" x-show="opts.gearboxes.length && !form.vfGearbox">
-                <span class="hint">the transmission serial ranges cannot tell the gearbox types apart — pick one above or leave open</span>
+                <span class="hint">the transmission serial ranges cannot tell the gearbox types apart - pick one above or leave open</span>
               </div>
             </div>
 
@@ -420,7 +420,7 @@
                   </div>
                   <template x-if="prUnknown.length">
                     <div class="hint" style="margin-top:0.3rem;color:var(--warn, #c87800)"
-                         title="Kept and filtered on — this catalog's option list just does not describe them. Check for a typo.">
+                         title="Kept and filtered on - this catalog's option list just does not describe them. Check for a typo.">
                       ⚠ not in this catalog's option list: <span x-text="prUnknown.join(', ')"></span>
                     </div>
                   </template>
@@ -437,7 +437,7 @@
                 <input type="text" class="inp mono" :value="form.vfChassis"
                        @input="form.vfChassis = $event.target.value.toUpperCase()"
                        placeholder="99-8S784090" style="width:12rem"
-                       title="Filled in from the VIN — parts whose changeover is printed against your car's own number block are filtered on it">
+                       title="Filled in from the VIN - parts whose changeover is printed against your car's own number block are filtered on it">
                 <span class="hint">from the VIN; changeovers printed for another block never apply</span>
               </div>
             </div>
@@ -474,7 +474,7 @@
 
     // Nobody knows their car by its EC/TC code, so name it with what the catalog says
     // about it. A transmission's `type_code` is speeds plus A(utomatik) or
-    // S(chaltgetriebe) — the reading gearboxFromPrCodes depends on too. An unfamiliar
+    // S(chaltgetriebe) - the reading gearboxFromPrCodes depends on too. An unfamiliar
     // shape is left as printed rather than guessed at.
     const gearboxLabel = (tc, type) => {
       const m = /^(\d)([AS])$/.exec(String(type || '').toUpperCase());
@@ -502,7 +502,7 @@
         chooseCatalog:  '',   // arrived to pick/add a vehicle for this catalog → show banner
         pendingCatalog: '',   // preselect for "+ New vehicle for this catalog"
         pendingReturn:  '',
-        // Facet vocabularies for the selected catalog — see onCatalogChange.
+        // Facet vocabularies for the selected catalog - see onCatalogChange.
         opts:      { engines: [], gearboxes: [], lines: [], bodies: [], drive: [], trim: [], markets: [] },
         _engineNums:  [],     // engine serial ranges, for deriveSpec
         _transmCodes: [],
@@ -536,7 +536,7 @@
             const cat = p.get('catalog') || '';
             const ret = p.get('return') || '';
             // Already have vehicles for this catalog? Let the user pick one rather than
-            // forcing a new one — only auto-open the blank form when there's none to pick.
+            // forcing a new one - only auto-open the blank form when there's none to pick.
             const existing = cat ? this.vehicles.filter(v => v.catalogId === cat) : [];
             if (existing.length) {
               this.chooseCatalog  = cat;
@@ -573,7 +573,7 @@
 
         // A vehicle stores the catalog id; the card should still show the name.
         // An id with no catalog behind it any more is shown as-is rather than
-        // silently blanked — it is why the vehicle won't open.
+        // silently blanked - it is why the vehicle won't open.
         catalogLabel(id) {
           return this.catalogs.find(c => c.id === id)?.label || id;
         },
@@ -600,8 +600,8 @@
           if (catalogId) { this.form.catalogId = catalogId; this.onCatalogChange(); }
         },
         editVehicle(v) {
-          // Nothing on a saved vehicle is a guess any more — it is what the owner
-          // kept — so no field here is deriveSpec's to overwrite.
+          // Nothing on a saved vehicle is a guess any more - it is what the owner
+          // kept - so no field here is deriveSpec's to overwrite.
           this._derived = {}; this.advancedOpen = false; this.returnTo = '';
           const s = v.spec || {};
           this.form = {
@@ -625,7 +625,7 @@
           const idx = [];
           for (const c of this.catalogs) {
             if (!c.installed) {
-              // Not downloaded yet — match against the manifest's vin_range rows so a
+              // Not downloaded yet - match against the manifest's vin_range rows so a
               // VIN can select a bundled catalog before its (multi-MB) DB is fetched.
               // dialect/year_pivot ride along so an old two-digit year can be expanded.
               const b = (this._bundled || []).find(x => x.id === c.id);
@@ -661,7 +661,7 @@
               family: dec.family, fam: (dec.family || 'unknown').toUpperCase(),
               myLabel: my, modelYear: dec.modelYear, chassis: dec.chassis });
           }
-          // Not a 17-char VIN — the old catalogs (356/911/996/Cayenne) predate the
+          // Not a 17-char VIN - the old catalogs (356/911/996/Cayenne) predate the
           // 17-char VIN, so their chassis number is typed directly. Match it as-is
           // against the old-dialect ranges (no reconstruction: the catalog stores
           // the number exactly as stamped).
@@ -680,7 +680,7 @@
         // the fields the matched range names, blank ones only.
         async _applyDecode(matches, idx, ctx) {
           if (!matches.length) {
-            this.vinMsg = `${[ctx.fam, ctx.myLabel].filter(Boolean).join(' · ') || (ctx.chassis || '?')} — no catalog match`;
+            this.vinMsg = `${[ctx.fam, ctx.myLabel].filter(Boolean).join(' · ') || (ctx.chassis || '?')} - no catalog match`;
             this.vinOk  = false;
             if (ctx.modelYear) this.form.vfYear = String(ctx.modelYear);
             return;
@@ -699,7 +699,7 @@
           this.vinOk  = true;
           await this.onCatalogChange();   // the facet vocabularies the remark is read against
 
-          // The matched range names the car — the one thing the decode knows that the
+          // The matched range names the car - the one thing the decode knows that the
           // filter cannot get anywhere else. Blank fields only: a re-decode must not
           // overwrite a correction the owner already made.
           const remarks = idx.filter(r => r.catalogId === m.catalogId).map(r => r.remark);
@@ -708,7 +708,7 @@
           if (!this.form.vfBody   && f.body)   this.form.vfBody   = f.body;
           if (!this.form.vfMarket && f.market) this.form.vfMarket = f.market;
           // The chassis number is exactly the one the parts pages print changeovers
-          // against — for old catalogs it is what the user typed.
+          // against - for old catalogs it is what the user typed.
           if (!this.form.vfChassis && ctx.chassis) this.form.vfChassis = ctx.chassis;
         },
 
@@ -797,13 +797,13 @@
         },
 
         // Gearbox from the option list. The transmission SERIAL ranges cannot do this
-        // — A9750's and G9750's are printed byte-identical, so they can never tell a
-        // Tiptronic from a manual — but an option code names the transmission outright.
+        // - A9750's and G9750's are printed byte-identical, so they can never tell a
+        // Tiptronic from a manual - but an option code names the transmission outright.
         // Read both tables rather than naming codes: `type_code` is speeds + A(utomatic)
         // or S(ynchromesh), and an option whose description is a transmission spec
         // ("6-speed manual transmission", "Tiptronic transmission") states the same
-        // thing in prose. Where that lands on two codes at once — this catalog has two
-        // different 6-speed manuals — nothing is derivable and the field stays open.
+        // thing in prose. Where that lands on two codes at once - this catalog has two
+        // different 6-speed manuals - nothing is derivable and the field stays open.
         gearboxFromPrCodes(codes) {
           const SPEC_RE = /^(?:(\d)-speed\s+)?(manual|automatic|tiptronic|pdk)\b[^.]*\b(?:transmission|gearbox)\b/i;
           const KIND    = { manual: 'S', automatic: 'A', tiptronic: 'A', pdk: 'A' };
@@ -827,12 +827,12 @@
                    .map(s => s.trim().toUpperCase()).filter(Boolean);
         },
         // Codes the catalog cannot label are still the car's, so they are kept and
-        // filtered on — PR codes and M-numbers are one vocabulary here and the
+        // filtered on - PR codes and M-numbers are one vocabulary here and the
         // sticker's M-numbers gate real parts. They are only called out, never dropped.
         refreshPrPreview() {
           const codes = [...new Set(this.parsePrText())];
           const known = Object.keys(this.prCodes).length > 0;
-          // Option-list order (numeric first, then M-numbers), not paste order —
+          // Option-list order (numeric first, then M-numbers), not paste order -
           // a code is looked up by eye, and the sticker's order is arbitrary.
           const num = c => /^\d+$/.test(c) ? parseInt(c, 10) : Infinity;
           this.prPreview = codes
@@ -866,12 +866,12 @@
               vfTrim: this.form.vfTrim || '',
               vfEngine: this.form.vfEngine || '',
               vfGearbox: this.form.vfGearbox || '',
-              // Kept so the code can be re-derived if the catalog is re-ingested —
+              // Kept so the code can be re-derived if the catalog is re-ingested -
               // and read directly: it is the number engine breakpoints are printed
               // against, not just the way in to the engine code.
               engineNo: (this.form.engineNo || '').trim(),
               // Filtered on directly (transmission serial breakpoints); never derives
-              // the gearbox code — the A/G serial ranges are printed byte-identical.
+              // the gearbox code - the A/G serial ranges are printed byte-identical.
               gearboxNo: (this.form.gearboxNo || '').trim(),
               vfChassis: (this.form.vfChassis || '').trim().toUpperCase(),
               vfPrCodes: prCodes,

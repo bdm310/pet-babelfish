@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Table Browser — pet-babelfish</title>
+  <title>Table Browser - pet-babelfish</title>
   <script>(function(){var t=localStorage.getItem('pb-theme');if(t)document.documentElement.dataset.theme=t;})()</script>
   <link rel="stylesheet" href="theme.css">
   <style>
@@ -62,14 +62,14 @@
     <a href="index.html">← home</a>
 
     <select x-model="catalogId" @change="onCatalogChange()">
-      <option value="">— select catalog —</option>
+      <option value="">- select catalog -</option>
       <template x-for="c in catalogs" :key="c.id">
         <option :value="c.id" x-text="c.label"></option>
       </template>
     </select>
 
     <select x-model="tableName" @change="onTableChange()" :disabled="!db">
-      <option value="">— select table —</option>
+      <option value="">- select table -</option>
       <template x-for="t in tables" :key="t">
         <option :value="t" x-text="t"></option>
       </template>
@@ -361,7 +361,7 @@
           this.loading = true;
           this.status  = 'Querying…';
           try {
-            // Summarise BLOB columns in SQL rather than selecting them — SELECT *
+            // Summarise BLOB columns in SQL rather than selecting them - SELECT *
             // on section would haul every diagram into memory to render a table.
             const cols = this.db.exec(`PRAGMA table_info(${this.tableName})`)[0].values;
             const sel  = cols.map(([, name, type]) =>

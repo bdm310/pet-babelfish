@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Re-OCR every ground-truth box and flag boxes whose read digit disagrees with the
-stored number — a check for mislabeled callouts, now that the boxes are tight.
+stored number - a check for mislabeled callouts, now that the boxes are tight.
 
 Uses the system Tesseract 5.4 with the shipping `porsche` model (docs/tessdata),
 so it is the same OCR the pipeline uses, independent of how each box was labeled
@@ -58,10 +58,10 @@ gt = json.loads((out_dir / 'groundtruth.json').read_text('utf-8'))
 
 def read_box(im, box, W, H):
     """OCR one tight box (0-10000). Returns (text, conf)."""
-    # Crop EXACTLY the box (only 2px to avoid clipping the glyph edge — never a
+    # Crop EXACTLY the box (only 2px to avoid clipping the glyph edge - never a
     # percentage pad that would reach a neighbouring callout), upscale, then centre it
     # on a white canvas with a wide margin. Tesseract sees the box's own contents, big,
-    # isolated and cleanly bordered — so a tight box can never be the reason it misreads.
+    # isolated and cleanly bordered - so a tight box can never be the reason it misreads.
     # Any disagreement then means the box's pixels really are that (wrong) number.
     x0, y0, x1, y1 = (int(box[0]/10000*W), int(box[1]/10000*H),
                       int(box[2]/10000*W), int(box[3]/10000*H))
@@ -94,7 +94,7 @@ con = sqlite3.connect(out_dir / 'catalog.sqlite')
 items = list(gt.items())
 if limit: items = items[:limit]
 
-flags = {}                # sid -> [{cx,cy,gt,ocr,conf,kind}]  — ALL surfaced for review
+flags = {}                # sid -> [{cx,cy,gt,ocr,conf,kind}]  - ALL surfaced for review
 n_boxes = n_mismatch = n_partial = n_unread = n_ok = 0
 for k, (sid, e) in enumerate(items, 1):
     row = con.execute("SELECT diagram_blob FROM section WHERE number=?", (e['number'],)).fetchone()
@@ -109,10 +109,10 @@ for k, (sid, e) in enumerate(items, 1):
         if gtn in [t for t, _ in reads]:         # either reader agreeing is enough
             n_ok += 1; continue
         read, conf = max(reads, key=lambda tc: tc[1], default=('', 0))
-        # Any disagreement is surfaced — with a clean isolated crop the box can't be
+        # Any disagreement is surfaced - with a clean isolated crop the box can't be
         # blamed. kind just describes HOW it differs: a wrong digit (mismatch), a wrong
         # digit count i.e. the box likely bounds too few/many digits (partial), or
-        # unreadable even isolated (unread — a hard glyph or a badly-placed box).
+        # unreadable even isolated (unread - a hard glyph or a badly-placed box).
         if read == '' or conf < MIN_CONF:
             kind = 'unread'; n_unread += 1
         elif read != gtn and (read in gtn or gtn in read):

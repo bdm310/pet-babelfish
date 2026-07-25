@@ -7,7 +7,7 @@ nearest opposite-side item and classifies the error.
 
 FN categories:
   misread-near   a pred box overlaps this truth box but the NUMBER differs
-                 (detection ok, digit wrong — e.g. 996 "11"->"1")
+                 (detection ok, digit wrong - e.g. 996 "11"->"1")
   missed         no pred box overlaps at all (pure detection failure:
                  leader-line fusion, too-small blob, aspect filter, etc.)
 FP categories:

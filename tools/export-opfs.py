@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Export a catalog's SQLite from the browser OPFS store to a file — headless, no
+Export a catalog's SQLite from the browser OPFS store to a file - headless, no
 screenshots (unlike verify.py). Used by the OCR validation loop to refresh
 groundtruth/<cat>/catalog.sqlite after a re-ingest so ocr-eval.py can grade it.
 

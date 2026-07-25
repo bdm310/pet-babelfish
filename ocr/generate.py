@@ -54,7 +54,7 @@ for pt in SIZES_PT:
         img.save(str(OUTPUT_DIR / f"{stem}.tif"), dpi=(DPI, DPI))
         (OUTPUT_DIR / f"{stem}.gt.txt").write_text(text, encoding="utf-8")
         # WordStr box: tesseract lstm.train requires a .box file alongside the .tif.
-        # Single line only — the trailing \t end-of-word line corrupts the transcription.
+        # Single line only - the trailing \t end-of-word line corrupts the transcription.
         # Write bytes directly to avoid Windows CRLF translation.
         box = f"WordStr 0 0 {W-1} {H-1} 0 #{text}\n"
         (OUTPUT_DIR / f"{stem}.box").write_bytes(box.encode("utf-8"))

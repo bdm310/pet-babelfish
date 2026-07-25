@@ -1,6 +1,6 @@
 /* ── Theme variables ──────────────────────────────────────── */
 
-/* Type + spacing tokens — theme-independent, declared once. --font-ui carries
+/* Type + spacing tokens - theme-independent, declared once. --font-ui carries
    prose (descriptions, hints, headers, buttons); --font-mono carries codes,
    part numbers, IDs, VINs. This is the "hybrid" split: readable prose, monospace
    where alignment/identity matters. */
@@ -45,7 +45,7 @@
   --row-border:   #1e1e1e;
 }
 
-/* Light — applied when system is light and user hasn't overridden */
+/* Light - applied when system is light and user hasn't overridden */
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
@@ -76,7 +76,7 @@
   }
 }
 
-/* Explicit overrides — cascade order beats the media query above */
+/* Explicit overrides - cascade order beats the media query above */
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg:           #1a1a1a;
@@ -159,7 +159,7 @@ html { background: var(--bg); }
 .hdr-btn.danger:hover:not(:disabled) { border-color: #c0392b; color: #c0392b; }
 
 /* ── PR option list (shared by garage + viewer) ──────────── */
-/* 50-100 codes don't work as wrapped chips — a fixed-height scrollable
+/* 50-100 codes don't work as wrapped chips - a fixed-height scrollable
    code/description list behind a count toggle keeps the surrounding UI stable
    no matter how long the option sticker is. */
 

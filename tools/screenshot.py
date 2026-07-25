@@ -10,7 +10,7 @@ Usage:
 First-time setup (install Chromium, ~120 MB):
     uv run --with playwright python -m playwright install chromium
 
-Automated ingest (no human needed — use ingest.py instead for full automation):
+Automated ingest (no human needed - use ingest.py instead for full automation):
     uv run --with playwright python tools/screenshot.py --headed --url http://localhost:8080/ingest.html
 
 Options:
@@ -117,7 +117,7 @@ try:
         if not headed:
             ctx.close()
         else:
-            print("Browser open — press Enter to close.")
+            print("Browser open - press Enter to close.")
             input()
             ctx.close()
 finally:

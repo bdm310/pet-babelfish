@@ -22,7 +22,7 @@ $base = "http://localhost:$BridgePort"
 try {
     Invoke-WebRequest "$base/query" -Method POST -Body $Sql -UseBasicParsing | Out-Null
 } catch {
-    Write-Error "Cannot reach query bridge at $base — is serve.ps1 running?"
+    Write-Error "Cannot reach query bridge at $base - is serve.ps1 running?"
     exit 1
 }
 

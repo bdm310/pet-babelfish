@@ -73,7 +73,7 @@ for row in csv.DictReader(open(out_dir / 'reconcile.csv', encoding='utf-8')):
         missing_by_num[row['section']] = [int(x) for x in row['missing'].split(',')]
 
 if not missing_by_num:
-    print("Nothing queued — no HUMAN sections."); sys.exit(0)
+    print("Nothing queued - no HUMAN sections."); sys.exit(0)
 print(f"{len(missing_by_num)} sections to prepare.")
 
 # ── pull blobs from OPFS ───────────────────────────────────────────────────────
@@ -138,7 +138,7 @@ for num, missing in sorted(missing_by_num.items()):
         ax1, ay1 = d['x1'] / 10000 * W, d['y1'] / 10000 * H
         draw.rectangle([ax0, ay0, ax1, ay1], outline=(30, 90, 220), width=2)
         draw.text((ax0, max(0, ay0 - font.size - 1)), str(d['num']), fill=(30, 90, 220), font=font)
-        # a number can be stamped more than once — keep every box, not just the last
+        # a number can be stamped more than once - keep every box, not just the last
         anchors.setdefault(str(d['num']), []).append([d['x0'], d['y0'], d['x1'], d['y1']])
 
     im.save(queue_dir / f"{num}.png")
