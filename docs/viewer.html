@@ -282,6 +282,13 @@
     <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
   </header>
 
+  <template x-if="storageBlocked">
+    <div class="notice-bar">
+      Your browser is blocking site storage, so saving vehicles and part marks is turned off.
+      Bundled catalogs are read-only here - to enable saving, allow cookies / site data for this site.
+    </div>
+  </template>
+
   <!-- Mobile pane switcher - hidden above the 820px breakpoint. Drives which
        single pane .layout shows via mobilePane / [data-mpane]. -->
   <div class="mobile-tabs">
@@ -309,7 +316,7 @@
             @click="clearActiveVehicle()">×</span>
     </div>
   </template>
-  <template x-if="!activeVehicle && db">
+  <template x-if="!activeVehicle && db && !storageBlocked">
     <div class="spec-summary">
       <a class="btn btn-primary"
          :href="'index.html?addVehicle=1&catalog=' + encodeURIComponent(catalogId) + '&return=viewer'"
@@ -317,6 +324,11 @@
         Filter to a vehicle…
       </a>
       <span class="ss-note">Browsing the full catalog - scope it to a car to get Ok/Notes and only its parts.</span>
+    </div>
+  </template>
+  <template x-if="!activeVehicle && db && storageBlocked">
+    <div class="spec-summary">
+      <span class="ss-note">Browsing the full catalog - vehicle filtering and Ok/Notes need site storage, which this browser is blocking.</span>
     </div>
   </template>
 
@@ -721,6 +733,10 @@
         // file-mode: true when loaded via ?sqlite=URL instead of OPFS
         sqliteFileMode: false,
 
+        // true when the browser blocks OPFS (e.g. Firefox with site storage off):
+        // bundled catalogs still browse read-only, but nothing can be saved.
+        storageBlocked: false,
+
         // Vehicle spec - populated by openVehicle() from the saved vehicle and read
         // (never edited) here; the filtering engine runs entirely off these.
         vfYear:           '',
@@ -842,6 +858,7 @@
           this.status = 'Loading sql.js…';
           try { this.diagramHintDismissed = localStorage.getItem('pb-diagram-hint') === '1'; } catch {}
           this.SQL = await initSqlJs({ locateFile: () => SQLJS_WASM });
+          this.storageBlocked = !(await CATALOGS.usable());
           this.status = '';
           this.$watch('hoveredPos',  () => this.drawCallouts());
           this.$watch('selectedPos', () => this.drawCallouts());
@@ -1201,18 +1218,12 @@
           this._setDiagram(null);
 
           try {
-            // Bundled-but-not-yet-installed catalog? Copy it into OPFS first.
-            const entry = this.catalogs.find(c => c.id === this.catalogId);
-            if (entry && entry.installed === false) {
-              this.status = 'Fetching catalog…';
-              await CATALOGS.install({ id: entry.id, file: entry.file });
-              entry.installed = true;
-            }
-            const root = await navigator.storage.getDirectory();
-            const dir  = await root.getDirectoryHandle(this.catalogId);
-            const fh   = await dir.getFileHandle('catalog.sqlite');
-            const buf  = await (await fh.getFile()).arrayBuffer();
-            this.db    = new this.SQL.Database(new Uint8Array(buf));
+            // Bundled catalogs load from docs/catalogs/ in-memory; OPFS ones read
+            // from OPFS. bytes() picks per entry (see catalogs.js). A bare-id fallback
+            // covers ?catalog=<id> for a catalog not in the list.
+            const entry = this.catalogs.find(c => c.id === this.catalogId) || { id: this.catalogId };
+            this.status = entry.installed === false ? 'Fetching catalog…' : 'Opening database…';
+            this.db     = new this.SQL.Database(await CATALOGS.bytes(entry));
 
             if (!this._schemaCurrent()) {
               this.status = `"${this.catalogId}" doesn't match the current schema - ` +

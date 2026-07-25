@@ -220,6 +220,17 @@ html { background: var(--bg); }
 .pb-header a:hover { text-decoration: underline; }
 .pb-header .spacer { margin-left: auto; }
 
+/* ── Notice bar ─────────────────────────────────────────────────────── */
+/* Full-width advisory strip under the header - e.g. the browser is blocking
+   site storage, so the app runs read-only (bundled catalogs still browse). */
+.notice-bar {
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg2);
+  border-left: 3px solid var(--warn, #c87800);
+  color: var(--text); font-family: var(--font-ui); font-size: 0.82rem;
+}
+
 /* ── Buttons ────────────────────────────────────────────────────────── */
 /* .btn is the base; modifiers layer on. .theme-toggle/.hdr-btn kept above
    as aliases for pages not yet migrated. */

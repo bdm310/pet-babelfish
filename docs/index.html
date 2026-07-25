@@ -161,6 +161,13 @@
     <button class="theme-toggle" onclick="themeToggle.cycle()">auto</button>
   </header>
 
+  <template x-if="storageBlocked">
+    <div class="notice-bar">
+      Your browser is blocking site storage, so saving vehicles is turned off.
+      You can still browse bundled catalogs - to save vehicles, allow cookies / site data for this site.
+    </div>
+  </template>
+
   <main>
 
     <!-- ── State-aware hero (flat sibling templates) ─────────────── -->
@@ -188,7 +195,8 @@
         <div class="section-head">
           <h2>Your vehicles</h2>
           <span class="spacer"></span>
-          <button class="btn btn-primary" @click="newVehicle()">+ Add a vehicle</button>
+          <button class="btn btn-primary" @click="newVehicle()" :disabled="storageBlocked"
+                  :title="storageBlocked ? 'Saving vehicles needs site storage, which this browser is blocking' : ''">+ Add a vehicle</button>
         </div>
         <div class="empty">No vehicles yet. Add one to save a catalog and spec filter for one-click browsing - or browse a catalog unfiltered below.</div>
 
@@ -216,7 +224,8 @@
           <h2>Your vehicles</h2>
           <span class="count" x-text="vehicles.length + (vehicles.length === 1 ? ' vehicle' : ' vehicles')"></span>
           <span class="spacer"></span>
-          <button class="btn btn-primary" @click="newVehicle()">+ Add vehicle</button>
+          <button class="btn btn-primary" @click="newVehicle()" :disabled="storageBlocked"
+                  :title="storageBlocked ? 'Saving vehicles needs site storage, which this browser is blocking' : ''">+ Add vehicle</button>
         </div>
 
         <!-- Arrived from "Filter to a vehicle…" for a catalog that already has vehicles:
@@ -509,10 +518,14 @@
         _derived:  {},        // field -> the value deriveSpec last put there
         _vinIndex: null,
         _bundled:  null,      // manifest of bundled catalogs (vin_range rides along)
+        // true when the browser blocks OPFS: catalogs still browse (in the viewer),
+        // but the garage can't be read or written, so vehicle-saving is turned off.
+        storageBlocked: false,
 
         async init() {
           this.status = 'Loading…';
           try { this.SQL = await initSqlJs({ locateFile: () => SQLJS_WASM }); } catch {}
+          this.storageBlocked = !(await CATALOGS.usable());
           await this.listCatalogs();
           await this.refresh();
           this.status = '';
@@ -553,22 +566,11 @@
         // ── OPFS catalog discovery ─────────────────────────────────
         async listCatalogs() {
           // Bundled catalogs (docs/catalogs/) are offered alongside OPFS ones and
-          // copied into OPFS on first open. Their vin_range rows ride in the manifest
-          // so a VIN can pick one before it is downloaded (see _buildVinIndex).
+          // load in-memory when opened (never copied to OPFS). Their vin_range rows
+          // ride in the manifest so a VIN can pick one before its DB is downloaded
+          // (see _buildVinIndex).
           this.catalogs = await CATALOGS.listAll(this.SQL);
           this._bundled = await CATALOGS.bundled();
-        },
-
-        // Copy a not-yet-installed bundled catalog into OPFS before anything opens it.
-        async ensureInstalled(id) {
-          const c = this.catalogs.find(x => x.id === id);
-          if (!c || c.installed) return;
-          this.status = 'Fetching catalog…';
-          try {
-            await CATALOGS.install({ id: c.id, file: c.file });
-            c.installed = true;
-            this._vinIndex = null;   // its ranges now read from OPFS
-          } finally { this.status = ''; }
         },
 
         // A vehicle stores the catalog id; the card should still show the name.
@@ -579,12 +581,8 @@
         },
 
         async _openCatalogDb(id) {
-          await this.ensureInstalled(id);
-          const rootDir = await navigator.storage.getDirectory();
-          const dir = await rootDir.getDirectoryHandle(id);
-          const fh  = await dir.getFileHandle('catalog.sqlite');
-          const buf = await (await fh.getFile()).arrayBuffer();
-          return new this.SQL.Database(new Uint8Array(buf));
+          const entry = this.catalogs.find(x => x.id === id) || { id };
+          return new this.SQL.Database(await CATALOGS.bytes(entry));
         },
 
         // ── Form lifecycle ─────────────────────────────────────────
@@ -877,7 +875,15 @@
               vfPrCodes: prCodes,
             },
           };
-          const saved   = await Garage.upsert(vehicle);
+          let saved;
+          try {
+            saved = await Garage.upsert(vehicle);
+          } catch (e) {
+            this.status = this.storageBlocked
+              ? 'Site storage is blocked, so this vehicle can\'t be saved.'
+              : 'Could not save vehicle: ' + e.message;
+            return;
+          }
           const toViewer = this.returnTo === 'viewer';
           this.form = null;
           this.returnTo = '';

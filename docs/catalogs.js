@@ -12,8 +12,10 @@
 
   const DB_FILE = 'catalog.sqlite';
   // Pre-ingested catalogs shipped with the app, listed by docs/catalogs/manifest.json
-  // (built from catalogs.zip; see tools/build-catalogs.py). Fetched lazily and copied
-  // into OPFS on first open so they then behave exactly like a locally-ingested one.
+  // (built from catalogs.zip; see tools/build-catalogs.py). Fetched lazily into memory
+  // when opened and never copied into OPFS - the shipped file is the source of truth,
+  // and OPFS is reserved for user-owned data (local ingests, the garage). This keeps
+  // bundled catalogs browseable even where the browser blocks OPFS (see usable/bytes).
   const MANIFEST_URL = 'catalogs/manifest.json';
 
   // "Porsche 911 Turbo/GT2 - 997T07". Either half may be missing on an odd
@@ -62,10 +64,41 @@
     } catch { return []; }
   }
 
-  // Copy a bundled catalog into OPFS under its id so the rest of the app - which
-  // only ever reads OPFS - can open it. A catalog already in OPFS (installed
-  // earlier, or re-ingested locally under the same id) is left untouched: we never
-  // overwrite the user's own copy. Idempotent; returns when the file is present.
+  // Is OPFS available? Memoized. Firefox with site storage blocked throws a
+  // SecurityError from getDirectory; when that happens the app runs read-only -
+  // bundled catalogs still open (in-memory, via bytes()), but nothing can be
+  // saved (no local ingest, no garage). Callers gate write UI on this.
+  let _usable;
+  async function usable() {
+    if (_usable === undefined) {
+      try { await navigator.storage.getDirectory(); _usable = true; }
+      catch { _usable = false; }
+    }
+    return _usable;
+  }
+
+  // Raw SQLite bytes for a catalog entry from listAll(). An OPFS-resident catalog
+  // (installed - a local ingest, or a bundled id re-ingested locally) is read from
+  // OPFS; a bundled entry is fetched from docs/catalogs/ straight into memory and
+  // never touches OPFS. A bare id (or any non-bundled entry) reads OPFS by that id.
+  async function bytes(entry) {
+    if (entry && entry.installed === false) {
+      if (!entry.file) throw new Error(`bundled catalog "${entry.id}" has no file`);
+      const resp = await fetch('catalogs/' + encodeURIComponent(entry.file), { cache: 'no-cache' });
+      if (!resp.ok) throw new Error(`catalog fetch failed (${resp.status}): ${entry.file}`);
+      return new Uint8Array(await resp.arrayBuffer());
+    }
+    const id   = typeof entry === 'string' ? entry : entry.id;
+    const root = await navigator.storage.getDirectory();
+    const dir  = await root.getDirectoryHandle(id);
+    const fh   = await dir.getFileHandle(DB_FILE);
+    return new Uint8Array(await (await fh.getFile()).arrayBuffer());
+  }
+
+  // Copy a bundled catalog into OPFS under its id. The app proper no longer does
+  // this (bundled catalogs load in-memory via bytes); it remains for the dev
+  // catalog-browser, which pulls bundled catalogs into OPFS to export/edit them.
+  // A catalog already in OPFS is left untouched. Idempotent.
   async function install(entry) {
     const root = await navigator.storage.getDirectory();
     const dir  = await root.getDirectoryHandle(entry.id, { create: true });
@@ -94,7 +127,7 @@
     return [...opfs, ...extra];
   }
 
-  root.CATALOGS = { DB_FILE, list, label, bundled, install, listAll };
+  root.CATALOGS = { DB_FILE, list, label, bundled, install, listAll, usable, bytes };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = root.CATALOGS;
 })(typeof self !== 'undefined' ? self : this);
