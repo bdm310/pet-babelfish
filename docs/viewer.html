@@ -100,7 +100,10 @@
     .ok-hd     { display: inline-flex; align-items: center; gap: 4px; }
     .note-input { width: 100%; background: transparent; border: 1px solid transparent;
                   border-radius: 3px; color: var(--text2); font-family: monospace;
-                  font-size: 0.72rem; padding: 1px 3px; }
+                  font-size: 0.72rem; padding: 1px 3px;
+                  display: block; resize: none; overflow: hidden;
+                  white-space: pre-wrap; overflow-wrap: break-word;
+                  line-height: 1.35; vertical-align: top; box-sizing: border-box; }
     .note-input::placeholder { color: var(--text6); }
     .note-input:hover  { border-color: var(--border2); }
     .note-input:focus  { outline: none; border-color: var(--accent); background: var(--bg); color: var(--text); }
@@ -540,12 +543,14 @@
                   </template>
                   <template x-if="vehicleMode">
                     <td class="col-notes" @click.stop>
-                      <input type="text" class="note-input" placeholder="…"
+                      <textarea class="note-input" rows="1" placeholder="…"
                              :value="partNotes(row.part._key)"
                              :title="partNotes(row.part._key)"
-                             @input="setPartNotes(row.part._key, $event.target.value)"
+                             x-effect="partNotes(row.part._key); $nextTick(() => autoGrowNote($el))"
+                             @input="setPartNotes(row.part._key, $event.target.value); autoGrowNote($event.target)"
+                             @focus="autoGrowNote($event.target)"
                              @blur="flushPartNotes(row.part._key)"
-                             @keydown.enter="$event.target.blur()">
+                             @keydown.enter="if (!$event.shiftKey) { $event.preventDefault(); $event.target.blur(); }"></textarea>
                     </td>
                   </template>
                 </tr>
@@ -1144,14 +1149,36 @@
 
         // Typing writes through debounced; blur (below) flushes immediately so a
         // note is safe as soon as the user leaves the field.
+        //
+        // A note edit touches only `.notes`, so mutate the entry in place rather
+        // than reassigning this.partMeta: reassigning would re-clone the whole map
+        // (O(marks)) and, worse, re-run every effect that reads partMeta on each
+        // keystroke - including the diagram-header Ok rollup, which re-parses the
+        // section's applicability grammar. In-place mutation leaves `.ok` and the
+        // partMeta binding untouched, so only this row's note binding re-evaluates.
         setPartNotes(key, notes) {
-          this._applyPartMeta(key, { notes });
+          const cur = this.partMeta[key];
+          if (cur) cur.notes = notes;
+          else     this.partMeta[key] = { ok: false, notes };   // first char on an unmarked part
           clearTimeout(this._noteTimers[key]);
           this._noteTimers[key] = setTimeout(() => this._persistPartMeta(key), 400);
         },
 
         flushPartNotes(key) {
           if (this._noteTimers[key]) this._persistPartMeta(key);
+        },
+
+        // Size a note textarea to its content so long, wrapped notes are fully
+        // visible without a scrollbar. Cheap: only ever runs on the row being
+        // typed in or (via x-effect) a row whose note value just changed.
+        autoGrowNote(el) {
+          if (!el) return;
+          el.style.height = 'auto';
+          // box-sizing is border-box, so the set height must include the borders
+          // that scrollHeight (content + padding only) leaves out - otherwise the
+          // last wrapped line is clipped by the border width.
+          const border = el.offsetHeight - el.clientHeight;
+          el.style.height = el.scrollHeight + border + 'px';
         },
 
         _applyPartMeta(key, patch) {
